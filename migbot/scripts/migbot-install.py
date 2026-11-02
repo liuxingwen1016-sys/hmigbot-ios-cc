@@ -2,10 +2,11 @@
 """migbot iOS 版本安装脚本 - 完整版
 
 关键：
-1. 只复制 i2h-* 命令和 skills
+1. 只复制 i2h-* 命令和相关 skills
 2. 创建 .claude 目录并复制 commands 和 skills
 3. 支持重复执行，保留用户配置
 4. 自动清理旧的 a2h 文件
+5. 智能过滤 skills：iOS 特定 + arkts 通用 + 工具类
 """
 from __future__ import annotations
 
@@ -15,6 +16,52 @@ import json
 import shutil
 import argparse
 from pathlib import Path
+
+
+# ============ Skills 过滤配置 ============
+# 需要安装的 skills（iOS 特定 + 通用工具）
+INSTALL_SKILLS = {
+    # iOS 核心流水线
+    'i2h-spec', 'i2h-plan', 'i2h-execute', 'i2h-verify', 'i2h-retrospect',
+
+    # iOS 特定 skills
+    'ios-ui-graph-builder', 'ios-ui-graph-query', 'swiftui-to-arkui',
+    'ios-api-inventory', 'ios-fact-tree', 'ios_fast_traverse',
+    'ios2hmos_resources_convert',
+
+    # 通用工具 skills
+    'a2h-join', 'app-relationship-tree', 'commit', 'dfr-fmea-general',
+    'grill-with-docs', 'hmos_fix_build_errors', 'hmos-env-doctor',
+    'harmonyos-ui-test', 'claude-session-stats', 'skill-checker',
+    'toolkit-fact-indexer', 'mod-design', 'prd-generator',
+    'rq-parse', 'rq-clarify', 'rq-codebase', 'tdd-enforcer',
+}
+
+# ArkTS skills 前缀（默认全部安装）
+ARKTS_SKILLS_PREFIX = 'arkts-'
+
+# 排除的 ArkTS skills（Android 特定）
+EXCLUDE_ARKTS_SKILLS = {'arkts-ad'}
+
+
+def should_install_skill(skill_name: str) -> bool:
+    """判断是否应该安装该 skill
+
+    规则：
+    1. 在 INSTALL_SKILLS 白名单中 -> 安装
+    2. 以 arkts- 开头且不在黑名单中 -> 安装
+    3. 其他 -> 跳过
+    """
+    # 白名单匹配
+    if skill_name in INSTALL_SKILLS:
+        return True
+
+    # arkts- 前缀匹配（排除黑名单）
+    if skill_name.startswith(ARKTS_SKILLS_PREFIX):
+        return skill_name not in EXCLUDE_ARKTS_SKILLS
+
+    # 默认跳过
+    return False
 
 
 def install_migbot(project_path: str, ios_path: str = None, repo_root: str = None):
@@ -100,18 +147,23 @@ def install_migbot(project_path: str, ios_path: str = None, repo_root: str = Non
             print("📋 复制 skills...")
 
         copied_count = 0
+        skipped_count = 0
         for skill_dir in skills_src.iterdir():
-            if skill_dir.is_dir() and skill_dir.name.startswith("i2h-"):
-                dst = skills_dst / skill_dir.name
-                if dst.exists():
-                    shutil.rmtree(dst)
-                shutil.copytree(skill_dir, dst)
-                copied_count += 1
-                if not is_upgrade:
-                    print(f"   ✅ {skill_dir.name}")
+            if skill_dir.is_dir():
+                # 使用过滤函数判断是否安装
+                if should_install_skill(skill_dir.name):
+                    dst = skills_dst / skill_dir.name
+                    if dst.exists():
+                        shutil.rmtree(dst)
+                    shutil.copytree(skill_dir, dst)
+                    copied_count += 1
+                    if not is_upgrade:
+                        print(f"   ✅ {skill_dir.name}")
+                else:
+                    skipped_count += 1
 
         if copied_count > 0:
-            print(f"   复制了 {copied_count} 个 i2h skills")
+            print(f"   复制了 {copied_count} 个 skills（跳过 {skipped_count} 个不相关 skills）")
 
     # ============ 3. 创建 .migbot 目录（运行时数据）============
     migbot_dir = project_root / ".migbot"
@@ -189,9 +241,16 @@ def install_migbot(project_path: str, ios_path: str = None, repo_root: str = Non
     # 验证安装
     print("\n📊 安装验证:")
     i2h_commands = list((claude_dir / "commands").glob("i2h-*.md"))
-    i2h_skills = [d for d in (claude_dir / "skills").iterdir() if d.is_dir() and d.name.startswith("i2h-")]
+    all_skills = [d for d in (claude_dir / "skills").iterdir() if d.is_dir()]
+    i2h_skills = [d for d in all_skills if d.name.startswith("i2h-")]
+    ios_skills = [d for d in all_skills if d.name.startswith("ios")]
+    arkts_skills = [d for d in all_skills if d.name.startswith("arkts-")]
     print(f"   .claude/commands/: {len(i2h_commands)} 个 i2h 命令")
-    print(f"   .claude/skills/: {len(i2h_skills)} 个 i2h skills")
+    print(f"   .claude/skills/: {len(all_skills)} 个 skills")
+    print(f"      - i2h 流水线: {len(i2h_skills)} 个")
+    print(f"      - iOS 特定: {len(ios_skills)} 个")
+    print(f"      - ArkTS 通用: {len(arkts_skills)} 个")
+    print(f"      - 其他工具: {len(all_skills) - len(i2h_skills) - len(ios_skills) - len(arkts_skills)} 个")
     print(f"   .migbot/bin/scripts/: {len(list((bin_dir / 'scripts').rglob('*.py')))} 个脚本")
 
     if is_upgrade:
@@ -201,7 +260,7 @@ def install_migbot(project_path: str, ios_path: str = None, repo_root: str = Non
 更新内容:
   ✅ 已清理旧的 a2h 文件
   ✅ .claude/commands/ (i2h 命令已更新)
-  ✅ .claude/skills/ (i2h skills 已更新)
+  ✅ .claude/skills/ (i2h + iOS + arkts 通用 skills 已更新)
   ✅ .migbot/bin/scripts/ (脚本已更新)
   ✅ 用户配置已保留
 
@@ -217,7 +276,10 @@ def install_migbot(project_path: str, ios_path: str = None, repo_root: str = Non
 
 安装清单:
   ✅ .claude/commands/ ({len(i2h_commands)} 个 i2h 命令)
-  ✅ .claude/skills/ ({len(i2h_skills)} 个 i2h skills)
+  ✅ .claude/skills/ ({len(all_skills)} 个 skills)
+     - i2h 流水线: {len(i2h_skills)} 个
+     - iOS 特定: {len(ios_skills)} 个
+     - ArkTS 通用: {len(arkts_skills)} 个
   ✅ .migbot/bin/scripts/ (所有脚本)
   ✅ .migbot/config.json (配置)
   ✅ spec/ (目录结构)

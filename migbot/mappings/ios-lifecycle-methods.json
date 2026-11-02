@@ -1,0 +1,373 @@
+{
+  "version": "1.0.0",
+  "description": "iOS lifecycle methods to ArkUI lifecycle mapping",
+
+  "uikit_view_controller_lifecycle": {
+    "init": {
+      "arkui": "constructor or aboutToAppear",
+      "timing": "Component creation",
+      "mapping": "initialization",
+      "note": "Initialization logic can go in constructor or aboutToAppear",
+      "example": {
+        "swift": "override func viewDidLoad() {\n  super.viewDidLoad()\n  setupUI()\n}",
+        "arkts": "aboutToAppear() {\n  this.setupUI()\n}"
+      }
+    },
+    "loadView": {
+      "arkui": "build()",
+      "timing": "View hierarchy construction",
+      "mapping": "view-building",
+      "note": "ArkUI build() method constructs the view tree declaratively"
+    },
+    "viewDidLoad": {
+      "arkui": "aboutToAppear()",
+      "timing": "After view loaded, before appearing",
+      "mapping": "direct",
+      "note": "One-time setup logic, similar timing to viewDidLoad",
+      "use_cases": [
+        "Initialize data",
+        "Set up observers",
+        "Start network requests",
+        "Configure view state"
+      ]
+    },
+    "viewWillAppear": {
+      "arkui": "onPageShow()",
+      "timing": "Before view appears on screen",
+      "mapping": "page-show",
+      "note": "Called each time page is about to show",
+      "use_cases": [
+        "Refresh data",
+        "Update UI state",
+        "Start animations",
+        "Register listeners"
+      ]
+    },
+    "viewDidAppear": {
+      "arkui": "onPageShow()",
+      "timing": "After view appeared on screen",
+      "mapping": "page-show",
+      "note": "Swift has separate will/did, ArkUI has single onPageShow",
+      "migration_strategy": "Combine viewWillAppear and viewDidAppear logic into onPageShow"
+    },
+    "viewWillDisappear": {
+      "arkui": "onPageHide()",
+      "timing": "Before view disappears from screen",
+      "mapping": "page-hide",
+      "note": "Called when navigating away",
+      "use_cases": [
+        "Save state",
+        "Pause animations",
+        "Unregister listeners",
+        "Clean up resources"
+      ]
+    },
+    "viewDidDisappear": {
+      "arkui": "onPageHide()",
+      "timing": "After view disappeared from screen",
+      "mapping": "page-hide",
+      "note": "Combine viewWillDisappear and viewDidDisappear into onPageHide"
+    },
+    "viewWillLayoutSubviews": {
+      "arkui": "onAreaChange()",
+      "timing": "Before layout pass",
+      "mapping": "layout-callback",
+      "note": "Called when component area changes",
+      "example": {
+        "arkts": ".onAreaChange((oldArea, newArea) => {\n  // Respond to size changes\n})"
+      }
+    },
+    "viewDidLayoutSubviews": {
+      "arkui": "onAreaChange()",
+      "timing": "After layout pass",
+      "mapping": "layout-callback",
+      "note": "Combine layout methods into onAreaChange"
+    },
+    "viewWillTransition": {
+      "arkui": "onAreaChange() + display.on('change')",
+      "timing": "Size class or rotation change",
+      "mapping": "orientation-change",
+      "note": "Listen to display orientation changes"
+    },
+    "deinit": {
+      "arkui": "aboutToDisappear()",
+      "timing": "Component destruction",
+      "mapping": "cleanup",
+      "note": "Clean up resources, remove observers",
+      "use_cases": [
+        "Remove observers",
+        "Cancel timers",
+        "Clean up resources",
+        "Close connections"
+      ]
+    }
+  },
+
+  "uikit_view_lifecycle": {
+    "init": {
+      "arkui": "constructor",
+      "timing": "View initialization"
+    },
+    "willMove(toSuperview:)": {
+      "arkui": "aboutToAppear()",
+      "timing": "Before added to parent",
+      "mapping": "appear-lifecycle"
+    },
+    "didMoveToSuperview": {
+      "arkui": "onAppear callback",
+      "timing": "After added to parent",
+      "mapping": "appear-callback"
+    },
+    "willMove(toWindow:)": {
+      "arkui": "aboutToAppear()",
+      "timing": "Before added to window"
+    },
+    "didMoveToWindow": {
+      "arkui": "onAppear callback",
+      "timing": "After added to window"
+    },
+    "layoutSubviews": {
+      "arkui": "onAreaChange()",
+      "timing": "Layout pass",
+      "mapping": "layout-callback"
+    },
+    "draw": {
+      "arkui": "Canvas + CanvasRenderingContext2D",
+      "timing": "Custom drawing",
+      "mapping": "custom-drawing",
+      "note": "Use Canvas component for custom drawing"
+    },
+    "removeFromSuperview": {
+      "arkui": "aboutToDisappear()",
+      "timing": "Component removal",
+      "mapping": "disappear-lifecycle"
+    }
+  },
+
+  "swiftui_lifecycle": {
+    "init": {
+      "arkui": "constructor",
+      "timing": "Component creation",
+      "mapping": "initialization"
+    },
+    "onAppear": {
+      "arkui": "onPageShow()",
+      "timing": "View appears",
+      "mapping": "direct",
+      "note": "Called when component becomes visible",
+      "example": {
+        "swift": ".onAppear { loadData() }",
+        "arkts": ".onPageShow(() => { this.loadData() })"
+      }
+    },
+    "onDisappear": {
+      "arkui": "onPageHide()",
+      "timing": "View disappears",
+      "mapping": "direct",
+      "note": "Called when component becomes hidden"
+    },
+    "onChange": {
+      "arkui": ".onChange() or @Watch",
+      "timing": "State changes",
+      "mapping": "state-observer",
+      "note": "Watch for state property changes",
+      "example": {
+        "swift": ".onChange(of: searchText) { newValue in search(newValue) }",
+        "arkts": "@Watch('onSearchTextChange') searchText: string\nonSearchTextChange() { this.search(this.searchText) }"
+      }
+    },
+    "task": {
+      "arkui": "aboutToAppear() + async",
+      "timing": "Async work on appear",
+      "mapping": "async-lifecycle",
+      "note": "Use aboutToAppear with async operations",
+      "example": {
+        "swift": ".task { await loadData() }",
+        "arkts": "async aboutToAppear() { await this.loadData() }"
+      }
+    },
+    "onReceive": {
+      "arkui": "emitter.on() or observer pattern",
+      "timing": "Receive publisher events",
+      "mapping": "event-subscription",
+      "note": "Use emitter or custom observer pattern"
+    }
+  },
+
+  "app_lifecycle": {
+    "UIApplicationDelegate": {
+      "didFinishLaunchingWithOptions": {
+        "arkui": "onCreate() in UIAbility",
+        "timing": "App launch",
+        "mapping": "ability-lifecycle"
+      },
+      "applicationWillEnterForeground": {
+        "arkui": "onForeground() in UIAbility",
+        "timing": "App enters foreground",
+        "mapping": "ability-lifecycle"
+      },
+      "applicationDidBecomeActive": {
+        "arkui": "onForeground() in UIAbility",
+        "timing": "App becomes active",
+        "mapping": "ability-lifecycle"
+      },
+      "applicationWillResignActive": {
+        "arkui": "onBackground() in UIAbility",
+        "timing": "App resigns active",
+        "mapping": "ability-lifecycle"
+      },
+      "applicationDidEnterBackground": {
+        "arkui": "onBackground() in UIAbility",
+        "timing": "App enters background",
+        "mapping": "ability-lifecycle"
+      },
+      "applicationWillTerminate": {
+        "arkui": "onDestroy() in UIAbility",
+        "timing": "App termination",
+        "mapping": "ability-lifecycle"
+      }
+    },
+    "SwiftUI_App": {
+      "init": {
+        "arkui": "onCreate() in UIAbility",
+        "timing": "App initialization"
+      },
+      "scenePhase": {
+        "arkui": "UIAbility lifecycle methods",
+        "timing": "Scene phase changes",
+        "mapping": "ability-lifecycle",
+        "values": {
+          "active": "onForeground()",
+          "inactive": "onBackground()",
+          "background": "onBackground()"
+        }
+      }
+    }
+  },
+
+  "view_controller_transitions": {
+    "prepare(for:sender:)": {
+      "arkui": "router.pushUrl with params",
+      "timing": "Before navigation",
+      "mapping": "navigation-params",
+      "note": "Pass data via router params",
+      "example": {
+        "swift": "override func prepare(for segue: UIStoryboardSegue, sender: Any?) {\n  if let dest = segue.destination as? DetailVC {\n    dest.item = selectedItem\n  }\n}",
+        "arkts": "router.pushUrl({\n  url: 'pages/Detail',\n  params: { item: this.selectedItem }\n})"
+      }
+    },
+    "viewWillTransition(to:with:)": {
+      "arkui": "onAreaChange() + display listener",
+      "timing": "Size transition",
+      "mapping": "size-change"
+    },
+    "willMove(toParent:)": {
+      "arkui": "No direct equivalent",
+      "timing": "Child VC container management",
+      "mapping": "not-applicable",
+      "note": "ArkUI uses declarative component hierarchy"
+    },
+    "didMove(toParent:)": {
+      "arkui": "No direct equivalent",
+      "timing": "Child VC container management",
+      "mapping": "not-applicable"
+    }
+  },
+
+  "presentation_lifecycle": {
+    "present(_:animated:completion:)": {
+      "arkui": "router.pushUrl() or custom dialog",
+      "timing": "Modal presentation",
+      "mapping": "navigation-or-dialog",
+      "note": "Use router for full-screen, dialog for modal sheets"
+    },
+    "dismiss(animated:completion:)": {
+      "arkui": "router.back()",
+      "timing": "Modal dismissal",
+      "mapping": "navigation-back"
+    },
+    "presentationControllerDidDismiss": {
+      "arkui": "Navigation callback or @Provide/@Consume",
+      "timing": "After dismiss",
+      "mapping": "callback-pattern",
+      "note": "Use callbacks or state management for post-dismiss logic"
+    }
+  },
+
+  "memory_warnings": {
+    "didReceiveMemoryWarning": {
+      "arkui": "No direct equivalent",
+      "timing": "Low memory warning",
+      "mapping": "not-applicable",
+      "note": "HarmonyOS has automatic memory management",
+      "alternative": "Let system handle memory, focus on efficient code"
+    }
+  },
+
+  "state_restoration": {
+    "encodeRestorableState": {
+      "arkui": "PersistentStorage or AppStorage",
+      "timing": "State preservation",
+      "mapping": "persistent-storage"
+    },
+    "decodeRestorableState": {
+      "arkui": "Load from PersistentStorage",
+      "timing": "State restoration",
+      "mapping": "persistent-storage"
+    }
+  },
+
+  "migration_patterns": {
+    "uikit_page_lifecycle": {
+      "description": "Complete UIViewController lifecycle migration",
+      "swift": "class MyViewController: UIViewController {\n  override func viewDidLoad() {\n    super.viewDidLoad()\n    setupUI()\n  }\n  \n  override func viewWillAppear(_ animated: Bool) {\n    super.viewWillAppear(animated)\n    refreshData()\n  }\n  \n  override func viewWillDisappear(_ animated: Bool) {\n    super.viewWillDisappear(animated)\n    saveState()\n  }\n}",
+      "arkts": "@Entry\n@Component\nstruct MyPage {\n  aboutToAppear() {\n    this.setupUI()\n  }\n  \n  onPageShow() {\n    this.refreshData()\n  }\n  \n  onPageHide() {\n    this.saveState()\n  }\n  \n  aboutToDisappear() {\n    // cleanup\n  }\n  \n  build() {\n    Column() {\n      // UI here\n    }\n  }\n}"
+    },
+    "swiftui_view_lifecycle": {
+      "description": "SwiftUI view lifecycle migration",
+      "swift": "struct MyView: View {\n  var body: some View {\n    Text(\"Hello\")\n      .onAppear { loadData() }\n      .onDisappear { cleanup() }\n      .onChange(of: searchText) { newValue in\n        search(newValue)\n      }\n  }\n}",
+      "arkts": "@Component\nstruct MyView {\n  onPageShow() {\n    this.loadData()\n  }\n  \n  onPageHide() {\n    this.cleanup()\n  }\n  \n  @Watch('onSearchTextChange')\n  @State searchText: string = ''\n  \n  onSearchTextChange() {\n    this.search(this.searchText)\n  }\n  \n  build() {\n    Text('Hello')\n  }\n}"
+    },
+    "app_lifecycle_migration": {
+      "description": "App lifecycle migration",
+      "swift": "class AppDelegate: UIResponder, UIApplicationDelegate {\n  func application(_ application: UIApplication,\n                   didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {\n    setupApp()\n    return true\n  }\n  \n  func applicationDidEnterBackground(_ application: UIApplication) {\n    saveState()\n  }\n}",
+      "arkts": "// In EntryAbility.ets\nexport default class EntryAbility extends UIAbility {\n  onCreate(want: Want, launchParam: AbilityConstant.LaunchParam) {\n    this.setupApp()\n  }\n  \n  onBackground() {\n    this.saveState()\n  }\n  \n  onForeground() {\n    this.refreshState()\n  }\n  \n  onDestroy() {\n    this.cleanup()\n  }\n}"
+    }
+  },
+
+  "timing_comparison": {
+    "description": "Lifecycle timing comparison between iOS and ArkUI",
+    "table": [
+      {
+        "event": "Component Creation",
+        "uikit": "init -> loadView -> viewDidLoad",
+        "swiftui": "init",
+        "arkui": "constructor -> aboutToAppear"
+      },
+      {
+        "event": "First Appearance",
+        "uikit": "viewWillAppear -> viewDidAppear",
+        "swiftui": "onAppear",
+        "arkui": "onPageShow"
+      },
+      {
+        "event": "Layout",
+        "uikit": "viewWillLayoutSubviews -> viewDidLayoutSubviews",
+        "swiftui": "implicit",
+        "arkui": "onAreaChange"
+      },
+      {
+        "event": "Disappearance",
+        "uikit": "viewWillDisappear -> viewDidDisappear",
+        "swiftui": "onDisappear",
+        "arkui": "onPageHide"
+      },
+      {
+        "event": "Destruction",
+        "uikit": "deinit",
+        "swiftui": "implicit",
+        "arkui": "aboutToDisappear"
+      }
+    ]
+  }
+}

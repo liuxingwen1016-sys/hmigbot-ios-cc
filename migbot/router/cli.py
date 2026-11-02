@@ -1,5 +1,5 @@
 """CLI for the migration-strategy router. Invoked directly or via the installed
-a2h-router.py launcher (which adds the package router dir to sys.path first)."""
+i2h-router.py launcher (which adds the package router dir to sys.path first)."""
 
 import json
 import os
@@ -12,10 +12,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from profiles import apply_pending, cancel_request, recover_switch, request_switch, router_status  # noqa: E402
 
 
-HELP = """用法：python3 .migbot/bin/a2h-router.py [--project <工程>] [--profile standard|1to1] [--dry-run] [--backup-modified]
+HELP = """用法：python3 .migbot/bin/i2h-router.py [--project <工程>] [--profile standard|1to1] [--dry-run] [--backup-modified]
 不传 --profile：只查看当前策略。--profile X：提交切换（Claude Code 无会话空闲回调，默认排队）；加 --offline 立即应用。
 --offline（不带 --profile）：应用已排队的请求。--cancel：取消待处理请求。--recover --offline：恢复中断事务。
-首次安装默认 standard；/a2h-init 最后会提问选择迁移策略，并用 --profile … --offline 提交替换。"""
+首次安装默认 standard；/i2h-init 最后会提问选择迁移策略，并用 --profile … --offline 提交替换。"""
 
 
 def main(args=None):
@@ -72,10 +72,10 @@ def main(args=None):
         elif result.get("status") == "applied":
             print("磁盘资源已切换。agents/skills 会在当前会话内自动拾取（agent watcher 几秒内生效）；commands 两个策略相同、不随切换改变，无需 /reload-plugins。若宿主报新 skill/agent 不可见，用 /reload-skills 兜底；已有迁移产物不会被转换。")
         if result.get("status") == "failed":
-            print(f"A2H_ROUTER=FAIL\n{result.get('error', '')}", file=sys.stderr)
+            print(f"I2H_ROUTER=FAIL\n{result.get('error', '')}", file=sys.stderr)
             sys.exit(1)
     except Exception as exc:
-        print(f"A2H_ROUTER=FAIL\n{exc}", file=sys.stderr)
+        print(f"I2H_ROUTER=FAIL\n{exc}", file=sys.stderr)
         sys.exit(1)
 
 

@@ -1,0 +1,384 @@
+{
+  "version": "1.0.0",
+  "description": "UIKit to ArkUI component mappings",
+
+  "views": {
+    "UIView": {
+      "arkui": "Component",
+      "complexity": 1,
+      "mapping": "base-class",
+      "note": "Base view class, map to custom Component"
+    },
+    "UILabel": {
+      "arkui": "Text",
+      "complexity": 0,
+      "mapping": "direct",
+      "properties": {
+        "text": "text",
+        "textColor": "fontColor",
+        "font": "fontSize + fontFamily",
+        "textAlignment": "textAlign",
+        "numberOfLines": "maxLines"
+      }
+    },
+    "UIButton": {
+      "arkui": "Button",
+      "complexity": 1,
+      "mapping": "component",
+      "properties": {
+        "setTitle": "Button text",
+        "setTitleColor": "fontColor",
+        "backgroundColor": "backgroundColor"
+      },
+      "events": {
+        "addTarget:action:for:": "onClick"
+      }
+    },
+    "UIImageView": {
+      "arkui": "Image",
+      "complexity": 0,
+      "mapping": "direct",
+      "properties": {
+        "image": "Image($r('app.media.xxx'))",
+        "contentMode": "objectFit"
+      }
+    },
+    "UITextField": {
+      "arkui": "TextInput",
+      "complexity": 1,
+      "mapping": "component",
+      "properties": {
+        "text": "text",
+        "placeholder": "placeholder",
+        "isSecureTextEntry": "type: InputType.Password",
+        "keyboardType": "type"
+      },
+      "events": {
+        "addTarget": "onChange"
+      }
+    },
+    "UITextView": {
+      "arkui": "TextArea",
+      "complexity": 1,
+      "mapping": "component",
+      "properties": {
+        "text": "text",
+        "font": "fontSize + fontFamily",
+        "textColor": "fontColor"
+      }
+    },
+    "UITableView": {
+      "arkui": "List",
+      "complexity": 3,
+      "mapping": "complex",
+      "note": "Requires dataSource and delegate conversion to @Builder",
+      "properties": {
+        "dataSource": "ForEach data array",
+        "delegate": "@Builder item template"
+      }
+    },
+    "UICollectionView": {
+      "arkui": "Grid",
+      "complexity": 3,
+      "mapping": "complex",
+      "note": "Requires layout and dataSource conversion",
+      "properties": {
+        "dataSource": "ForEach data array",
+        "layout": "columnsTemplate or rowsTemplate"
+      }
+    },
+    "UIScrollView": {
+      "arkui": "Scroll",
+      "complexity": 1,
+      "mapping": "wrapper",
+      "properties": {
+        "contentSize": "calculated from children",
+        "showsHorizontalScrollIndicator": "scrollBar: BarState.Auto",
+        "showsVerticalScrollIndicator": "scrollBar: BarState.Auto"
+      }
+    },
+    "UIStackView": {
+      "arkui": "Column or Row",
+      "complexity": 1,
+      "mapping": "conditional",
+      "note": "Map to Column (vertical) or Row (horizontal)",
+      "properties": {
+        "axis": "Column or Row",
+        "spacing": "space",
+        "alignment": "alignItems",
+        "distribution": "justifyContent"
+      }
+    },
+    "UISwitch": {
+      "arkui": "Toggle",
+      "complexity": 0,
+      "mapping": "direct",
+      "properties": {
+        "isOn": "isOn",
+        "onTintColor": "selectedColor"
+      },
+      "events": {
+        "addTarget": "onChange"
+      }
+    },
+    "UISlider": {
+      "arkui": "Slider",
+      "complexity": 0,
+      "mapping": "direct",
+      "properties": {
+        "value": "value",
+        "minimumValue": "min",
+        "maximumValue": "max"
+      },
+      "events": {
+        "addTarget": "onChange"
+      }
+    },
+    "UIProgressView": {
+      "arkui": "Progress",
+      "complexity": 0,
+      "mapping": "direct",
+      "properties": {
+        "progress": "value",
+        "progressTintColor": "color"
+      }
+    },
+    "UIActivityIndicatorView": {
+      "arkui": "LoadingProgress",
+      "complexity": 0,
+      "mapping": "direct",
+      "properties": {
+        "isAnimating": "visibility"
+      }
+    },
+    "UINavigationController": {
+      "arkui": "Navigation",
+      "complexity": 3,
+      "mapping": "navigation-system",
+      "note": "Requires router-based navigation conversion"
+    },
+    "UITabBarController": {
+      "arkui": "Tabs",
+      "complexity": 2,
+      "mapping": "tabs-component",
+      "properties": {
+        "viewControllers": "TabContent array"
+      }
+    },
+    "UIAlertController": {
+      "arkui": "AlertDialog",
+      "complexity": 2,
+      "mapping": "dialog",
+      "note": "Convert to AlertDialog.show()"
+    },
+    "UISegmentedControl": {
+      "arkui": "Tabs (mode: BarMode.Fixed)",
+      "complexity": 1,
+      "mapping": "component"
+    },
+    "UIStepper": {
+      "arkui": "Counter",
+      "complexity": 0,
+      "mapping": "direct"
+    },
+    "UIDatePicker": {
+      "arkui": "DatePicker",
+      "complexity": 1,
+      "mapping": "direct"
+    },
+    "UIPickerView": {
+      "arkui": "TextPicker",
+      "complexity": 1,
+      "mapping": "component"
+    }
+  },
+
+  "view_controllers": {
+    "UIViewController": {
+      "arkui": "@Entry @Component struct Page",
+      "complexity": 2,
+      "mapping": "page-component",
+      "lifecycle": {
+        "viewDidLoad": "aboutToAppear",
+        "viewWillAppear": "onPageShow",
+        "viewDidAppear": "onPageShow",
+        "viewWillDisappear": "onPageHide",
+        "viewDidDisappear": "onPageHide",
+        "viewWillLayoutSubviews": "onAreaChange",
+        "viewDidLayoutSubviews": "onAreaChange"
+      }
+    },
+    "UITableViewController": {
+      "arkui": "@Component struct ListPage",
+      "complexity": 3,
+      "mapping": "list-page"
+    },
+    "UICollectionViewController": {
+      "arkui": "@Component struct GridPage",
+      "complexity": 3,
+      "mapping": "grid-page"
+    }
+  },
+
+  "attributes": {
+    "backgroundColor": {
+      "arkui": "backgroundColor",
+      "mapping": "direct"
+    },
+    "hidden": {
+      "arkui": "visibility",
+      "mapping": "enum",
+      "values": {
+        "true": "Visibility.Hidden",
+        "false": "Visibility.Visible"
+      }
+    },
+    "alpha": {
+      "arkui": "opacity",
+      "mapping": "direct"
+    },
+    "frame": {
+      "arkui": "width + height + position",
+      "mapping": "split",
+      "note": "CGRect(x, y, width, height) -> width/height/position"
+    },
+    "bounds": {
+      "arkui": "width + height",
+      "mapping": "split"
+    },
+    "center": {
+      "arkui": "position",
+      "mapping": "coordinate-conversion"
+    },
+    "transform": {
+      "arkui": "rotate + scale + translate",
+      "mapping": "transform-matrix"
+    },
+    "clipsToBounds": {
+      "arkui": "clip",
+      "mapping": "boolean"
+    },
+    "layer.cornerRadius": {
+      "arkui": "borderRadius",
+      "mapping": "direct"
+    },
+    "layer.borderWidth": {
+      "arkui": "border.width",
+      "mapping": "direct"
+    },
+    "layer.borderColor": {
+      "arkui": "border.color",
+      "mapping": "color-conversion"
+    },
+    "layer.shadowColor": {
+      "arkui": "shadow.color",
+      "mapping": "color-conversion"
+    },
+    "layer.shadowOffset": {
+      "arkui": "shadow.offsetX + offsetY",
+      "mapping": "split"
+    },
+    "layer.shadowOpacity": {
+      "arkui": "shadow.color alpha",
+      "mapping": "opacity-in-color"
+    },
+    "layer.shadowRadius": {
+      "arkui": "shadow.radius",
+      "mapping": "direct"
+    }
+  },
+
+  "events": {
+    "touchUpInside": {
+      "arkui": "onClick",
+      "mapping": "direct"
+    },
+    "touchDown": {
+      "arkui": "onTouch (type: TouchType.Down)",
+      "mapping": "touch-event"
+    },
+    "valueChanged": {
+      "arkui": "onChange",
+      "mapping": "direct"
+    },
+    "editingChanged": {
+      "arkui": "onChange",
+      "mapping": "direct"
+    },
+    "editingDidBegin": {
+      "arkui": "onEditChange (true)",
+      "mapping": "editing-state"
+    },
+    "editingDidEnd": {
+      "arkui": "onEditChange (false)",
+      "mapping": "editing-state"
+    }
+  },
+
+  "constraints": {
+    "NSLayoutConstraint": {
+      "arkui": "Layout modifiers",
+      "complexity": 2,
+      "mapping": "layout-conversion",
+      "note": "Convert Auto Layout to ArkUI layout system"
+    },
+    "centerXAnchor": {
+      "arkui": "center alignment or position",
+      "mapping": "alignment"
+    },
+    "centerYAnchor": {
+      "arkui": "center alignment or position",
+      "mapping": "alignment"
+    },
+    "widthAnchor": {
+      "arkui": "width",
+      "mapping": "direct"
+    },
+    "heightAnchor": {
+      "arkui": "height",
+      "mapping": "direct"
+    },
+    "topAnchor": {
+      "arkui": "position.y or margin.top",
+      "mapping": "position-or-margin"
+    },
+    "bottomAnchor": {
+      "arkui": "margin.bottom",
+      "mapping": "margin"
+    },
+    "leadingAnchor": {
+      "arkui": "position.x or margin.left",
+      "mapping": "position-or-margin"
+    },
+    "trailingAnchor": {
+      "arkui": "margin.right",
+      "mapping": "margin"
+    }
+  },
+
+  "colors": {
+    "UIColor.systemRed": "Color.Red",
+    "UIColor.systemBlue": "Color.Blue",
+    "UIColor.systemGreen": "Color.Green",
+    "UIColor.systemYellow": "Color.Yellow",
+    "UIColor.systemOrange": "Color.Orange",
+    "UIColor.systemPink": "Color.Pink",
+    "UIColor.systemPurple": "#AF52DE",
+    "UIColor.systemTeal": "#5AC8FA",
+    "UIColor.systemIndigo": "#5856D6",
+    "UIColor.systemGray": "Color.Grey",
+    "UIColor.label": "$r('sys.color.ohos_id_color_text_primary')",
+    "UIColor.secondaryLabel": "$r('sys.color.ohos_id_color_text_secondary')",
+    "UIColor.systemBackground": "$r('sys.color.ohos_id_color_background')",
+    "UIColor.white": "Color.White",
+    "UIColor.black": "Color.Black",
+    "UIColor.clear": "Color.Transparent"
+  },
+
+  "fonts": {
+    "UIFont.systemFont": "Font.Default",
+    "UIFont.boldSystemFont": "FontWeight.Bold",
+    "UIFont.italicSystemFont": "FontStyle.Italic",
+    "UIFont.preferredFont": "$r('sys.float.ohos_id_text_size_xxx')"
+  }
+}

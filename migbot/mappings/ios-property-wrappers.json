@@ -1,0 +1,295 @@
+{
+  "version": "1.0.0",
+  "description": "iOS property wrappers to ArkUI decorators mapping",
+
+  "swiftui_property_wrappers": {
+    "@State": {
+      "arkui": "@State",
+      "complexity": 0,
+      "mapping": "direct",
+      "note": "Direct mapping - both are local component state",
+      "example": {
+        "swift": "@State private var count: Int = 0",
+        "arkts": "@State count: number = 0"
+      },
+      "requirements": [
+        "Must be mutable",
+        "Triggers view refresh on change",
+        "Local to the component"
+      ]
+    },
+    "@Binding": {
+      "arkui": "@Link",
+      "complexity": 1,
+      "mapping": "two-way-binding",
+      "note": "Two-way binding between parent and child",
+      "example": {
+        "swift": "@Binding var isOn: Bool",
+        "arkts": "@Link isOn: boolean"
+      },
+      "requirements": [
+        "Parent passes with $variable syntax",
+        "Child can read and write",
+        "Changes propagate both ways"
+      ]
+    },
+    "@ObservedObject": {
+      "arkui": "@ObjectLink",
+      "complexity": 2,
+      "mapping": "observable-object",
+      "note": "Requires class to be marked with @Observed",
+      "example": {
+        "swift": "@ObservedObject var viewModel: MyViewModel",
+        "arkts": "@ObjectLink viewModel: MyViewModel // class must be @Observed"
+      },
+      "requirements": [
+        "Class must be decorated with @Observed",
+        "Properties must be decorated with @Track",
+        "Object is passed from parent"
+      ]
+    },
+    "@StateObject": {
+      "arkui": "@State + @Observed class",
+      "complexity": 2,
+      "mapping": "owned-observable",
+      "note": "Component owns the observable object lifecycle",
+      "example": {
+        "swift": "@StateObject var viewModel = MyViewModel()",
+        "arkts": "@State viewModel: MyViewModel = new MyViewModel()"
+      },
+      "requirements": [
+        "Component owns the object",
+        "Object class should be @Observed",
+        "Use @State for ownership"
+      ]
+    },
+    "@EnvironmentObject": {
+      "arkui": "@Consume",
+      "complexity": 2,
+      "mapping": "dependency-injection",
+      "note": "Global state injection from ancestor",
+      "example": {
+        "swift": "@EnvironmentObject var settings: AppSettings",
+        "arkts": "@Consume settings: AppSettings // parent uses @Provide"
+      },
+      "requirements": [
+        "Ancestor must @Provide the same object",
+        "Type must match exactly",
+        "Can skip intermediate components"
+      ]
+    },
+    "@Published": {
+      "arkui": "@Track",
+      "complexity": 1,
+      "mapping": "observable-property",
+      "note": "Makes property observable in @Observed class",
+      "example": {
+        "swift": "@Published var count: Int = 0",
+        "arkts": "@Track count: number = 0 // inside @Observed class"
+      },
+      "requirements": [
+        "Must be inside @Observed class",
+        "Triggers observer updates on change",
+        "Works with @ObjectLink"
+      ]
+    },
+    "@Environment": {
+      "arkui": "@StorageLink or system API",
+      "complexity": 2,
+      "mapping": "environment-value",
+      "note": "System environment values - some have direct mappings",
+      "mappings": {
+        "@Environment(\\.colorScheme)": "@StorageProp('colorMode') or system API",
+        "@Environment(\\.locale)": "system locale API",
+        "@Environment(\\.presentationMode)": "router.back()",
+        "@Environment(\\.dismiss)": "router.back()",
+        "@Environment(\\.scenePhase)": "Ability lifecycle"
+      }
+    },
+    "@AppStorage": {
+      "arkui": "@StorageLink",
+      "complexity": 1,
+      "mapping": "persistent-storage",
+      "note": "Persistent user defaults storage",
+      "example": {
+        "swift": "@AppStorage(\"username\") var username: String = \"\"",
+        "arkts": "@StorageLink('username') username: string = '' // need PersistentStorage.PersistProp"
+      },
+      "requirements": [
+        "Call PersistentStorage.PersistProp('key', defaultValue) at app start",
+        "Type must be serializable",
+        "Syncs across app instances"
+      ]
+    },
+    "@SceneStorage": {
+      "arkui": "@LocalStorageLink",
+      "complexity": 2,
+      "mapping": "scene-storage",
+      "note": "Storage scoped to scene/window",
+      "example": {
+        "swift": "@SceneStorage(\"selectedTab\") var selectedTab: Int = 0",
+        "arkts": "@LocalStorageLink('selectedTab') selectedTab: number = 0"
+      },
+      "requirements": [
+        "Scoped to current window/ability",
+        "Not shared across abilities",
+        "Survives view recreation"
+      ]
+    },
+    "@FetchRequest": {
+      "arkui": "No direct equivalent",
+      "complexity": 3,
+      "mapping": "manual-implementation",
+      "note": "Core Data fetch - need manual data layer implementation",
+      "alternative": "Use RelationalStore or custom data layer with @State"
+    },
+    "@FocusState": {
+      "arkui": "focusControl()",
+      "complexity": 2,
+      "mapping": "focus-management",
+      "note": "Focus management - use focusControl API",
+      "example": {
+        "swift": "@FocusState var isFocused: Bool",
+        "arkts": "focusControl.requestFocus('fieldId') // imperative API"
+      }
+    },
+    "@GestureState": {
+      "arkui": "@State + gesture callback",
+      "complexity": 2,
+      "mapping": "gesture-state",
+      "note": "Gesture state management",
+      "example": {
+        "swift": "@GestureState var offset: CGSize = .zero",
+        "arkts": "@State offset: Size = {width: 0, height: 0}"
+      }
+    },
+    "@Namespace": {
+      "arkui": "geometryTransition id",
+      "complexity": 2,
+      "mapping": "animation-namespace",
+      "note": "Matched geometry effect namespace",
+      "example": {
+        "swift": "@Namespace var animation",
+        "arkts": "geometryTransition('animationId')"
+      }
+    },
+    "@ScaledMetric": {
+      "arkui": "vp or fp units",
+      "complexity": 1,
+      "mapping": "dynamic-sizing",
+      "note": "Dynamic type scaling - use vp/fp units",
+      "example": {
+        "swift": "@ScaledMetric var size: CGFloat = 20",
+        "arkts": "fontSize($r('sys.float.ohos_id_text_size_body'))"
+      }
+    }
+  },
+
+  "uikit_property_wrappers": {
+    "@IBOutlet": {
+      "arkui": "@State or direct reference",
+      "complexity": 1,
+      "mapping": "state-variable",
+      "note": "Convert Interface Builder outlet to state variable or builder function",
+      "example": {
+        "swift": "@IBOutlet weak var label: UILabel!",
+        "arkts": "@State labelText: string = '' // manage data, not view reference"
+      },
+      "requirements": [
+        "Don't store view references in ArkUI",
+        "Manage data/state instead",
+        "Use @Builder for subcomponents"
+      ]
+    },
+    "@IBAction": {
+      "arkui": "onClick callback",
+      "complexity": 0,
+      "mapping": "event-handler",
+      "note": "Convert to event handler callback",
+      "example": {
+        "swift": "@IBAction func buttonTapped(_ sender: UIButton)",
+        "arkts": "Button().onClick(() => { this.buttonTapped() })"
+      }
+    },
+    "@IBInspectable": {
+      "arkui": "constructor parameter",
+      "complexity": 1,
+      "mapping": "component-property",
+      "note": "Convert to component initialization parameter"
+    },
+    "@IBDesignable": {
+      "arkui": "No equivalent",
+      "complexity": 0,
+      "mapping": "not-applicable",
+      "note": "Interface Builder preview - not needed in ArkUI"
+    },
+    "@objc": {
+      "arkui": "No equivalent",
+      "complexity": 0,
+      "mapping": "not-applicable",
+      "note": "Objective-C interop - not needed in ArkTS"
+    }
+  },
+
+  "combine_property_wrappers": {
+    "@Published": {
+      "arkui": "@Track",
+      "complexity": 1,
+      "mapping": "observable-property",
+      "note": "Same as SwiftUI @Published"
+    }
+  },
+
+  "migration_patterns": {
+    "view_model_pattern": {
+      "description": "Observable ViewModel pattern migration",
+      "swift": "class MyViewModel: ObservableObject {\n  @Published var items: [Item] = []\n  @Published var isLoading: Bool = false\n}",
+      "arkts": "@Observed\nclass MyViewModel {\n  @Track items: Item[] = []\n  @Track isLoading: boolean = false\n}",
+      "usage_swift": "@StateObject var viewModel = MyViewModel()",
+      "usage_arkts": "@State viewModel: MyViewModel = new MyViewModel()"
+    },
+    "parent_child_binding": {
+      "description": "Parent-child two-way binding",
+      "parent_swift": "@State var text: String = \"\"\nChildView(text: $text)",
+      "parent_arkts": "@State text: string = ''\nChildView({text: $text})",
+      "child_swift": "@Binding var text: String",
+      "child_arkts": "@Link text: string"
+    },
+    "environment_injection": {
+      "description": "Environment object injection pattern",
+      "root_swift": "ContentView().environmentObject(appSettings)",
+      "root_arkts": "@Provide appSettings: AppSettings = new AppSettings()\nContentView()",
+      "consumer_swift": "@EnvironmentObject var appSettings: AppSettings",
+      "consumer_arkts": "@Consume appSettings: AppSettings"
+    },
+    "persistent_storage": {
+      "description": "Persistent storage pattern",
+      "setup_arkts": "// In app entry point\nPersistentStorage.PersistProp('username', '')\nPersistentStorage.PersistProp('isDarkMode', false)",
+      "usage_swift": "@AppStorage(\"username\") var username: String = \"\"",
+      "usage_arkts": "@StorageLink('username') username: string = ''"
+    }
+  },
+
+  "common_pitfalls": {
+    "state_in_non_component": {
+      "issue": "@State can only be used in @Component struct",
+      "solution": "Use regular properties in non-component classes, use @Observed/@Track for observable classes"
+    },
+    "link_without_dollar": {
+      "issue": "Forgetting $ syntax when passing @Link from parent",
+      "solution": "Parent must pass $variable, child declares @Link variable"
+    },
+    "observed_without_track": {
+      "issue": "@Observed class properties not updating views",
+      "solution": "Mark properties with @Track to make them observable"
+    },
+    "consume_without_provide": {
+      "issue": "@Consume used without ancestor @Provide",
+      "solution": "Ensure ancestor component has @Provide with matching key and type"
+    },
+    "storage_link_not_initialized": {
+      "issue": "@StorageLink used without PersistentStorage.PersistProp",
+      "solution": "Call PersistentStorage.PersistProp at app startup"
+    }
+  }
+}

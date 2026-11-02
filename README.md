@@ -1,4 +1,6 @@
-# iOS → HarmonyOS 迁移工具
+# iOS MigBot
+
+iOS-to-ArkTS (HarmonyOS) migration toolkit for Claude Code.
 
 一个完整的、生产级的 iOS 到 HarmonyOS 自动迁移工具。
 
@@ -24,7 +26,12 @@
 
 ```bash
 cd /path/to/hmigbot-ios
-./install.sh --project /path/to/harmonyos/project --ios /path/to/ios/project
+./install.sh --project /path/to/HarmonyOSProject --ios /path/to/iOSApp
+```
+
+**示例**：
+```bash
+./install.sh --project ~/Projects/MyHarmonyApp --ios ~/Projects/MyiOSApp
 ```
 
 ### 2. 使用
@@ -32,11 +39,21 @@ cd /path/to/hmigbot-ios
 在 Claude Code 中打开鸿蒙项目，然后：
 
 ```bash
-# 初始化配置
-/i2h-init
+# 初始化配置（统一探测，一次确认）
+/i2h-init       # 英文版
+/i2h-init-zh    # 中文版
 
 # 运行完整迁移流水线
-/i2h-run
+/i2h-run        # 英文版
+/i2h-run-zh     # 中文版
+
+# 编译验证
+/i2h-build      # 英文版
+/i2h-build-zh   # 中文版
+
+# 隐私合规检查
+/i2h-privacy    # 英文版
+/i2h-privacy-zh # 中文版
 ```
 
 就这么简单！工具会自动完成：
@@ -55,9 +72,15 @@ cd /path/to/hmigbot-ios
 
 ## 📋 系统要求
 
+**前置条件**:
+- 源项目是 iOS 项目（包含 .xcodeproj 的 Xcode 项目）
+- 目标项目是 HarmonyOS 项目（包含 build-profile.json5）
+
+**环境要求**:
 - Python 3.8+
 - Claude Code（用于运行 skills）
 - DevEco Studio（用于编译验证）
+- Xcode（用于分析 iOS 项目）
 
 ## 🎓 核心设计
 
