@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Source-backed display fixture candidates and selected policies",
+  "type": "object",
+  "required": ["schema_version", "tool_version", "target_input_sha256", "kind", "owner", "fields", "missing_data", "business_wiring_complete"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "kind": {"const": "preview-fixture"},
+    "business_wiring_complete": {"const": false},
+    "source_constants_are_candidates": {"const": true},
+    "fields": {"type": "array", "items": {"type": "object", "required": ["name", "value", "owner", "source_ref", "evidence_kind"],
+      "properties": {"evidence_kind": {"enum": ["xml", "design_time", "source_constant", "source_literal_list", "preview_policy"]}}}},
+    "missing_data": {"type": "array", "items": {"type": "string"}}
+  }
+}

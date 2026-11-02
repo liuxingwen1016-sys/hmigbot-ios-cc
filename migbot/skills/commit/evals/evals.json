@@ -1,0 +1,146 @@
+{
+  "skill_name": "commit",
+  "evals": [
+    {
+      "id": 1,
+      "name": "1. 定位",
+      "prompt": "Use a task related to 1. 定位 — ArkTS 迁移/修复工作的 git commit 生成器，强制 7 字段结构化 commit message（大类/问题分类/Skill/工具/Spec参考/修复方式/Summary）。",
+      "expected_output": "Successfully complete the 1. 定位 task as defined in the Skill",
+      "files": [],
+      "expectations": [
+        "The output follows the commit skill instructions without errors"
+      ],
+      "assertions": [],
+      "fixtures": [],
+      "level": "L1",
+      "mode": ""
+    },
+    {
+      "id": 2,
+      "name": "2. 触发场景",
+      "prompt": "Use a task related to 2. 触发场景 — ArkTS 迁移/修复工作的 git commit 生成器，强制 7 字段结构化 commit message（大类/问题分类/Skill/工具/Spec参考/修复方式/Summary）。",
+      "expected_output": "Successfully complete the 2. 触发场景 workflow (3 steps) as defined in the Skill",
+      "files": [],
+      "expectations": [
+        "用户说\"commit\"、\"提交\"、\"记录这次修改\"、\"保存这次改动\"",
+        "ArkTS 转译/修复工作完成一个阶段后（编译通过、DT 测试转绿、功能新增完成）",
+        "a2h-execute / arkts-dt-autofix / a2h-verify 执行完毕后用户要求存档"
+      ],
+      "assertions": [],
+      "fixtures": [],
+      "level": "L1",
+      "mode": ""
+    },
+    {
+      "id": 3,
+      "name": "3. Commit Message Schema（7 字段）",
+      "prompt": "Use a task related to 3. Commit Message Schema（7 字段） — ArkTS 迁移/修复工作的 git commit 生成器，强制 7 字段结构化 commit message（大类/问题分类/Skill/工具/Spec参考/修复方式/Summary）。",
+      "expected_output": "Successfully complete the 3. Commit Message Schema（7 字段） workflow (4 steps) as defined in the Skill",
+      "files": [],
+      "expectations": [
+        "bug fix: 修正 LoginPage 状态未持久化问题",
+        "新加功能: 实现健身计划详情页数据绑定",
+        "DT测试: FEAT-003 从 RED 转 GREEN",
+        "编译错误: 修复 HomePage.ets 类型推断失败"
+      ],
+      "assertions": [],
+      "fixtures": [],
+      "level": "L1",
+      "mode": ""
+    },
+    {
+      "id": 4,
+      "name": "4. 执行流程",
+      "prompt": "Use a task related to 4. 执行流程 — ArkTS 迁移/修复工作的 git commit 生成器，强制 7 字段结构化 commit message（大类/问题分类/Skill/工具/Spec参考/修复方式/Summary）。",
+      "expected_output": "Successfully complete the 4. 执行流程 task as defined in the Skill",
+      "files": [],
+      "expectations": [
+        "The output follows the commit skill instructions without errors"
+      ],
+      "assertions": [],
+      "fixtures": [],
+      "level": "L1",
+      "mode": ""
+    },
+    {
+      "id": 5,
+      "name": "5. 信息提取策略",
+      "prompt": "Use a task related to 5. 信息提取策略 — ArkTS 迁移/修复工作的 git commit 生成器，强制 7 字段结构化 commit message（大类/问题分类/Skill/工具/Spec参考/修复方式/Summary）。",
+      "expected_output": "Successfully complete the 5. 信息提取策略 workflow (14 steps) as defined in the Skill",
+      "files": [],
+      "expectations": [
+        "如果会话中主要在跑 arkts-dt-verifier → DT测试 或 verify",
+        "如果主要在跑 arkts-dt-autofix 或修 RED→GREEN → bug fix",
+        "如果主要在修编译报错 → 编译错误",
+        "如果 a2h-execute 新建页面/feature slice → 新加功能",
+        "如果 a2h-verify → verify",
+        "否则看 git diff 性质：新文件为主 → 新加功能；改已有 → bug fix",
+        "改了 .ets 的 UI 组件/样式/布局 → UI/UX",
+        "改了 state/store/数据流 → 数据状态一致性"
+      ],
+      "assertions": [],
+      "fixtures": [],
+      "level": "L1",
+      "mode": ""
+    },
+    {
+      "id": 6,
+      "name": "6. 输出模板",
+      "prompt": "Use a task related to 6. 输出模板 — ArkTS 迁移/修复工作的 git commit 生成器，强制 7 字段结构化 commit message（大类/问题分类/Skill/工具/Spec参考/修复方式/Summary）。",
+      "expected_output": "Successfully complete the 6. 输出模板 task as defined in the Skill",
+      "files": [],
+      "expectations": [
+        "The output follows the commit skill instructions without errors"
+      ],
+      "assertions": [],
+      "fixtures": [],
+      "level": "L1",
+      "mode": ""
+    },
+    {
+      "id": 7,
+      "name": "7. Commit 执行",
+      "prompt": "Use a task related to 7. Commit 执行 — ArkTS 迁移/修复工作的 git commit 生成器，强制 7 字段结构化 commit message（大类/问题分类/Skill/工具/Spec参考/修复方式/Summary）。",
+      "expected_output": "Successfully complete the 7. Commit 执行 task as defined in the Skill",
+      "files": [],
+      "expectations": [
+        "The output follows the commit skill instructions without errors"
+      ],
+      "assertions": [],
+      "fixtures": [],
+      "level": "L1",
+      "mode": ""
+    },
+    {
+      "id": 8,
+      "name": "8. 边界与错误处理",
+      "prompt": "Use a task related to 8. 边界与错误处理 — ArkTS 迁移/修复工作的 git commit 生成器，强制 7 字段结构化 commit message（大类/问题分类/Skill/工具/Spec参考/修复方式/Summary）。",
+      "expected_output": "Successfully complete the 8. 边界与错误处理 workflow (4 steps) as defined in the Skill",
+      "files": [],
+      "expectations": [
+        "工作区无变更 → 告知用户\"没有变更可提交\"，不创建空 commit",
+        "变更含敏感文件（.env、credentials.*）→ 警告并让用户确认",
+        "用户回 edit → 展示 schema 允许用户逐字段修改，改完再提交",
+        "一次 commit 跨多个大类 → 建议拆分多个 commit，如用户坚持合并，大类字段取最主要的一项"
+      ],
+      "assertions": [],
+      "fixtures": [],
+      "level": "L1",
+      "mode": ""
+    },
+    {
+      "id": 9,
+      "name": "9. 与 a2h-retrospect 的契约",
+      "prompt": "Use a task related to 9. 与 a2h-retrospect 的契约 — ArkTS 迁移/修复工作的 git commit 生成器，强制 7 字段结构化 commit message（大类/问题分类/Skill/工具/Spec参考/修复方式/Summary）。",
+      "expected_output": "Successfully complete the 9. 与 a2h-retrospect 的契约 task as defined in the Skill",
+      "files": [],
+      "expectations": [
+        "The output follows the commit skill instructions without errors"
+      ],
+      "assertions": [],
+      "fixtures": [],
+      "level": "L1",
+      "mode": ""
+    }
+  ]
+}

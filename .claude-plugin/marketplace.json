@@ -1,0 +1,13 @@
+{
+  "name": "hmigbot",
+  "owner": {
+    "name": "fuxi-artifacts"
+  },
+  "plugins": [
+    {
+      "name": "hmigbot",
+      "source": "./",
+      "description": "Android-to-ArkTS (HarmonyOS) migration toolkit: ~50 skills, 5 sub-agents, /a2h-init + /a2h-build + /a2h-run + /a2h-privacy."
+    }
+  ]
+}

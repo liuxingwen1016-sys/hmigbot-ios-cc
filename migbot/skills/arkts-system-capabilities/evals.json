@@ -1,0 +1,47 @@
+{
+  "skill_name": "arkts-system-capabilities",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "怎么在 HarmonyOS 中获取相册里的所有图片？需要申请什么权限？",
+      "expected_output": "使用 photoAccessHelper 查询媒体资源，需要 ohos.permission.READ_IMAGEVIDEO 权限（module.json5 声明 + 运行时请求）。提供 FetchResult 遍历代码（getFirstObject + getNextObject + close），强调 FetchResult 不是数组不能 for...of。",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "我的音乐播放器切到后台就停了，怎么实现后台播放？",
+      "expected_output": "说明后台播放需要同时满足三个条件：1) module.json5 声明 backgroundModes: audioPlayback，2) 代码中调用 backgroundTaskManager.startBackgroundRunning() 申请长时任务，3) 注册 AVSession 媒体会话。提供三个部分的代码示例。",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "怎么下载文件并保存到本地？用什么路径？",
+      "expected_output": "使用 @kit.CoreFileKit 的 fileIo 写文件，必须存到沙箱路径 context.filesDir 或 context.cacheDir，不能用绝对路径。提供下载+保存的完整代码示例，使用 http 请求下载 + fileIo 写入。",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "怎么拉起系统相机拍照？需要配置什么？",
+      "expected_output": "使用 @kit.CameraKit 的 cameraPicker.pick()，参数为 [PickerMediaType.PHOTO]。必须配置 module.json5：entity.system.camera + ohos.want.action.camera。提供完整代码示例，包括 PickerProfile 配置（cameraPosition）和错误处理（try-catch）。返回 result.resultUri。",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "怎么分享图片到其他应用？",
+      "expected_output": "使用 @kit.ShareKit 的 ShareController，导入为 import { uniformTypeDescriptor as utd } from '@kit.ArkData'。关键步骤：1) 用 utd.getUniformDataTypeByFilenameExtension() 转换扩展名为 UTD 类型，2) 创建 SharedData 时用 utd 字段而非 mimeType，3) 创建 ShareController 并调用 show()。提供完整代码，强调不能用 mimeType 字段。图片/视频分享通常不需要 module.json5 配置。",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "怎么从应用内打开网页或发送邮件？",
+      "expected_output": "使用 Want + startAbility，action 设为 'ohos.want.action.viewData'，uri 设为 URL（网页用 https://，邮件用 mailto:）。主动拉起浏览器不需要 module.json5 配置（系统内置）。提供完整代码示例，强调 URL 参数需要 encodeURIComponent 编码，startAbility 必须用 .catch() 处理错误。",
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "用户拒绝了权限，怎么引导用户去系统设置开启权限？",
+      "expected_output": "使用显式 Want + startAbility 跳转到系统设置。华为设备使用 bundleName: 'com.huawei.settings'，abilityName: 'com.huawei.settings.MainAbility'，action: 'action.settings.app.info'。提供完整代码示例，包括：1) 权限请求失败后的引导逻辑，2) showDialog 提示用户，3) 点击'去设置'按钮跳转，4) 错误处理（try-catch）。强调系统设置跳转是显式 Want，不需要 module.json5 配置。说明与隐式 Want（浏览器/分享）的区别。",
+      "files": []
+    }
+  ]
+}

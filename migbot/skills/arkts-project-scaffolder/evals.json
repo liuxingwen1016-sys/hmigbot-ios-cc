@@ -1,0 +1,23 @@
+{
+  "skill_name": "arkts-project-scaffolder",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "创建一个新的HarmonyOS项目，包含首页和设置页两个页面，首页能跳转到设置页",
+      "expected_output": "生成完整的单模块项目结构，包含 app.json5、module.json5、main_pages.json、EntryAbility.ets、Index.ets（首页）、SettingsPage.ets，使用 Navigation 实现页面跳转",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "设计一个多模块电商应用架构，包含商品浏览、购物车、用户中心三个功能模块",
+      "expected_output": "生成 commons/common + features/product + features/cart + features/user + products/phone 的多模块结构，每个模块有 Index.ets barrel export，oh-package.json5 正确配置模块间依赖",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "给我一个module.json5模板，应用需要网络访问和相机拍照权限",
+      "expected_output": "生成完整的 module.json5，requestPermissions 包含 ohos.permission.INTERNET 和 ohos.permission.CAMERA，其他字段填充合理默认值",
+      "files": []
+    }
+  ]
+}

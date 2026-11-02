@@ -1,0 +1,8 @@
+{
+ "skill_name": "a2h-functional-merge",
+ "evals": [
+  {"id":0,"name":"merge-happy","prompt":"把 A2H 的功能点和预期合进这个项目的 fact-tree,让 visual-verify 能测功能不只是 UI。fact-tree 在 inputs/toolkit-fact-tree.json,A2H 产物在 inputs/functional_registry.json 和 inputs/test_intents.json。把合并后的 fact-tree 写到 outputs/toolkit-fact-tree.json。","files":["toolkit-fact-tree.json","functional_registry.json","test_intents.json"]},
+  {"id":1,"name":"paraphrase","prompt":"inputs/toolkit-fact-tree.json 现在只有 UI 结构没功能维度。把 A2H Stage1 产物(inputs/functional_registry.json + inputs/test_intents.json)注入进去,让每个页面带上该测的功能点。结果写 outputs/toolkit-fact-tree.json。","files":["toolkit-fact-tree.json","functional_registry.json","test_intents.json"]},
+  {"id":2,"name":"enum-refine","prompt":"合并 A2H 功能点(inputs/functional_registry.json + inputs/test_intents.json)进 inputs/toolkit-fact-tree.json,枚举驱动的工具(如 AI抠图/AI换发型)记得精修到入口宿主页再挂。输出 outputs/toolkit-fact-tree.json。","files":["toolkit-fact-tree.json","functional_registry.json","test_intents.json"]}
+ ]
+}

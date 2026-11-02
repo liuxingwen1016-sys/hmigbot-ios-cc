@@ -1,0 +1,22 @@
+[
+  {
+    "id": 1,
+    "prompt": "播放速度控制功能缺失，生成 spec 并实现",
+    "expected_output": "features/ F-xxx spec-index.md status: pending 验收标准"
+  },
+  {
+    "id": 2,
+    "prompt": "AVPlayer seek 到末尾会崩溃，生成修复 spec",
+    "expected_output": "bugfixes/ BF-xxx 复现步骤 根因分析 spec-index.md"
+  },
+  {
+    "id": 3,
+    "prompt": "检查下 spec 和代码的差距",
+    "expected_output": "audit @Entry @ComponentV2 @Component DAO CREATE TABLE spec-index.md 审计报告"
+  },
+  {
+    "id": 4,
+    "prompt": "查看所有增量 spec 的状态",
+    "expected_output": "Features Bugfixes Optimizations pending done"
+  }
+]

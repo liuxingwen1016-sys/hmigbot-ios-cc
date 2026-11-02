@@ -1,0 +1,18 @@
+{
+  "target_input": "../../android-ui-graph-builder/scripts/target_input.py",
+  "static_target": "../../android-ui-graph-builder/scripts/static_target.py",
+  "static_page_facts": "../../android-ui-graph-builder/scripts/static_page_facts.py",
+  "static_dialog_inventory": "../../android-ui-graph-builder/scripts/static_dialog_inventory.py",
+  "window_evidence": "../../android-ui-graph-builder/scripts/window_evidence.py",
+  "theme_facts": "../../android-ui-graph-builder/scripts/theme_facts.py",
+  "detect_page_geometry": "../../android-ui-graph-builder/scripts/detect_page_geometry.py",
+  "parse_layouts": "../../android-ui-graph-builder/scripts/parse_layouts.py",
+  "synthesize_view_xml": "../../android-ui-graph-builder/scripts/synthesize_view_xml.py",
+  "static_resource_index": "../../android2hmos_resources_convert/scripts/static_resource_index.py",
+  "resource_semantics": "../../android2hmos_resources_convert/scripts/resource_semantics.py",
+  "resource_usage": "../../android2hmos_resources_convert/scripts/resource_usage.py",
+  "code_scan": "../../android2hmos_resources_convert/scripts/code_scan.py",
+  "apk_decode": "../../android2hmos_resources_convert/scripts/apk_decode.py",
+  "portable_lock": "../../android2hmos_resources_convert/scripts/portable_lock.py",
+  "image_codec": "../../android2hmos_resources_convert/scripts/image_codec.py"
+}

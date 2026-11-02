@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+# Git Bash keeps an executing script open. Re-exec its text from memory before
+# OTA can rename the package; keep $0/arguments so resource paths stay unchanged.
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*)
+    if [ -n "${BASH_SOURCE[0]:-}" ]; then
+      _a2h_script="${BASH_SOURCE[0]}"
+      exec bash -c "$(cat -- "$_a2h_script")" "$_a2h_script" "$@"
+    fi ;;
+esac
+# OTA policy is implemented in a2h; this launcher only releases installed binaries.
+set -uo pipefail
+bin="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+root="$(cd "$bin/.." && pwd)"
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*)
+    ps="$bin/a2h-update-check.ps1"
+    command -v cygpath >/dev/null 2>&1 && ps="$(cygpath -w "$ps")"
+    args=(); [ "${1:-}" = '--check-only' ] && args+=('-CheckOnly')
+    MSYS_NO_PATHCONV=1 powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$ps" "${args[@]}"
+    exit 0 ;;
+  Darwin) os=darwin ;;
+  Linux) os=linux ;;
+  *) printf '%s\n' '{"status":"skipped_platform"}'; exit 0 ;;
+esac
+case "$(uname -m)" in arm64|aarch64) arch=arm64 ;; *) arch=amd64 ;; esac
+source="$bin/a2h"
+[ -f "$source" ] || source="$bin/a2h-$os-$arch"
+if [ ! -f "$source" ]; then
+  printf '%s\n' '{"status":"error","detail":"a2h runtime is missing; reinstall the package"}'
+  exit 0
+fi
+temp="$(mktemp -d "${TMPDIR:-/tmp}/a2h-ota.XXXXXXXX")" || exit 0
+trap 'rm -rf -- "$temp"' EXIT
+if cp "$source" "$temp/a2h" && chmod +x "$temp/a2h"; then
+  "$temp/a2h" update-check --root "$root" --product 'hmigbot-cc' "$@" ||
+    printf '%s\n' '{"status":"error","detail":"a2h update-check failed; install a package containing the OTA runtime"}'
+fi
+exit 0

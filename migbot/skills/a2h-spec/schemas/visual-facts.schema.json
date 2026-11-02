@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Static UI facts v1",
+  "type": "object",
+  "required": ["schema_version", "tool_version", "target_input_sha256", "page", "nodes", "composition", "obligations", "input_hashes"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "tool_version": {"type": "string"},
+    "target_input_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "page": {"type": "object", "required": ["page_id", "activity", "theme", "preview_config"]},
+    "nodes": {
+      "type": "array",
+      "items": {"type": "object", "required": ["node_key", "parent_key", "class", "source", "props", "initially_visible", "code_overrides"],
+        "properties": {
+          "node_key": {"type": "string", "minLength": 1},
+          "parent_key": {"type": ["string", "null"]},
+          "class": {"type": "string"},
+          "initially_visible": {"type": "boolean"},
+          "props": {"type": "object", "additionalProperties": {"type": "object", "required": ["raw", "value", "status", "chain"],
+            "properties": {"status": {"enum": ["resolved", "partial", "unresolved", "dynamic", "overridden_in_code", "not_applicable"]}}}}
+        }
+      }
+    },
+    "composition": {"type": "object", "required": ["owner", "children", "item_templates"]},
+    "obligations": {
+      "type": "array",
+      "items": {"type": "object", "required": ["id", "kind", "initially_visible", "disposition", "source_ref"],
+        "properties": {
+          "id": {"type": "string"},
+          "kind": {"type": "string"},
+          "initially_visible": {"type": "boolean"},
+          "disposition": {"enum": ["resolved", "script_resolved", "preview_policy", "deferred", "not_applicable", null]}
+        }}
+    },
+    "input_hashes": {"type": "object", "additionalProperties": {"type": "string", "pattern": "^[a-f0-9]{64}$"}}
+  }
+}

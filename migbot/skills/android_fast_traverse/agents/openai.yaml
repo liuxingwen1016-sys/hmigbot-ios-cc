@@ -1,0 +1,4 @@
+interface:
+  display_name: "android_fast_traverse"
+  short_description: "边遍历+自动发现的安卓页面与交互态采集，产物可直接交给下游 UI 对齐或迁移流程"
+  default_prompt: "使用 $android_fast_traverse：先 inspect，并用 drive 把首次启动走到正常首页，写一份简短 profile（根页是每次冷启动都会到的首页，首次启动才有的页面写进 start_recipe），再 run 一次跑完，结束后按 report.md 一次性审阅并补跑，最后一条 drive 串完需要手驱的状态；产物固定在 android_traverse_screenshots/（profile、review 写在它的 _aft/input/ 下），交付这个目录、gallery 和报告。"

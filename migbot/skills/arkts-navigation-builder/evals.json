@@ -1,0 +1,23 @@
+{
+  "skill_name": "arkts-navigation-builder",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "创建一个带底部4个Tab的主页面（首页、发现、消息、我的），每个Tab有不同的图标，支持点击切换并高亮当前Tab",
+      "expected_output": "生成使用 Tabs + TabContent 的主页面，@Builder tabBuilder 渲染 Tab 图标和文字，@State currentIndex 跟踪选中态，onChange 更新 index，barPosition 设为 End",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "实现文章列表页点击跳转到文章详情页，传递文章id参数，详情页显示文章内容并能返回",
+      "expected_output": "使用 Navigation + NavPathStack + NavDestination，入口页 @Provide navPathStack，pushPathByName 传参，详情页 @Consume navPathStack，onReady 接收参数，pop() 返回",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "创建一个带底部Tab导航的应用，首页Tab内的列表点击可以跳转到详情页（全屏覆盖Tab栏）",
+      "expected_output": "外层 Tabs 管理底部导航，首页 TabContent 内嵌 Navigation，详情页通过 NavPathStack 跳转，Navigation 使用 Stack 模式实现全屏覆盖",
+      "files": []
+    }
+  ]
+}

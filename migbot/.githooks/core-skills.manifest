@@ -1,0 +1,82 @@
+# core-skills.manifest — 来自 ArkTs-Core 的 skill 清单（migbot 与上游共享）
+#
+# 这些 skill 的真相源是 ArkTs-Core，migbot 通过 dist 产物同步而来。
+# 在 migbot 侧改动它们 => 必须回推 ArkTs-Core 的对应分支，否则下次整版
+# 同步会把改动覆盖掉（历史上已发生 3 次：v1.1.2 / v1.2.1 / v1.2.2）。
+#
+# 不在此清单中的 skill 为 migbot 独有，改动无需回推。
+#
+# 重新生成：scripts/gen-core-manifest.sh <ArkTs-Core 路径>
+# 生成于：2026-07-24，对应上游分支 version_730_tools
+
+a2h-execute
+a2h-functional-merge
+a2h-functional-registry
+a2h-incremental-migration
+a2h-plan
+a2h-retrospect
+a2h-spec
+a2h-verify
+android-api-inventory
+android-fact-tree
+android-screenshot-analyzer
+android-ui-graph-builder
+android-ui-graph-query
+android-view-to-arkui
+android2hmos_resources_convert
+app-relationship-tree
+arkts-accessibility
+arkts-ad
+arkts-animation-builder
+arkts-animation-migrate
+arkts-app-identity
+arkts-codebase-config
+arkts-codebase-debug
+arkts-codebase-explainer
+arkts-codebase-locator
+arkts-codebase-modifier
+arkts-component-builder
+arkts-customer-service
+arkts-dark-mode
+arkts-data-layer
+arkts-design-tokens-extractor
+arkts-download-manager
+arkts-dt-verifier
+arkts-feature-coverage-auditor
+arkts-i18n
+arkts-icon-sizing
+arkts-immersive-safearea
+arkts-knowledge-verifier
+arkts-large-font
+arkts-library-migration
+arkts-login
+arkts-media-playback
+arkts-multi-device
+arkts-multi-window
+arkts-navigation-builder
+arkts-network-troubleshoot
+arkts-pattern-library
+arkts-payment
+arkts-project-scaffolder
+arkts-router-verify
+arkts-scenario-runner
+arkts-spec-evolver
+arkts-state-manager
+arkts-structural-closure
+arkts-system-capabilities
+arkts-text-truncation
+arkts-truncation-fix
+arkts-ui-alignment
+arkts-ui-coverage-auditor
+arkts-ui-verifier
+arkts-ut-verifier
+arkts-video-playback
+arkts-visual-verify
+arkts-webview
+commit
+compose-fact-tree
+grill-with-docs
+hmos-env-doctor
+hmos_fix_build_errors
+skill-checker
+toolkit-fact-indexer

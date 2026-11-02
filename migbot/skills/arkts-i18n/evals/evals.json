@@ -1,0 +1,84 @@
+{
+  "skill_name": "arkts-i18n",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "为我的应用添加日语支持，需要创建哪些文件和目录？",
+      "expected_output": "说明资源目录结构（resources/ja/element/string.json）、string.json 格式、module.json5 的 supportedLanguages 配置。提供两种命名方案：1) 仅语言代码（ja），2) 语言+区域代码（ja_JP）。强调使用 ISO 639-1 标准，目录名必须完全匹配。",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "用户可以手动切换应用语言，从中文切换到英文后 UI 也要跟着变，怎么实现？",
+      "expected_output": "说明两种方案：1) ⚠️ 未验证：setPreferredLanguage() + V2 @Local refreshKey（或 @ObservedV2 LocaleModel + AppStorageV2.connect）触发 UI 刷新（需查证官方文档），2) ✅ 已验证：应用内维护语言状态 + router.replaceUrl() 重载页面。提供 V2 完整代码示例（@ComponentV2 + @Local），强调需要 module.json5 中声明 supportedLanguages。",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "检查我的 string.json 文件有没有国际化问题：base/element/string.json 和 en_US/element/string.json",
+      "expected_output": "基于代码仓实际结构（base/ 和 en_US/），检查：1) key 是否完全一致（996 行对应），2) value 是否为字符串类型，3) JSON 格式是否正确（无尾随逗号），4) 是否有硬编码。提供代码仓验证结果：✅ base 和 en_US 的 key 完全对应。",
+      "files": [
+        "entry/src/main/resources/base/element/string.json",
+        "entry/src/main/resources/en_US/element/string.json"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "我的应用只支持中英文，应该用什么语言目录名？en 还是 en_US？",
+      "expected_output": "说明两种方案的优缺点：1) 简单方案（推荐）：en/ + zh/，优点是简单适配所有区域，缺点是无法区分 zh_CN 和 zh_TW；2) 精确方案：en_US/ + zh_CN/，优点是精确区域划分，缺点是维护成本高。代码仓使用 en_US/（方案2）。提供选择建议和语言代码对照表。",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "代码中怎么获取字符串资源？有没有同步和异步两种方法？",
+      "expected_output": "提供代码仓验证的实现：✅ 同步方法：resourceManager.getStringByNameSync('key')（基于 ColumnsDialog.ets:11）。⚠️ 异步方法：resourceManager.getStringByName('key')（未验证）。提供完整代码示例，包括错误处理（try-catch）。",
+      "files": [
+        "entry/src/main/ets/components/dialogs/ColumnsDialog.ets"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "怎么判断当前应用加载的是中文还是英文资源？",
+      "expected_output": "提供代码仓验证的方法（基于 ColumnsDialog.ets:7-16）：1) 使用 resourceManager.getStringByNameSync('dialog_column') 获取字符串，2) 用正则表达式 /[\\u4e00-\\u9fa5]/.test(str) 检测中文字符（Unicode 范围 0x4e00-0x9fa5），3) 返回布尔值表示是否中文环境。提供完整代码示例，包括 try-catch 错误处理和默认返回值。说明适用场景（需要根据语言执行不同逻辑）。",
+      "files": [
+        "entry/src/main/ets/components/dialogs/ColumnsDialog.ets"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "英文环境下，'1 column' 和 '2 columns' 这种复数怎么处理？",
+      "expected_output": "提供代码仓验证的完整实现（基于 ColumnsDialog.ets:18-31）：1) 判断语言环境（isChineseLocale），2) 使用 resourceManager.getStringByNameSync('dialog_column') 获取字符串（含占位符 %d），3) 替换占位符 str.replace('%d', num.toString())，4) 判断是否需要添加 's'（条件：num > 1 && !isChineseLocale && !str.endsWith('s')），5) 提供 try-catch 兜底逻辑（return num === 1 ? '1 column' : `${num} columns`）。说明仅支持规则复数（+s），不规则复数需特殊处理。",
+      "files": [
+        "entry/src/main/ets/components/dialogs/ColumnsDialog.ets",
+        "entry/src/main/resources/base/element/string.json",
+        "entry/src/main/resources/en_US/element/string.json"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "我的应用只需要中英文，不需要应用内切换语言，应该怎么实现？",
+      "expected_output": "说明纯静态方案（基于代码仓实际实现）：1) 组织资源文件（base/ + en_US/，确保 key 完全对应），2) 95%+ 使用 $r('app.string.xxx') 静态引用（270+ 处），3) 少数场景用 resourceManager.getStringByNameSync() 动态获取（如占位符替换、复数处理），4) 依赖系统语言自动匹配。对比动态方案：优点（简单、性能优、自动跟随系统、维护成本低），缺点（无法应用内切换、需重启应用）。说明代码仓选择原因和适用场景（大多数应用）。",
+      "files": [
+        "entry/src/main/resources/base/element/string.json",
+        "entry/src/main/resources/en_US/element/string.json"
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "占位符 %d 或 %s 怎么替换成实际的值？",
+      "expected_output": "提供两种方法：1) ✅ 手动替换（已验证）：str.replace('%d', value.toString()) 或 str.replace('%s', value)，基于 ColumnsDialog.ets:23。2) ⚠️ API 替换（未验证）：resourceManager.getStringByName('key', param)。推荐方法1（更可靠）。提供完整代码示例，包括多个占位符的处理（链式 replace）。说明支持的占位符类型（%d 整数、%s 字符串、%f 浮点数）。",
+      "files": [
+        "entry/src/main/ets/components/dialogs/ColumnsDialog.ets"
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "代码仓为什么要用 en_US 而不是 en 作为英文资源目录？",
+      "expected_output": "说明选择 en_US 的三大原因：1) 精确区域划分：明确标识为美国英语，与 en_GB（英国）、en_AU（澳大利亚）区分，符合 ISO 3166-1 标准。2) 扩展性好：未来可添加 en_GB、en_CA 等其他英文区域。3) 代码仓实际情况：base/ 和 en_US/ 的 key 完全对应（996 行），所有翻译已完成。对比 en/ 方案（简单但无法精确划分）。说明当前代码仓只需支持中英文，但使用 en_US/ 为未来扩展留出空间。",
+      "files": [
+        "entry/src/main/resources/base/element/string.json",
+        "entry/src/main/resources/en_US/element/string.json"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+# Line-ending policy. Without this file, endings are left to each machine's
+# core.autocrlf, which on Windows rewrites checkouts to CRLF — and a stray CR
+# in a shell script breaks the `#!/bin/bash` shebang on Linux/macOS. Pin text
+# to LF in the repo and let only Windows-native scripts keep CRLF.
+
+# Auto-detect text vs binary; normalize all detected text to LF in the repo.
+* text=auto eol=lf
+
+# Scripts that run on Linux/macOS MUST be LF (be explicit so no editor or
+# per-user autocrlf can reintroduce a CR).
+*.sh    text eol=lf
+*.bash  text eol=lf
+install.sh text eol=lf
+
+# Windows-only scripts keep CRLF.
+*.ps1   text eol=crlf
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+
+# Binary assets — never touch line endings.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.webp  binary
+*.gz    binary
+*.tgz   binary
+*.zip   binary
+*.tar   binary
+*.exe   binary
+*.pdf   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+
+# Pre-built multicall runtime binaries: the linux/darwin variants ship without
+# an extension — mark them explicitly so Git never line-ending-normalises
+# machine code. (The patterns are arch-qualified so they do NOT match the
+# bin/a2h-usage-hook bash launcher, which must stay LF text.)
+bin/a2h-linux-*    binary
+bin/a2h-darwin-*   binary
+bin/a2h-windows-*  binary
+
+# Preserve compiled runtime data byte-for-byte.
+**/_entry.dist/** -text

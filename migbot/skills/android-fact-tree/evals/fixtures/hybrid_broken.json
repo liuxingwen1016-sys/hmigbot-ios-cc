@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "app": {
+    "package": "com.demo",
+    "launcher_short": "SplashActivity"
+  },
+  "features": [],
+  "pages": [
+    {
+      "id": "SplashActivity",
+      "type": "Activity",
+      "layout_file": "res/layout/activity_splash.xml",
+      "is_start_destination": false,
+      "arch": "xml",
+      "navigation": {
+        "inbound": [],
+        "outbound": [
+          {
+            "from": "SplashActivity",
+            "to": "HomeActivity",
+            "via_component": "splash_auto",
+            "trigger": "auto"
+          }
+        ]
+      },
+      "contains": [],
+      "shows_dialogs": [],
+      "components": [],
+      "reach_paths": []
+    },
+    {
+      "id": "HomeActivity",
+      "type": "Activity",
+      "layout_file": "res/layout/activity_home.xml",
+      "arch": "xml",
+      "navigation": {
+        "inbound": [
+          {
+            "from": "SplashActivity"
+          }
+        ],
+        "outbound": []
+      },
+      "contains": [],
+      "shows_dialogs": [],
+      "components": [],
+      "reach_paths": []
+    },
+    {
+      "id": "FeedScreen",
+      "type": "Composable",
+      "screen_kind": "page",
+      "route": "feed",
+      "arch": "compose",
+      "navigation": {
+        "inbound": [],
+        "outbound": [
+          {
+            "from": "FeedScreen",
+            "to": "DetailScreen",
+            "via_component": "feed_item",
+            "trigger": "click"
+          }
+        ]
+      },
+      "contains": [],
+      "shows_dialogs": [],
+      "components": [],
+      "reach_paths": []
+    },
+    {
+      "id": "DetailScreen",
+      "type": "Composable",
+      "screen_kind": "page",
+      "route": "detail",
+      "arch": "compose",
+      "navigation": {
+        "inbound": [
+          {
+            "from": "FeedScreen"
+          }
+        ],
+        "outbound": []
+      },
+      "contains": [],
+      "shows_dialogs": [],
+      "components": [],
+      "reach_paths": []
+    }
+  ],
+  "fragments": [],
+  "dialogs": [],
+  "flow_graph": {
+    "edges": [
+      {
+        "from": "SplashActivity",
+        "to": "HomeActivity",
+        "via_component": "splash_auto",
+        "trigger": "auto"
+      },
+      {
+        "from": "FeedScreen",
+        "to": "DetailScreen",
+        "via_component": "feed_item",
+        "trigger": "click"
+      }
+    ]
+  },
+  "stats": {}
+}

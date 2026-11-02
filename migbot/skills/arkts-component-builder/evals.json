@@ -1,0 +1,23 @@
+{
+  "skill_name": "arkts-component-builder",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "帮我写一个商品列表页，包含商品图片、标题、价格，支持滚动",
+      "expected_output": "生成一个使用 List + ListItem + ForEach 的商品列表组件，包含 @Component struct、@State 商品数据数组、@Builder 商品卡片、Image+Text 布局，keyGenerator 使用商品 id",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "创建一个响应式卡片网格组件，大屏3列，中屏2列，小屏1列",
+      "expected_output": "生成使用 Grid + GridItem 的组件，根据断点动态设置 columnsTemplate（'1fr 1fr 1fr' / '1fr 1fr' / '1fr'），使用 @StorageProp 或 MediaQuery 获取屏幕信息",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "写一个带搜索框和筛选标签的页面头部组件，搜索框输入时实时过滤，标签支持多选高亮",
+      "expected_output": "生成包含 Search 组件 + Row/Flex 布局的标签栏的 @Component struct，@State 管理搜索关键词和选中标签，使用 @Builder 抽取标签项，ForEach 渲染标签列表",
+      "files": []
+    }
+  ]
+}

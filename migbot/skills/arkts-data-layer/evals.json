@@ -1,0 +1,23 @@
+{
+  "skill_name": "arkts-data-layer",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "创建一个文章列表的数据模型和网络请求服务，文章有标题、内容、作者、封面图、点赞数字段",
+      "expected_output": "生成 @Observed ArticleModel 类（带 Partial 构造函数和 fromJson/fromJsonArray 静态方法），以及 ArticleService 类（使用 http 模块请求 API 并返回 ArticleModel[]）",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "实现一个支持分页加载的列表数据源，下拉加载更多时追加数据",
+      "expected_output": "生成 BasicDataSource<T> 实现 IDataSource 接口，包含 pushDataArray 方法并逐个通知 DataChangeListener，配合 List 组件的 onReachEnd 触发加载更多",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "用 Preferences 实现搜索历史的本地存储，支持添加、获取、删除历史记录，最多保留20条",
+      "expected_output": "生成 PreferencesUtil 工具类封装 preferences API，提供 init/put/get/delete 方法，搜索历史用 JSON 字符串存储，新搜索词去重后放到最前面",
+      "files": []
+    }
+  ]
+}

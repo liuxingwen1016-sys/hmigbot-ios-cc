@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Resource facts index family v1",
+  "type": "object",
+  "required": ["schema_version", "tool_version", "target_input_sha256"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "tool_version": {"type": "string"},
+    "target_input_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "resources": {"oneOf": [
+      {"type": "object"},
+      {"type": "array", "items": {"type": "object", "required": ["key", "resource_id", "type", "name", "config", "source", "tier"],
+        "properties": {"tier": {"enum": ["T1", "T2", "T3"]}}}}
+    ]},
+    "tokens": {"type": "array", "items": {"type": "object", "required": ["token_id", "resource_id", "role", "value", "status", "pages"]}},
+    "pages": {"type": "object"}
+  }
+}

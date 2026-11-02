@@ -1,0 +1,25 @@
+import { Want } from '@kit.AbilityKit';
+import { DisplayClock, ValidatedVerificationContext, VerificationParameter } from './VerificationContext';
+
+const VERIFICATION_ENTRY_ENABLED: boolean = __ENABLED__;
+
+// Exact canonical string matching avoids trusting casts of arbitrary JSON in ArkTS.
+// Only the generated request payloads can construct a typed context.
+export function resolveVerificationRequest(raw: string): ValidatedVerificationContext | undefined {
+  if (!VERIFICATION_ENTRY_ENABLED) {
+    return undefined;
+  }
+__CASES__
+  return undefined;
+}
+
+export function resolveVerificationWant(want: Want): ValidatedVerificationContext | undefined {
+  if (want.parameters === undefined) {
+    return undefined;
+  }
+  const raw: Object | undefined = want.parameters['a2h.verification'];
+  if (typeof raw !== 'string') {
+    return undefined;
+  }
+  return resolveVerificationRequest(raw as string);
+}

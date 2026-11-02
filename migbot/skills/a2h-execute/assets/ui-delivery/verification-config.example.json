@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "artifact": { "kind": "ordinary", "id": "replace-with-artifact-id" },
+  "verification_entry": { "enabled": false, "request_key": "a2h.verification", "allowed": [] },
+  "visual_fixture": { "enabled": false, "fixture_id": null },
+  "display_clock": { "enabled": false, "epoch_ms": null, "time_zone": null, "locale": null }
+}

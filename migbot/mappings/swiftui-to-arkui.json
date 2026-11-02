@@ -1,0 +1,178 @@
+{
+  "version": "1.0.0",
+  "description": "SwiftUI to ArkUI component mappings",
+
+  "types": {
+    "Int": "number",
+    "Double": "number",
+    "Float": "number",
+    "String": "string",
+    "Bool": "boolean",
+    "Array": "Array",
+    "Dictionary": "Record"
+  },
+
+  "views": {
+    "VStack": {
+      "arkui": "Column",
+      "complexity": 0,
+      "mapping": "direct",
+      "params": {
+        "spacing": "space"
+      }
+    },
+    "HStack": {
+      "arkui": "Row",
+      "complexity": 0,
+      "mapping": "direct",
+      "params": {
+        "spacing": "space"
+      }
+    },
+    "ZStack": {
+      "arkui": "Stack",
+      "complexity": 0,
+      "mapping": "direct"
+    },
+    "Text": {
+      "arkui": "Text",
+      "complexity": 0,
+      "mapping": "direct"
+    },
+    "Button": {
+      "arkui": "Button",
+      "complexity": 0,
+      "mapping": "direct"
+    },
+    "Image": {
+      "arkui": "Image",
+      "complexity": 0,
+      "mapping": "direct"
+    },
+    "List": {
+      "arkui": "List",
+      "complexity": 1,
+      "mapping": "similar"
+    },
+    "ScrollView": {
+      "arkui": "Scroll",
+      "complexity": 0,
+      "mapping": "direct"
+    },
+    "NavigationView": {
+      "arkui": "Navigation",
+      "complexity": 2,
+      "mapping": "complex"
+    },
+    "TabView": {
+      "arkui": "Tabs",
+      "complexity": 2,
+      "mapping": "complex"
+    },
+    "TextField": {
+      "arkui": "TextInput",
+      "complexity": 1,
+      "mapping": "similar"
+    },
+    "SecureField": {
+      "arkui": "TextInput",
+      "complexity": 1,
+      "mapping": "similar",
+      "notes": "Use .type(InputType.Password)"
+    },
+    "Toggle": {
+      "arkui": "Toggle",
+      "complexity": 0,
+      "mapping": "direct"
+    },
+    "Slider": {
+      "arkui": "Slider",
+      "complexity": 1,
+      "mapping": "similar"
+    },
+    "Stepper": {
+      "arkui": "Counter",
+      "complexity": 1,
+      "mapping": "similar"
+    },
+    "Picker": {
+      "arkui": "Select",
+      "complexity": 2,
+      "mapping": "complex"
+    },
+    "DatePicker": {
+      "arkui": "DatePicker",
+      "complexity": 2,
+      "mapping": "similar"
+    },
+    "Spacer": {
+      "arkui": "Blank",
+      "complexity": 0,
+      "mapping": "direct"
+    },
+    "Divider": {
+      "arkui": "Divider",
+      "complexity": 0,
+      "mapping": "direct"
+    },
+    "Rectangle": {
+      "arkui": "Rect",
+      "complexity": 0,
+      "mapping": "direct"
+    },
+    "Circle": {
+      "arkui": "Circle",
+      "complexity": 0,
+      "mapping": "direct"
+    }
+  },
+
+  "modifiers": {
+    ".padding()": ".padding()",
+    ".padding(": ".padding(",
+    ".frame(width:": ".width(",
+    ".frame(height:": ".height(",
+    ".background(": ".backgroundColor(",
+    ".foregroundColor(": ".fontColor(",
+    ".font(.title)": [".fontSize(20)", ".fontWeight(FontWeight.Bold)"],
+    ".font(.headline)": [".fontSize(17)", ".fontWeight(FontWeight.Medium)"],
+    ".font(.body)": ".fontSize(14)",
+    ".font(.caption)": ".fontSize(12)",
+    ".bold()": ".fontWeight(FontWeight.Bold)",
+    ".italic()": ".fontStyle(FontStyle.Italic)",
+    ".cornerRadius(": ".borderRadius(",
+    ".opacity(": ".opacity(",
+    ".shadow(": ".shadow(",
+    ".offset(": ".translate(",
+    ".rotationEffect(": ".rotate(",
+    ".scaleEffect(": ".scale(",
+    ".clipShape(": ".clip(",
+    ".overlay(": ".overlay(",
+    ".onTapGesture": ".onClick",
+    ".onAppear": ".onAppear",
+    ".onDisappear": ".onDisappear"
+  },
+
+  "state_wrappers": {
+    "@State": "@State",
+    "@Binding": "@Link",
+    "@ObservedObject": "@ObjectLink",
+    "@StateObject": "@Observed",
+    "@EnvironmentObject": "@Consume",
+    "@Published": "// @Published equivalent in @Observed class"
+  },
+
+  "colors": {
+    ".red": "Color.Red",
+    ".blue": "Color.Blue",
+    ".green": "Color.Green",
+    ".yellow": "Color.Yellow",
+    ".orange": "Color.Orange",
+    ".purple": "Color.Purple",
+    ".pink": "Color.Pink",
+    ".black": "Color.Black",
+    ".white": "Color.White",
+    ".gray": "Color.Gray",
+    ".clear": "Color.Transparent"
+  }
+}

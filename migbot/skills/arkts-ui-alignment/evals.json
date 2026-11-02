@@ -1,0 +1,17 @@
+[
+  {
+    "input": "把 Android 的 BottomNavigationView 迁移到 ArkTS，要有药丸指示器",
+    "expected_output_contains": ["Row", "SymbolGlyph", "borderRadius", "backgroundColor", "onClick"],
+    "expected_output_not_contains": ["Tabs", "any"]
+  },
+  {
+    "input": "实现一个封面图组件，网络图片加载失败时显示文字占位符",
+    "expected_output_contains": ["Image", "Text", "borderRadius", "backgroundColor"],
+    "expected_output_not_contains": ["any"]
+  },
+  {
+    "input": "把 Android Material 图标替换为 HarmonyOS SymbolGlyph",
+    "expected_output_contains": ["SymbolGlyph", "sys.symbol", "fontSize", "fontColor"],
+    "expected_output_not_contains": ["emoji", "any"]
+  }
+]

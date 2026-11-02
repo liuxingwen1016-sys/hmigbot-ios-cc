@@ -1,0 +1,1 @@
+The origin file comes from ./others/defensive_architecture/harmonyos-ui-test

@@ -1,0 +1,42 @@
+[
+  {
+    "input": "我的项目是 API 12，帮我把 @ohos.router 跳转改成 Navigation 方式。当前代码：\nimport router from '@ohos.router'\nrouter.pushUrl({ url: 'pages/Detail', params: { id: '123' } })\nrouter.back()",
+    "expected_behavior": [
+      "将 router 导入替换为 Navigation + NavPathStack 方案",
+      "使用 @Provide/@Consume 注入 NavPathStack",
+      "pushUrl 替换为 pushPathByName",
+      "router.back() 替换为 navPathStack.pop()",
+      "创建 NavDestination 页面并在 onReady 中接收参数",
+      "导入使用 @kit.* 格式而非 @ohos.*"
+    ]
+  },
+  {
+    "input": "检查这段代码，指出不兼容 API 15 的部分：\nimport { http } from '@ohos.net.http'\nimport dataPreferences from '@ohos.data.preferences'\n\n@Component\nstruct MyComp {\n  @Prop title: string\n  build() { Text(this.title) }\n}",
+    "expected_behavior": [
+      "指出 @ohos.net.http 应改为 import { http } from '@kit.NetworkKit'",
+      "指出 @ohos.data.preferences 应改为 import { preferences } from '@kit.ArkData'",
+      "指出 @Prop title: string 在 API 12+ 必须提供默认值，应改为 @Prop title: string = ''",
+      "提供修正后的完整代码"
+    ]
+  },
+  {
+    "input": "Text 组件有没有 .color() 属性？怎么设置文字颜色？",
+    "expected_behavior": [
+      "指出 Text 组件没有 .color() 属性",
+      "说明正确的属性是 .fontColor()",
+      "提供正确的用法示例：Text('Hello').fontColor('#333')",
+      "解释这是 ArkTS 与 CSS/Web 的差异",
+      "引用或查阅 common-components.md 来验证"
+    ]
+  },
+  {
+    "input": "ArkTS 能用 any 类型吗？我想声明一个 let data: any 来接收 JSON 数据",
+    "expected_behavior": [
+      "明确回答 ArkTS 禁止使用 any 和 unknown 类型",
+      "解释这是 ArkTS 与 TypeScript 的关键差异",
+      "提供替代方案：使用具体类型或 Record<string, Object>",
+      "给出正确的 JSON 数据接收示例代码",
+      "引用 arkts-vs-typescript.md 中的相关规则"
+    ]
+  }
+]

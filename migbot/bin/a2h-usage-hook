@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# a2h-usage-hook — thin launcher for the multicall runtime binary.
+#
+# Claude Code invokes this on the Stop / SubagentStop / SessionEnd hooks via
+# `bash "${CLAUDE_PLUGIN_ROOT}/bin/a2h-usage-hook"` (see hooks/hooks.json),
+# BEFORE /a2h-init has provisioned .migbot/bin — so the entry point must live in
+# the plugin bin and always be present. It picks the platform-matched
+# a2h-<os>-<arch> binary and execs it as the `hook` subcommand, passing the hook
+# JSON on stdin straight through.
+#
+# A hook must never break the user's session: every failure path still exits 0.
+set -u
+
+DIR="$(cd "$(dirname "$0")" && pwd)"
+
+OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+case "$OS" in
+  mingw*|msys*|cygwin*) OS="windows" ;;
+esac
+ARCH="$(uname -m)"
+case "$ARCH" in
+  x86_64|amd64)  ARCH="amd64" ;;
+  arm64|aarch64) ARCH="arm64" ;;
+esac
+EXT=""; [ "$OS" = "windows" ] && EXT=".exe"
+
+BIN="$DIR/a2h-${OS}-${ARCH}${EXT}"
+[ -e "$BIN" ] || exit 0
+[ -x "$BIN" ] || chmod +x "$BIN" 2>/dev/null || true
+# Darwin self-heal: clear quarantine on the ad-hoc-signed binary, best-effort.
+if [ "$OS" = "darwin" ] && command -v xattr >/dev/null 2>&1; then
+  xattr -d com.apple.quarantine "$BIN" 2>/dev/null || xattr -c "$BIN" 2>/dev/null || true
+fi
+
+# argv0 becomes the binary name (not a2h-usage-hook), so select the tool
+# explicitly via the subcommand form. stdin (the hook payload) is inherited.
+exec "$BIN" hook "$@"
+exit 0

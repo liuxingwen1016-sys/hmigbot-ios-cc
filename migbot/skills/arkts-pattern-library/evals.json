@@ -1,0 +1,23 @@
+{
+  "skill_name": "arkts-pattern-library",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "帮我实现一个完整的搜索功能，带搜索历史记录和实时搜索建议，搜索历史保存在本地",
+      "expected_output": "生成搜索页面组件，包含 Search 组件 + 搜索历史展示（Flex wrap 标签）+ 搜索结果 List + 防抖搜索逻辑 + PreferencesUtil 持久化历史记录 + 清空历史功能",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "实现一个文章列表页，点击进入文章详情，列表支持下拉刷新和上滑加载更多",
+      "expected_output": "生成 Refresh 包裹的 List 组件，LazyForEach + BasicDataSource 实现懒加载，onReachEnd 触发加载更多，Navigation + NavDestination 实现跳转详情，包含加载态/空态/错误态处理",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "实现用户登录状态管理，登录后显示用户头像和昵称，未登录时显示登录按钮",
+      "expected_output": "使用 AppStorage + @StorageLink 管理 isLoggedIn 和 userInfo 全局状态，在 EntryAbility 初始化，ProfileView 根据登录状态条件渲染不同 UI",
+      "files": []
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# pre-commit — 提示「本次改动是否需要回推 ArkTs-Core」
+#
+# migbot 的 skills/ 有两类来源：
+#   1. 来自 ArkTs-Core（71 个，见 core-skills.manifest）——真相源在上游，
+#      migbot 通过 dist 产物同步。在这里改了不回推，下次整版同步就会被覆盖。
+#   2. migbot 独有（16 个）——改动无需回推。
+#
+# 本 hook 只提示、不阻断。安装：
+#   git config core.hooksPath .githooks
+#
+# 跳过单次检查：SKIP_CORE_SYNC_CHECK=1 git commit ...
+
+set -uo pipefail
+
+[ "${SKIP_CORE_SYNC_CHECK:-0}" = "1" ] && exit 0
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+MANIFEST="$REPO_ROOT/.githooks/core-skills.manifest"
+
+[ -f "$MANIFEST" ] || exit 0
+
+# 本次暂存的 skills/<name>/... 文件，取出 <name> 去重
+staged_skills="$(git diff --cached --name-only --diff-filter=ACMR \
+  | grep -oE '^skills/[^/]+' | cut -d/ -f2 | sort -u)"
+
+[ -z "$staged_skills" ] && exit 0
+
+# 与清单取交集 = 需要回推的
+shared="$(grep -vE '^#|^$' "$MANIFEST" | sort -u)"
+need_push="$(comm -12 <(echo "$staged_skills") <(echo "$shared"))"
+
+[ -z "$need_push" ] && exit 0
+
+n=$(echo "$need_push" | wc -l | tr -d ' ')
+
+printf '\n'
+printf '\033[33m⚠  本次提交改动了 %s 个与 ArkTs-Core 共享的 skill：\033[0m\n' "$n"
+echo "$need_push" | sed 's/^/     /'
+printf '\n'
+printf '   这些 skill 的真相源在 ArkTs-Core。若只改 migbot，下次从 dist 整版\n'
+printf '   同步时会被上游版本覆盖（历史已发生 3 次）。\n'
+printf '\n'
+printf '   若本次改动应长期保留，请回推上游：\n'
+printf '     cd <ArkTs-Core> && git checkout version_730_tools\n'
+printf '     # 把对应改动应用到 arkts-skills/skills/<name>/\n'
+printf '     bash scripts/ci/check-migbot-contract.sh   # 回推后自检\n'
+printf '\n'
+printf '   仅本地实验、无需回推可忽略本提示（不阻断提交）。\n'
+printf '\n'
+
+exit 0

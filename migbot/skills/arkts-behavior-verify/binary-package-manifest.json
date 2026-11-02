@@ -1,0 +1,1096 @@
+{
+  "schema_version": 1,
+  "format": "nuitka-standalone",
+  "platforms": [
+    "macos-arm64",
+    "windows-x64"
+  ],
+  "script_roots": [
+    "scripts",
+    "engines/setting/scripts",
+    "engines/interaction/scripts"
+  ],
+  "source_package_sha256": "42b5794d1e55ebb96ee6558e3261d3b35dcd90c6151068167ebf563b7d291e49",
+  "files": [
+    {
+      "path": ".gitattributes",
+      "sha256": "705fd4d6451a31d36b3df7de96f83f30ac976c9b4a6d1e51671d8e2f33e2d0da"
+    },
+    {
+      "path": "SKILL.md",
+      "sha256": "b33cd6319ff642ddb032ad70032c794cf57526f9fa29e9ede6d200ce7bf37646"
+    },
+    {
+      "path": "engines/interaction/ENTRY.md",
+      "sha256": "b09ecbe966d671c096f8303dfa2e83055d2078806580854bddef7215b47df230"
+    },
+    {
+      "path": "engines/interaction/references/adapter-contract.md",
+      "sha256": "9c09200745f161ef2d8e577851cfd3b6fcacfb774ac1289231457b4099acd9a7"
+    },
+    {
+      "path": "engines/interaction/references/adapter-discovery.md",
+      "sha256": "e3c5bf1d17798604f52f541d7b9623f4bde1607c455a1df2e03a04e458c381cb"
+    },
+    {
+      "path": "engines/interaction/references/batch-dispatch-protocol.md",
+      "sha256": "bdb09d8ca69c36dbd5ca87e8e531a6308c57c2ec560cb52cb69a1376639f0778"
+    },
+    {
+      "path": "engines/interaction/references/candidate-policy.md",
+      "sha256": "443a903953b406c3a017acec19a4dc265d9107bd1ddafb8b4835fe6ff20a1394"
+    },
+    {
+      "path": "engines/interaction/references/compact-review-protocol.md",
+      "sha256": "9ea9efb6b175e04d52d52874096af46af30b0de445f230f45d0c9b19a8c0f9d5"
+    },
+    {
+      "path": "engines/interaction/references/detector-candidate-rules.md",
+      "sha256": "c60a90351641a4a95ce3d059346aaf1fc25743ecb0c15dfa8b89b09c112166a7"
+    },
+    {
+      "path": "engines/interaction/references/direct-repair-protocol.md",
+      "sha256": "c5af3d9673574e4b2e7f652b2beb6a4f0de44841b7982a7873948b32e712a114"
+    },
+    {
+      "path": "engines/interaction/references/effect-dependency-review.md",
+      "sha256": "3658883b790cbf3971d0e55e958a9374fcccd3de107eb36e03f865db59938493"
+    },
+    {
+      "path": "engines/interaction/references/entry-check-protocol.md",
+      "sha256": "cd0013e3f5fbd5fb0eed7b68c06180ad0e9f8ca013d524e550220a2c03d2792c"
+    },
+    {
+      "path": "engines/interaction/references/fast-repair-protocol.md",
+      "sha256": "a062b655c8675fcf4cd6c1e3b16bad2c8e9e03dc09ad8cbb5f172b58a748fee4"
+    },
+    {
+      "path": "engines/interaction/references/fast-result-contract.md",
+      "sha256": "3b7310f04bbb859b3eb092344031d4c8de31f1b4d4d1d10ee6c86e1c4ad59122"
+    },
+    {
+      "path": "engines/interaction/references/fast-workflow-protocol.md",
+      "sha256": "a4d875a07e42d2cdbd851ac67f1922ffb44802e14c702fa2b42c1f1c3b3d09ba"
+    },
+    {
+      "path": "engines/interaction/references/media-effect-rules.md",
+      "sha256": "4c75b9fb9f2da54823517e4e121893c7051aace93048fbd9d7c19c667dcf24d2"
+    },
+    {
+      "path": "engines/interaction/references/operation-evidence.md",
+      "sha256": "99d5331b0f1aa13129c20128997fbdf9e5aeacd0a4b898c7083caeb1f2463a57"
+    },
+    {
+      "path": "engines/interaction/references/overlap-execution-protocol.md",
+      "sha256": "2d4a97190d17352b97e4d3e78b3990234ce524cd08fe9b002926d7d6998353c9"
+    },
+    {
+      "path": "engines/interaction/references/planning-recovery-protocol.md",
+      "sha256": "8eda94970854b7290e74b9949ab8832ab7729d50315e0feb10f72a1e9829fa90"
+    },
+    {
+      "path": "engines/interaction/references/preflight-protocol.md",
+      "sha256": "2ab127582c544b0c9d65c1e0f360925fcbf31d0d77ccaeb25c35d8bfa7757af5"
+    },
+    {
+      "path": "engines/interaction/references/quick-review-protocol.md",
+      "sha256": "868496ed3d3e4a01de6c884450a474d8af05b22850e90bcd64c05de8c3e7ee88"
+    },
+    {
+      "path": "engines/interaction/references/repair-organization-protocol.md",
+      "sha256": "d8e12e957da9883bfadc0520f95e315d89bc786ddbbe20916754d9008d1c9262"
+    },
+    {
+      "path": "engines/interaction/references/review-efficiency-protocol.md",
+      "sha256": "5fa21e8ec3d9daef6ab9b709bbd9123b8a676dd165d6d8276e630fcc6b50c849"
+    },
+    {
+      "path": "engines/interaction/references/runtime-validation-protocol.md",
+      "sha256": "8142bae9009887b62843880d6897ede2d6e035d7eff04993bf1152f17f842ff2"
+    },
+    {
+      "path": "engines/interaction/references/scope-ownership-protocol.md",
+      "sha256": "57fd4f525636ecaf80f21181109d32d609ff851e83a648213f3948a4181f0328"
+    },
+    {
+      "path": "engines/interaction/references/shared-repair-protocol.md",
+      "sha256": "4bce591b43b384ab8c90548fec4759e8bb32ff0822dacbcb1797b70aa9c8efb5"
+    },
+    {
+      "path": "engines/interaction/references/worker-task-protocol.md",
+      "sha256": "cf01bc3fdb897bf9d9712e350cb45e68f503d41d2a13230a2b466e896603af60"
+    },
+    {
+      "path": "engines/interaction/scripts/acceptance_plan.py",
+      "sha256": "1bf8b2e26028e0315d38b91516eb531e1e65c4dd331d651e6850568ecc8b816f"
+    },
+    {
+      "path": "engines/interaction/scripts/behavior_bridge.py",
+      "sha256": "a8f6d8b19712f504c3c95c0bbb6d1a1bdb07c0acaf14c753e9035a2667d84619"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/Python",
+      "sha256": "be221e65a60193cabbefc84f4292317e56c624f9f112616a3436c15b2ebb85af"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/_blake2.so",
+      "sha256": "abb936b5e22a398e2a60f6a3b41bde13c1338a5c1c285e5a6960d370aad68338"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/_bz2.so",
+      "sha256": "c0623287252b52764d632cb5650a2d8fe6c38cb8e865e020442bab192d7fcde9"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/_codecs_cn.so",
+      "sha256": "7fb12ac70fa9860f917154a87f76223577b45bd502bb553118588048e0d548b7"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/_codecs_hk.so",
+      "sha256": "cdae7951b589d8b1dfa7a93c0e2b29a580b392e89ab65a0d37f6b0ae6805d162"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/_codecs_iso2022.so",
+      "sha256": "75e5eb214c388f2b41a33543f7659df57c871f60a016698feb9ad31953278918"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/_codecs_jp.so",
+      "sha256": "919d664a18bbbc2f887f54b352964fd3101a46894d9608ba45e6275b59c982b8"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/_codecs_kr.so",
+      "sha256": "d86997426b8dd1d646f8b9586752eee9c1d015e250a58b3a7dbefa411683b16f"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/_codecs_tw.so",
+      "sha256": "ad918c24016d0990332b08dfb673c75ef31f4a80d51e04ea42837c4636c0b608"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/_contextvars.so",
+      "sha256": "b144a12b78ef03986d44648e0da99304c3d640aa8a6aafdd5590d16b001d5eef"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/_datetime.so",
+      "sha256": "46df63997590c84c125ff6f6bc95026d7487c176705fca33babad4d3c47380be"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/_decimal.so",
+      "sha256": "af85ebaf3e34b84d18bcaa622e153cd949cc7f257bf422adf7f154ce8ed60438"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/_entry.bin",
+      "sha256": "0b3417fafe49e009397b02405c52a49496ac932c79930f8a5e30bb292246674b"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/_hashlib.so",
+      "sha256": "41e902fff3fa4eb8af8f3103e207b953b8c0ea4b084155b8c4770c171a3cbb4e"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/_heapq.so",
+      "sha256": "2ca7d65520ade950b25b30528eccaca8ecdaa135a0d983275fb607f7bf66c5e9"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/_lzma.so",
+      "sha256": "cde67907bb90166ef07537bf7454c5d9de1280b405da181d03092394693dde49"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/_md5.so",
+      "sha256": "6675aed34a6d8488a872ddf656fcd0802ee931c6d51372bc761204c79de7f73c"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/_multibytecodec.so",
+      "sha256": "0b58b1b1657106752a78c54f9af67efa723a46ac33cb7212c518601b4de85934"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/_opcode.so",
+      "sha256": "3c39c57ca3c81d08b66fcc20f25444930c94a2ab04c8fa9907800c5a90112077"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/_pickle.so",
+      "sha256": "96858b4f22b68d32c6f2ac98e32fc0646facf231da4527a8bf36c99a4b971505"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/_posixsubprocess.so",
+      "sha256": "892f73ee165e64d821d4ff29dd31687c5584b3578ee255e311420ae2ab777795"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/_random.so",
+      "sha256": "7ef75ae78a3cbb1853b7158a9f50a11722ff6743ada27f02dc3830736e2910a1"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/_sha1.so",
+      "sha256": "571613a1372f9d26756da3464796df8b562bbdcb8538abc226f35607d8372cf5"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/_sha2.so",
+      "sha256": "9fcd1a4f902811569d549dee4c062a881cfdad9ef3da83809895bdc997b29936"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/_sha3.so",
+      "sha256": "b4a547d33fb97dd4b7361c7df58ec10f52cf42278ac7b1bee21379600162a339"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/_socket.so",
+      "sha256": "d352698d2a14d4b0a7164fca1b4731954a05bdd7f79c889feaf331ed23549e71"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/_statistics.so",
+      "sha256": "e914f094f2a57f966df59247e84128203a39d417f7207d47c71a1f157e0b31f6"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/_struct.so",
+      "sha256": "39ea267822a255c8a65d488ced303f43a045b069e5c752d55603fe2dd1598c1d"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/_uuid.so",
+      "sha256": "5489f78c6a1ac231cf55560ee80fa3b03244f71492c8c5a4e9458dbe97b2be22"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/array.so",
+      "sha256": "e9d8019749bdf6fd29c750cf4d3e6e75c74edac51875398ded8249b574ec9454"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/binascii.so",
+      "sha256": "563e7f3b92ed068dd7ac129013ba70e860ed094a835256a98dbdbe985c9f437a"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/fcntl.so",
+      "sha256": "023b3768d316b49f13056d9458b402e2ba6597229fe464bf706a5581a36785fa"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/grp.so",
+      "sha256": "4010839d59b3d3fdf25cdcaee7135b06c56ffb399f38e68d86112a0fb6b6f6a3"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/libcrypto.3.dylib",
+      "sha256": "34bc039f5c725691e757ef42d26f1709830b18046c3ad6d93985153c83d0bbbc"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/liblzma.5.dylib",
+      "sha256": "3d5bfa2f097c31463642b1daab5e662b44368bb4da368f85e412e7f9adcbaa10"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/libmpdec.4.dylib",
+      "sha256": "14286ba02244c25537b3b5c74902c5fa81959d5d2c1fcf06f89808badb67dea8"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/math.so",
+      "sha256": "20cc5da9c0cb9810cf0cd868ede06e1de90dda15b799f673cac257bd68576fdc"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/pyexpat.so",
+      "sha256": "a60cce9991ba7e367cd46cd10eae019a9adb98ffefcfd5e92dff3c54b33cb9d5"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/select.so",
+      "sha256": "743abbe83c0ae99d6c9ae0311ab691fff4649bf407e1c016abe5bf29b9f5e81d"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/unicodedata.so",
+      "sha256": "106881b7268fde0765ed7da0ddcc9c2c3bf8ab77cdb94e79fb9ff1a6c2a6dd95"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/macos-arm64/_entry.dist/zlib.so",
+      "sha256": "bc2a8575645eb24e5caa9a847455247d9b8d20858ffa0983d55dccca6ebc4087"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/windows-x64/_entry.dist/_bz2.pyd",
+      "sha256": "261545bd24f15a783fc0c82568b766a4ab569dde14507a81701cccf5293e6e54"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/windows-x64/_entry.dist/_decimal.pyd",
+      "sha256": "1e6a5707163d3c103e0eb4695eefedbea4b855fb227c61cc265b168970d6c6f0"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/windows-x64/_entry.dist/_entry.exe",
+      "sha256": "d3f06ec0526c9d5c06172aeb660febf8d42a9670c4766c050e2883e80ef70a6d"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/windows-x64/_entry.dist/_hashlib.pyd",
+      "sha256": "79a26289aef0d92545a082507c7021f10e219621d137cb726c4d0fbbfd4b46ae"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/windows-x64/_entry.dist/_lzma.pyd",
+      "sha256": "ee224aacf5cf9c9974a1b842aac8d89d5d9b7eeebbf4d76619ae0ce4da8ecd96"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/windows-x64/_entry.dist/_socket.pyd",
+      "sha256": "ccbd0f83df3784da08147b8e8765e28c978de28b5c0eddcfba5567b59d43fef9"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/windows-x64/_entry.dist/_uuid.pyd",
+      "sha256": "b93832742a2348d6659fd62e8a8aff061594693fc537da74c7d2d1cdf83a8475"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/windows-x64/_entry.dist/_wmi.pyd",
+      "sha256": "db45362354fd4965329cb14bd974e60b26525045d09fb4fdfb1674a93b79d60c"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/windows-x64/_entry.dist/libcrypto-3.dll",
+      "sha256": "09499e186cf0e434ffa17ad153aa9a66d6048c54a2c03b823e2a06c49d9affe4"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/windows-x64/_entry.dist/python313.dll",
+      "sha256": "e820bf024efd2b56bb2b82791e6b6ddc7303f070f8e72cba7637482a8a906238"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/windows-x64/_entry.dist/select.pyd",
+      "sha256": "024f955349fe46cf1bb2c22c6b57fcf38cf5755d46166fbf63e7e5b92433b111"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/windows-x64/_entry.dist/unicodedata.pyd",
+      "sha256": "111e0fdfeef9887c04f6ebf1972ce1ccbec55b226012e4a288c2d4a0b17b216b"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/windows-x64/_entry.dist/vcruntime140.dll",
+      "sha256": "d1f4225df2cd877dbf130d5668a021dce3f94118455ff5ec952061c30afc9ce7"
+    },
+    {
+      "path": "engines/interaction/scripts/bin/windows-x64/_entry.dist/vcruntime140_1.dll",
+      "sha256": "a7146c08f89fe5b04541ab507cdb59ff7b44534d4ba3c668a426c6450a03434e"
+    },
+    {
+      "path": "engines/interaction/scripts/build_preparation.py",
+      "sha256": "1b75943c91b1b66bfe0aaaeb96e87052ab22dc732b9d0621cda9c928e11b5c61"
+    },
+    {
+      "path": "engines/interaction/scripts/compact_interaction_review.py",
+      "sha256": "037a52e70f014ce65eda9a9de446e3a29d521695fde73d35dd3061c6e4259a61"
+    },
+    {
+      "path": "engines/interaction/scripts/early_quick.py",
+      "sha256": "b31aa9971d50a5d944f16f2a145ffa478822e97e2a56130122433757afe16873"
+    },
+    {
+      "path": "engines/interaction/scripts/effect_scope_guard.py",
+      "sha256": "50a46e4ebdb0e1d8c8d9c05e48ff81c641c8a371c83489a118974bc712d97c07"
+    },
+    {
+      "path": "engines/interaction/scripts/export_fast_result.py",
+      "sha256": "62e5a5cc6fbec668dedec397413abe5f7d09562229ba6a245417889193325030"
+    },
+    {
+      "path": "engines/interaction/scripts/fast_interaction_repair.py",
+      "sha256": "fa6a3924a3f90b2a0fe0dfac299759ea48272dc11f66ab19cae5b32d9ebb1d3d"
+    },
+    {
+      "path": "engines/interaction/scripts/fast_preflight.py",
+      "sha256": "c3f586cdc059977c48bd80243f875beaef7b06aed08aa7203714e3024abca639"
+    },
+    {
+      "path": "engines/interaction/scripts/interaction_handler_verify.py",
+      "sha256": "411a2ec1d9a9097d38c3f2bb2928c0c67ef33e91bb4b8748c76b76b519e741a1"
+    },
+    {
+      "path": "engines/interaction/scripts/isolated_repair_dispatch.py",
+      "sha256": "06ee76aa07345fd6d207d9af286ad57fcc518ae9fe786d681a1b9a6250c84aee"
+    },
+    {
+      "path": "engines/interaction/scripts/package_skill.py",
+      "sha256": "975b966e9cdeca72bf9427f27bdc037dae394c00d6f548e7ddc4709471d4a335"
+    },
+    {
+      "path": "engines/interaction/scripts/platform_effect_guard.py",
+      "sha256": "a608b5403fd48bbeb2901219e86d19595ef5263ee18deff9922bcc081c910c30"
+    },
+    {
+      "path": "engines/interaction/scripts/quick_interaction_review.py",
+      "sha256": "093a443559d17ceddb106c2e7afa497f7e214685df591f1f05847dc381aa1692"
+    },
+    {
+      "path": "engines/interaction/scripts/repair_dispatch.py",
+      "sha256": "c5c6ddaeaa14ecc1fb11abd9cde0ff3386677376c18b996e133f71b3d466790a"
+    },
+    {
+      "path": "engines/interaction/scripts/repair_organization.py",
+      "sha256": "4ba8c14f7a5911f03fc9f390a81f3a329033c784ad1c1d7a7ba02ebfee7c6785"
+    },
+    {
+      "path": "engines/interaction/scripts/resolve_hmos_toolchain.py",
+      "sha256": "93cbb2a4b6da7e22679a60481430e562bdb0279a64cdb3d801c776182c255def"
+    },
+    {
+      "path": "engines/interaction/scripts/review_dispatch.py",
+      "sha256": "5372daff5c5e81c90b16a08ebdd1b439e59505d6314ba1dd091c5b2c6d6d0934"
+    },
+    {
+      "path": "engines/interaction/scripts/review_efficiency.py",
+      "sha256": "e047a49e61599df1f578bd9181b4b072eca78b075a69addeabb44432e8e34f36"
+    },
+    {
+      "path": "engines/interaction/scripts/run_frozen_build.py",
+      "sha256": "6c2443c8dffa98ad439c05425bb7229cf7abbe220b67ebaec586d31c883985f5"
+    },
+    {
+      "path": "engines/interaction/scripts/scope_recovery.py",
+      "sha256": "327670512bbd1ed5dfc90fb4d00480f4263c8b6b5e784efeb6a8e30ba8d2a462"
+    },
+    {
+      "path": "engines/interaction/scripts/source_guard.py",
+      "sha256": "5bc6a5ac62bac9002a49b202f1c5bd3bc358079eea7ab69ecd4bb43df8dc4693"
+    },
+    {
+      "path": "engines/interaction/scripts/target_writers.py",
+      "sha256": "00a37b8125ea097fcc574ffcffeff874684c50e04ca3a50b1df2210f561ab24c"
+    },
+    {
+      "path": "engines/interaction/scripts/workflow_packets.py",
+      "sha256": "8940975e6275df146e75e5d1cd4c035d95092deccef441a73bff08d09d462582"
+    },
+    {
+      "path": "engines/setting/ENTRY.md",
+      "sha256": "57ec2fb506d8a9c76dbeee10ed9934f7745f261fbbf9c04af753e4de4a7a8e0e"
+    },
+    {
+      "path": "engines/setting/references/compact-review-protocol.md",
+      "sha256": "36912272a304d5c4efd7d3c88ad88b1f5eb83e39cd9e1dd988f708b4373ac27d"
+    },
+    {
+      "path": "engines/setting/references/fast-repair-protocol.md",
+      "sha256": "bb654c0fce62dceccd5e55a1ec70c776be5e446c87ab9431fb044448351d90b4"
+    },
+    {
+      "path": "engines/setting/references/fast-result-contract.md",
+      "sha256": "152efcb043ee06659ab3c2534c6c378f77ed2c41e3ae850b038cb923bda9e784"
+    },
+    {
+      "path": "engines/setting/references/fast-workflow-protocol.md",
+      "sha256": "4f680f54fa1009e120adaa804718991551e75a4da61f958a4144dc0ef25fbefc"
+    },
+    {
+      "path": "engines/setting/references/quick-review-protocol.md",
+      "sha256": "a509efd3fce2b01ed360a7bc34031688c5591cccc2026be303d3e75aa3115835"
+    },
+    {
+      "path": "engines/setting/scripts/behavior_bridge.py",
+      "sha256": "a8f6d8b19712f504c3c95c0bbb6d1a1bdb07c0acaf14c753e9035a2667d84619"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/Python",
+      "sha256": "be221e65a60193cabbefc84f4292317e56c624f9f112616a3436c15b2ebb85af"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/_blake2.so",
+      "sha256": "abb936b5e22a398e2a60f6a3b41bde13c1338a5c1c285e5a6960d370aad68338"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/_bz2.so",
+      "sha256": "c0623287252b52764d632cb5650a2d8fe6c38cb8e865e020442bab192d7fcde9"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/_codecs_cn.so",
+      "sha256": "7fb12ac70fa9860f917154a87f76223577b45bd502bb553118588048e0d548b7"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/_codecs_hk.so",
+      "sha256": "cdae7951b589d8b1dfa7a93c0e2b29a580b392e89ab65a0d37f6b0ae6805d162"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/_codecs_iso2022.so",
+      "sha256": "75e5eb214c388f2b41a33543f7659df57c871f60a016698feb9ad31953278918"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/_codecs_jp.so",
+      "sha256": "919d664a18bbbc2f887f54b352964fd3101a46894d9608ba45e6275b59c982b8"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/_codecs_kr.so",
+      "sha256": "d86997426b8dd1d646f8b9586752eee9c1d015e250a58b3a7dbefa411683b16f"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/_codecs_tw.so",
+      "sha256": "ad918c24016d0990332b08dfb673c75ef31f4a80d51e04ea42837c4636c0b608"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/_contextvars.so",
+      "sha256": "b144a12b78ef03986d44648e0da99304c3d640aa8a6aafdd5590d16b001d5eef"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/_datetime.so",
+      "sha256": "46df63997590c84c125ff6f6bc95026d7487c176705fca33babad4d3c47380be"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/_decimal.so",
+      "sha256": "af85ebaf3e34b84d18bcaa622e153cd949cc7f257bf422adf7f154ce8ed60438"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/_elementtree.so",
+      "sha256": "955a3da129216021b7ec6358bc445a43930f413f9015cae5c70abe7a1759fe77"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/_entry.bin",
+      "sha256": "70a034146384c85ea4fe0e1a0931cd6f568aa66ca44f1bf8abca5ea65b9ec11c"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/_hashlib.so",
+      "sha256": "41e902fff3fa4eb8af8f3103e207b953b8c0ea4b084155b8c4770c171a3cbb4e"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/_heapq.so",
+      "sha256": "2ca7d65520ade950b25b30528eccaca8ecdaa135a0d983275fb607f7bf66c5e9"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/_lzma.so",
+      "sha256": "cde67907bb90166ef07537bf7454c5d9de1280b405da181d03092394693dde49"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/_md5.so",
+      "sha256": "6675aed34a6d8488a872ddf656fcd0802ee931c6d51372bc761204c79de7f73c"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/_multibytecodec.so",
+      "sha256": "0b58b1b1657106752a78c54f9af67efa723a46ac33cb7212c518601b4de85934"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/_opcode.so",
+      "sha256": "3c39c57ca3c81d08b66fcc20f25444930c94a2ab04c8fa9907800c5a90112077"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/_pickle.so",
+      "sha256": "96858b4f22b68d32c6f2ac98e32fc0646facf231da4527a8bf36c99a4b971505"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/_posixsubprocess.so",
+      "sha256": "892f73ee165e64d821d4ff29dd31687c5584b3578ee255e311420ae2ab777795"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/_random.so",
+      "sha256": "7ef75ae78a3cbb1853b7158a9f50a11722ff6743ada27f02dc3830736e2910a1"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/_sha1.so",
+      "sha256": "571613a1372f9d26756da3464796df8b562bbdcb8538abc226f35607d8372cf5"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/_sha2.so",
+      "sha256": "9fcd1a4f902811569d549dee4c062a881cfdad9ef3da83809895bdc997b29936"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/_sha3.so",
+      "sha256": "b4a547d33fb97dd4b7361c7df58ec10f52cf42278ac7b1bee21379600162a339"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/_socket.so",
+      "sha256": "d352698d2a14d4b0a7164fca1b4731954a05bdd7f79c889feaf331ed23549e71"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/_statistics.so",
+      "sha256": "e914f094f2a57f966df59247e84128203a39d417f7207d47c71a1f157e0b31f6"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/_struct.so",
+      "sha256": "39ea267822a255c8a65d488ced303f43a045b069e5c752d55603fe2dd1598c1d"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/array.so",
+      "sha256": "e9d8019749bdf6fd29c750cf4d3e6e75c74edac51875398ded8249b574ec9454"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/binascii.so",
+      "sha256": "563e7f3b92ed068dd7ac129013ba70e860ed094a835256a98dbdbe985c9f437a"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/fcntl.so",
+      "sha256": "023b3768d316b49f13056d9458b402e2ba6597229fe464bf706a5581a36785fa"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/grp.so",
+      "sha256": "4010839d59b3d3fdf25cdcaee7135b06c56ffb399f38e68d86112a0fb6b6f6a3"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/libcrypto.3.dylib",
+      "sha256": "34bc039f5c725691e757ef42d26f1709830b18046c3ad6d93985153c83d0bbbc"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/liblzma.5.dylib",
+      "sha256": "3d5bfa2f097c31463642b1daab5e662b44368bb4da368f85e412e7f9adcbaa10"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/libmpdec.4.dylib",
+      "sha256": "14286ba02244c25537b3b5c74902c5fa81959d5d2c1fcf06f89808badb67dea8"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/math.so",
+      "sha256": "20cc5da9c0cb9810cf0cd868ede06e1de90dda15b799f673cac257bd68576fdc"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/pyexpat.so",
+      "sha256": "a60cce9991ba7e367cd46cd10eae019a9adb98ffefcfd5e92dff3c54b33cb9d5"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/select.so",
+      "sha256": "743abbe83c0ae99d6c9ae0311ab691fff4649bf407e1c016abe5bf29b9f5e81d"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/unicodedata.so",
+      "sha256": "106881b7268fde0765ed7da0ddcc9c2c3bf8ab77cdb94e79fb9ff1a6c2a6dd95"
+    },
+    {
+      "path": "engines/setting/scripts/bin/macos-arm64/_entry.dist/zlib.so",
+      "sha256": "bc2a8575645eb24e5caa9a847455247d9b8d20858ffa0983d55dccca6ebc4087"
+    },
+    {
+      "path": "engines/setting/scripts/bin/windows-x64/_entry.dist/_bz2.pyd",
+      "sha256": "261545bd24f15a783fc0c82568b766a4ab569dde14507a81701cccf5293e6e54"
+    },
+    {
+      "path": "engines/setting/scripts/bin/windows-x64/_entry.dist/_decimal.pyd",
+      "sha256": "1e6a5707163d3c103e0eb4695eefedbea4b855fb227c61cc265b168970d6c6f0"
+    },
+    {
+      "path": "engines/setting/scripts/bin/windows-x64/_entry.dist/_elementtree.pyd",
+      "sha256": "26c5c2f3f2b8dac1499f07a50d7afd14315c20a6a541abbe4e306bcd9df404f1"
+    },
+    {
+      "path": "engines/setting/scripts/bin/windows-x64/_entry.dist/_entry.exe",
+      "sha256": "40b1d490534b409e0498b8aecb17678710def71a74b8b306b4b6bdfa83240eb1"
+    },
+    {
+      "path": "engines/setting/scripts/bin/windows-x64/_entry.dist/_hashlib.pyd",
+      "sha256": "79a26289aef0d92545a082507c7021f10e219621d137cb726c4d0fbbfd4b46ae"
+    },
+    {
+      "path": "engines/setting/scripts/bin/windows-x64/_entry.dist/_lzma.pyd",
+      "sha256": "ee224aacf5cf9c9974a1b842aac8d89d5d9b7eeebbf4d76619ae0ce4da8ecd96"
+    },
+    {
+      "path": "engines/setting/scripts/bin/windows-x64/_entry.dist/_socket.pyd",
+      "sha256": "ccbd0f83df3784da08147b8e8765e28c978de28b5c0eddcfba5567b59d43fef9"
+    },
+    {
+      "path": "engines/setting/scripts/bin/windows-x64/_entry.dist/_wmi.pyd",
+      "sha256": "db45362354fd4965329cb14bd974e60b26525045d09fb4fdfb1674a93b79d60c"
+    },
+    {
+      "path": "engines/setting/scripts/bin/windows-x64/_entry.dist/libcrypto-3.dll",
+      "sha256": "09499e186cf0e434ffa17ad153aa9a66d6048c54a2c03b823e2a06c49d9affe4"
+    },
+    {
+      "path": "engines/setting/scripts/bin/windows-x64/_entry.dist/pyexpat.pyd",
+      "sha256": "b9c9c5a9f52af559a7eb4e8ddfd60558185bfc7794f32840bed1747d1ec9026a"
+    },
+    {
+      "path": "engines/setting/scripts/bin/windows-x64/_entry.dist/python313.dll",
+      "sha256": "e820bf024efd2b56bb2b82791e6b6ddc7303f070f8e72cba7637482a8a906238"
+    },
+    {
+      "path": "engines/setting/scripts/bin/windows-x64/_entry.dist/select.pyd",
+      "sha256": "024f955349fe46cf1bb2c22c6b57fcf38cf5755d46166fbf63e7e5b92433b111"
+    },
+    {
+      "path": "engines/setting/scripts/bin/windows-x64/_entry.dist/unicodedata.pyd",
+      "sha256": "111e0fdfeef9887c04f6ebf1972ce1ccbec55b226012e4a288c2d4a0b17b216b"
+    },
+    {
+      "path": "engines/setting/scripts/bin/windows-x64/_entry.dist/vcruntime140.dll",
+      "sha256": "d1f4225df2cd877dbf130d5668a021dce3f94118455ff5ec952061c30afc9ce7"
+    },
+    {
+      "path": "engines/setting/scripts/bin/windows-x64/_entry.dist/vcruntime140_1.dll",
+      "sha256": "a7146c08f89fe5b04541ab507cdb59ff7b44534d4ba3c668a426c6450a03434e"
+    },
+    {
+      "path": "engines/setting/scripts/compact_review.py",
+      "sha256": "80290e95610072731b6873b7e5e5db784bced9c0d9c8c6ed4a7e9841b3dcbebc"
+    },
+    {
+      "path": "engines/setting/scripts/export_fast_result.py",
+      "sha256": "62e5a5cc6fbec668dedec397413abe5f7d09562229ba6a245417889193325030"
+    },
+    {
+      "path": "engines/setting/scripts/fast_preflight.py",
+      "sha256": "c3f586cdc059977c48bd80243f875beaef7b06aed08aa7203714e3024abca639"
+    },
+    {
+      "path": "engines/setting/scripts/fast_repair_plan.py",
+      "sha256": "3738dba6b5a47ffcab3648c5a245c41bb74322079d73d6cf382591f162b73403"
+    },
+    {
+      "path": "engines/setting/scripts/quick_repair_review.py",
+      "sha256": "1bce6f0bdfc9f53a94f8a9f81a0cdc38fd185a26a7e07502c420f1b8dfa16d03"
+    },
+    {
+      "path": "engines/setting/scripts/resolve_hmos_toolchain.py",
+      "sha256": "93cbb2a4b6da7e22679a60481430e562bdb0279a64cdb3d801c776182c255def"
+    },
+    {
+      "path": "engines/setting/scripts/setting_effect_verify.py",
+      "sha256": "d643e96ad004806f558e35a7ba46f2cdb0f92a0a1b6a2f1a1c86df997cfdfd32"
+    },
+    {
+      "path": "engines/setting/scripts/source_guard.py",
+      "sha256": "5bc6a5ac62bac9002a49b202f1c5bd3bc358079eea7ab69ecd4bb43df8dc4693"
+    },
+    {
+      "path": "package-manifest.json",
+      "sha256": "42b5794d1e55ebb96ee6558e3261d3b35dcd90c6151068167ebf563b7d291e49"
+    },
+    {
+      "path": "references/behavior-performance.md",
+      "sha256": "64fa68a7aa53e42a30ce36bbe39b50029832b9304d22bf1f4e10d1e84c413ae3"
+    },
+    {
+      "path": "references/binary-packaging.md",
+      "sha256": "ad0b285f3aad44f19d17a113fcdca324d8403ea9b1ec29392168b1b8f0099405"
+    },
+    {
+      "path": "references/direct-repair-protocol.md",
+      "sha256": "17211e2fd919782e278c16a28025242e28d4c1f50283adb7dcbad3410713df13"
+    },
+    {
+      "path": "references/effect-feedback-safety.md",
+      "sha256": "1047b539e9c8fe33abe5f64fa189063f302d7fd9c2548bef452c2172073384c5"
+    },
+    {
+      "path": "references/function-scoped-repair.md",
+      "sha256": "fa4cedfcc65882c99e490ffdb57a996524d2501905a187302256687f24a6e2c4"
+    },
+    {
+      "path": "references/interaction-adapter.md",
+      "sha256": "08fffab4dda5fa2e749d7b2f4ecdf896b986a7a834e92c9ee3466944e4f1f5ee"
+    },
+    {
+      "path": "references/repair-overlap.md",
+      "sha256": "2c2116069b85eeca8bdeb76f9e0bfca49d89d182938b9d1de2cf7f03eed637e8"
+    },
+    {
+      "path": "references/round2-continuation.md",
+      "sha256": "73c704c4262f7b7b3ccbfff8407eda7525bbe18d4ef4b096a16f023982d7b3b9"
+    },
+    {
+      "path": "references/setting-adapter.md",
+      "sha256": "af2fa04d016210a71be82498a65910467c505cf463011bd7f2dee4dd3aa535d2"
+    },
+    {
+      "path": "references/unified-dispatch.md",
+      "sha256": "94836ac46b272babda8398305ea470c581bf05f6d6a395a1e3ed593c2b00fa22"
+    },
+    {
+      "path": "references/unified-workflow.md",
+      "sha256": "c013841a1050d6946ba90fe61be6e61e647541dedb72e428edf9a2725b3809ba"
+    },
+    {
+      "path": "scripts/behavior_early_quick.py",
+      "sha256": "2747be6e1ea4b9982051939f2147cf2d17f3dc0777fe68fab9c5be46b950c420"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/Python",
+      "sha256": "be221e65a60193cabbefc84f4292317e56c624f9f112616a3436c15b2ebb85af"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/_blake2.so",
+      "sha256": "abb936b5e22a398e2a60f6a3b41bde13c1338a5c1c285e5a6960d370aad68338"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/_bz2.so",
+      "sha256": "c0623287252b52764d632cb5650a2d8fe6c38cb8e865e020442bab192d7fcde9"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/_codecs_cn.so",
+      "sha256": "7fb12ac70fa9860f917154a87f76223577b45bd502bb553118588048e0d548b7"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/_codecs_hk.so",
+      "sha256": "cdae7951b589d8b1dfa7a93c0e2b29a580b392e89ab65a0d37f6b0ae6805d162"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/_codecs_iso2022.so",
+      "sha256": "75e5eb214c388f2b41a33543f7659df57c871f60a016698feb9ad31953278918"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/_codecs_jp.so",
+      "sha256": "919d664a18bbbc2f887f54b352964fd3101a46894d9608ba45e6275b59c982b8"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/_codecs_kr.so",
+      "sha256": "d86997426b8dd1d646f8b9586752eee9c1d015e250a58b3a7dbefa411683b16f"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/_codecs_tw.so",
+      "sha256": "ad918c24016d0990332b08dfb673c75ef31f4a80d51e04ea42837c4636c0b608"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/_contextvars.so",
+      "sha256": "b144a12b78ef03986d44648e0da99304c3d640aa8a6aafdd5590d16b001d5eef"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/_ctypes.so",
+      "sha256": "fe2b6fa0f07ea6e64a6625336fdf298eb0b4a043aed19aacbb3dc7b7b2958a9d"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/_datetime.so",
+      "sha256": "46df63997590c84c125ff6f6bc95026d7487c176705fca33babad4d3c47380be"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/_decimal.so",
+      "sha256": "af85ebaf3e34b84d18bcaa622e153cd949cc7f257bf422adf7f154ce8ed60438"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/_entry.bin",
+      "sha256": "a8bae2f44d1642f9d207b1f875874ae502887eb04e02748c58825017c8572ee0"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/_hashlib.so",
+      "sha256": "41e902fff3fa4eb8af8f3103e207b953b8c0ea4b084155b8c4770c171a3cbb4e"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/_heapq.so",
+      "sha256": "2ca7d65520ade950b25b30528eccaca8ecdaa135a0d983275fb607f7bf66c5e9"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/_lzma.so",
+      "sha256": "cde67907bb90166ef07537bf7454c5d9de1280b405da181d03092394693dde49"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/_md5.so",
+      "sha256": "6675aed34a6d8488a872ddf656fcd0802ee931c6d51372bc761204c79de7f73c"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/_multibytecodec.so",
+      "sha256": "0b58b1b1657106752a78c54f9af67efa723a46ac33cb7212c518601b4de85934"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/_multiprocessing.so",
+      "sha256": "efe92a2f367c8d582d016c89a4c2e639671be6ff83372212f27b939dbd12dc6f"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/_opcode.so",
+      "sha256": "3c39c57ca3c81d08b66fcc20f25444930c94a2ab04c8fa9907800c5a90112077"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/_pickle.so",
+      "sha256": "96858b4f22b68d32c6f2ac98e32fc0646facf231da4527a8bf36c99a4b971505"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/_posixshmem.so",
+      "sha256": "dd22d82ba9c4de1fa7fe38c8a9804bbf6f737a19b658b2b23dacf5f6eb252597"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/_posixsubprocess.so",
+      "sha256": "892f73ee165e64d821d4ff29dd31687c5584b3578ee255e311420ae2ab777795"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/_queue.so",
+      "sha256": "903bc5767dea02a087448968856d040be206c475de85a54c38895e08159ab96d"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/_random.so",
+      "sha256": "7ef75ae78a3cbb1853b7158a9f50a11722ff6743ada27f02dc3830736e2910a1"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/_sha1.so",
+      "sha256": "571613a1372f9d26756da3464796df8b562bbdcb8538abc226f35607d8372cf5"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/_sha2.so",
+      "sha256": "9fcd1a4f902811569d549dee4c062a881cfdad9ef3da83809895bdc997b29936"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/_sha3.so",
+      "sha256": "b4a547d33fb97dd4b7361c7df58ec10f52cf42278ac7b1bee21379600162a339"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/_socket.so",
+      "sha256": "d352698d2a14d4b0a7164fca1b4731954a05bdd7f79c889feaf331ed23549e71"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/_ssl.so",
+      "sha256": "f754c9fb0a54d8c089c2bae6b28f8432966996872789aa674b59ec8a15f7749c"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/_statistics.so",
+      "sha256": "e914f094f2a57f966df59247e84128203a39d417f7207d47c71a1f157e0b31f6"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/_struct.so",
+      "sha256": "39ea267822a255c8a65d488ced303f43a045b069e5c752d55603fe2dd1598c1d"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/_uuid.so",
+      "sha256": "5489f78c6a1ac231cf55560ee80fa3b03244f71492c8c5a4e9458dbe97b2be22"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/array.so",
+      "sha256": "e9d8019749bdf6fd29c750cf4d3e6e75c74edac51875398ded8249b574ec9454"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/binascii.so",
+      "sha256": "563e7f3b92ed068dd7ac129013ba70e860ed094a835256a98dbdbe985c9f437a"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/fcntl.so",
+      "sha256": "023b3768d316b49f13056d9458b402e2ba6597229fe464bf706a5581a36785fa"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/grp.so",
+      "sha256": "4010839d59b3d3fdf25cdcaee7135b06c56ffb399f38e68d86112a0fb6b6f6a3"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/libcrypto.3.dylib",
+      "sha256": "34bc039f5c725691e757ef42d26f1709830b18046c3ad6d93985153c83d0bbbc"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/liblzma.5.dylib",
+      "sha256": "3d5bfa2f097c31463642b1daab5e662b44368bb4da368f85e412e7f9adcbaa10"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/libmpdec.4.dylib",
+      "sha256": "14286ba02244c25537b3b5c74902c5fa81959d5d2c1fcf06f89808badb67dea8"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/libssl.3.dylib",
+      "sha256": "b2a837ca663233e350c186ac6da03f68f59fcdc72fb52cfbebf5887001a05fe0"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/math.so",
+      "sha256": "20cc5da9c0cb9810cf0cd868ede06e1de90dda15b799f673cac257bd68576fdc"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/mmap.so",
+      "sha256": "6b3fdb6f8f220e0541247ca333ea65bed6de7b88f99886334a853a1e8f256805"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/pyexpat.so",
+      "sha256": "a60cce9991ba7e367cd46cd10eae019a9adb98ffefcfd5e92dff3c54b33cb9d5"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/select.so",
+      "sha256": "743abbe83c0ae99d6c9ae0311ab691fff4649bf407e1c016abe5bf29b9f5e81d"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/unicodedata.so",
+      "sha256": "106881b7268fde0765ed7da0ddcc9c2c3bf8ab77cdb94e79fb9ff1a6c2a6dd95"
+    },
+    {
+      "path": "scripts/bin/macos-arm64/_entry.dist/zlib.so",
+      "sha256": "bc2a8575645eb24e5caa9a847455247d9b8d20858ffa0983d55dccca6ebc4087"
+    },
+    {
+      "path": "scripts/bin/windows-x64/_entry.dist/_bz2.pyd",
+      "sha256": "261545bd24f15a783fc0c82568b766a4ab569dde14507a81701cccf5293e6e54"
+    },
+    {
+      "path": "scripts/bin/windows-x64/_entry.dist/_ctypes.pyd",
+      "sha256": "9d6dccb4cd84a44a107f9b06b91c0a44e85766d9bf4debb6abbde8fda7494c2c"
+    },
+    {
+      "path": "scripts/bin/windows-x64/_entry.dist/_decimal.pyd",
+      "sha256": "1e6a5707163d3c103e0eb4695eefedbea4b855fb227c61cc265b168970d6c6f0"
+    },
+    {
+      "path": "scripts/bin/windows-x64/_entry.dist/_entry.exe",
+      "sha256": "add30b65849958392524e2d49baf1b009b045becef60616234c7abcdcedb3358"
+    },
+    {
+      "path": "scripts/bin/windows-x64/_entry.dist/_hashlib.pyd",
+      "sha256": "79a26289aef0d92545a082507c7021f10e219621d137cb726c4d0fbbfd4b46ae"
+    },
+    {
+      "path": "scripts/bin/windows-x64/_entry.dist/_lzma.pyd",
+      "sha256": "ee224aacf5cf9c9974a1b842aac8d89d5d9b7eeebbf4d76619ae0ce4da8ecd96"
+    },
+    {
+      "path": "scripts/bin/windows-x64/_entry.dist/_multiprocessing.pyd",
+      "sha256": "db19972cf033b598f5826f8219bc2608412b84061d294f5972b43c2ab95f7af5"
+    },
+    {
+      "path": "scripts/bin/windows-x64/_entry.dist/_queue.pyd",
+      "sha256": "4404c2569443ffb54e7cfffdca8ddf58c9a609175305970728ec12bc1c147b43"
+    },
+    {
+      "path": "scripts/bin/windows-x64/_entry.dist/_socket.pyd",
+      "sha256": "ccbd0f83df3784da08147b8e8765e28c978de28b5c0eddcfba5567b59d43fef9"
+    },
+    {
+      "path": "scripts/bin/windows-x64/_entry.dist/_ssl.pyd",
+      "sha256": "8d2f51fa1dc929073a2ad8d1c7c0c911e8f695870dcf4dda2846f4b75a7f77fb"
+    },
+    {
+      "path": "scripts/bin/windows-x64/_entry.dist/_uuid.pyd",
+      "sha256": "b93832742a2348d6659fd62e8a8aff061594693fc537da74c7d2d1cdf83a8475"
+    },
+    {
+      "path": "scripts/bin/windows-x64/_entry.dist/_wmi.pyd",
+      "sha256": "db45362354fd4965329cb14bd974e60b26525045d09fb4fdfb1674a93b79d60c"
+    },
+    {
+      "path": "scripts/bin/windows-x64/_entry.dist/libcrypto-3.dll",
+      "sha256": "09499e186cf0e434ffa17ad153aa9a66d6048c54a2c03b823e2a06c49d9affe4"
+    },
+    {
+      "path": "scripts/bin/windows-x64/_entry.dist/libffi-8.dll",
+      "sha256": "eff52743773eb550fcc6ce3efc37c85724502233b6b002a35496d828bd7b280a"
+    },
+    {
+      "path": "scripts/bin/windows-x64/_entry.dist/libssl-3.dll",
+      "sha256": "28c395290279fa4f4f54a57b85cd66d853895f925fefb8f6fdebc0d8b1cdd07c"
+    },
+    {
+      "path": "scripts/bin/windows-x64/_entry.dist/pyexpat.pyd",
+      "sha256": "b9c9c5a9f52af559a7eb4e8ddfd60558185bfc7794f32840bed1747d1ec9026a"
+    },
+    {
+      "path": "scripts/bin/windows-x64/_entry.dist/python313.dll",
+      "sha256": "e820bf024efd2b56bb2b82791e6b6ddc7303f070f8e72cba7637482a8a906238"
+    },
+    {
+      "path": "scripts/bin/windows-x64/_entry.dist/select.pyd",
+      "sha256": "024f955349fe46cf1bb2c22c6b57fcf38cf5755d46166fbf63e7e5b92433b111"
+    },
+    {
+      "path": "scripts/bin/windows-x64/_entry.dist/unicodedata.pyd",
+      "sha256": "111e0fdfeef9887c04f6ebf1972ce1ccbec55b226012e4a288c2d4a0b17b216b"
+    },
+    {
+      "path": "scripts/bin/windows-x64/_entry.dist/vcruntime140.dll",
+      "sha256": "d1f4225df2cd877dbf130d5668a021dce3f94118455ff5ec952061c30afc9ce7"
+    },
+    {
+      "path": "scripts/bin/windows-x64/_entry.dist/vcruntime140_1.dll",
+      "sha256": "a7146c08f89fe5b04541ab507cdb59ff7b44534d4ba3c668a426c6450a03434e"
+    },
+    {
+      "path": "scripts/function_scope.py",
+      "sha256": "4d261521e044570c2b8fdfc3c82a8fe0893095f9f7f9142e36fd187550d3fc78"
+    },
+    {
+      "path": "scripts/package_skill.py",
+      "sha256": "975b966e9cdeca72bf9427f27bdc037dae394c00d6f548e7ddc4709471d4a335"
+    },
+    {
+      "path": "scripts/read_closure_audit.py",
+      "sha256": "f5bfc6636b32afa6f8e1e1543bd77f7169411187a6a8abde578956c73885dca8"
+    },
+    {
+      "path": "scripts/review_authoring.py",
+      "sha256": "cc0400b8cd4e3eab3f7bbb94044c40239a5b8296e59d80d620e41677953905cf"
+    },
+    {
+      "path": "scripts/run_summary.py",
+      "sha256": "aa2bc5a0793d98e42e77c30f7a11d0c16521d164086f6acc9e432caac2bc570f"
+    },
+    {
+      "path": "scripts/schema-hints.json",
+      "sha256": "15fcc30c7f9b4accf279bc5aa9c60b31df6ea252da296d03a2ffe73be0680b4a"
+    },
+    {
+      "path": "scripts/setting_repair_pipeline.py",
+      "sha256": "cefaec8ac421165c33a1d83d31fb1d1507ccc7078e7e3065343fa6a069c3e5b6"
+    },
+    {
+      "path": "scripts/setting_review_plan.py",
+      "sha256": "d6880f1f5dd3efab76b92964f78ee125ccd0309be89918d9687afd63c148ea1c"
+    },
+    {
+      "path": "scripts/unified_dispatch.py",
+      "sha256": "c4b62b32f8940151f087d1647bd7bceb8ffb99bdea35a422559bd5015e97800c"
+    },
+    {
+      "path": "scripts/unified_pipeline.py",
+      "sha256": "bb06d20e321f46848504411631c0384b7510163b78458e91f8d2c638d2835cd6"
+    },
+    {
+      "path": "source-provenance.json",
+      "sha256": "59600887531cebd4df270b10ea401ca155231ce911654862206dd77649db370b"
+    }
+  ]
+}

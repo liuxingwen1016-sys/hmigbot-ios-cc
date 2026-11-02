@@ -1,0 +1,4 @@
+{
+  "target_input": "../../android-ui-graph-builder/scripts/target_input.py",
+  "static_target": "../../android-ui-graph-builder/scripts/static_target.py"
+}

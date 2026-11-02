@@ -1,0 +1,23 @@
+{
+  "skill_name": "app-screenshot-analyzer",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "分析 screenshots 目录下的截图，这是一个图库应用",
+      "expected_output": "生成 markdown 文件，包含多张截图的分析，每张截图有页面名称、类型、布局结构、内容元素、视觉风格、交互特征、功能推测等字段，末尾有汇总表格",
+      "files": ["screenshots/微信图片_20260319153205_40_871.png", "screenshots/微信图片_20260319153219_41_871.png"]
+    },
+    {
+      "id": 2,
+      "prompt": "帮我看看 screenshots/微信图片_20260319153231_42_871.png 这个页面是什么功能",
+      "expected_output": "生成单个截图的分析 markdown，包含完整的分析字段和总结表格",
+      "files": ["screenshots/微信图片_20260319153231_42_871.png"]
+    },
+    {
+      "id": 3,
+      "prompt": "我有几张截图在 screenshots 文件夹下，分别是 微信图片_20260319153307_44_871.png 和 微信图片_20260319153319_45_871.png，能帮我分析下这是什么类型的 app 吗？",
+      "expected_output": "生成 markdown 分析两张截图，推断 app 类型，输出完整分析结构和汇总表格",
+      "files": ["screenshots/微信图片_20260319153307_44_871.png", "screenshots/微信图片_20260319153319_45_871.png"]
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+# OMC tooling (per-repo session state)
+.omc/
+
+# logs
+logs/
+*.log
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Customer-facing runtime state — written into the user's HarmonyOS project
+# by /a2h-init. Should never appear in the plugin repo itself, but ignored
+# defensively in case someone tests the plugin from inside this checkout.
+.migbot/
+
+.arts
+.codeartsdoer
+
+# Local Claude Code settings stay private; maintainer skills are shared.
+# `.claude/*` (not `.claude/`) so the re-include below can take effect —
+# git cannot resurrect a path whose parent directory is itself excluded.
+# The mirror step in publish.yml excludes .claude/ so these never reach
+# the public artifacts repo.
+.claude/*
+!.claude/skills/
+
+# Local reference notes (not part of the plugin)
+DATA_REPORTING_MAP.md
+RELEASE_FLOW.md
+
+# 测试 skill 的看板账号(本机私有,绝不提交)
+tools/**/.env

@@ -1,0 +1,23 @@
+{
+  "skill_name": "arkts-state-manager",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "实现一个购物车功能，商品列表和购物车图标需要共享商品数量状态，点击添加按钮后购物车图标上的数字实时更新",
+      "expected_output": "使用 AppStorage + @StorageLink 或 @Provide/@Consume 实现跨组件状态共享，商品列表组件和购物车图标组件都能响应数量变化，数组更新使用重新赋值方式",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "父组件有一个深色模式开关 Toggle，子组件需要根据开关状态切换背景色和文字颜色",
+      "expected_output": "父组件使用 @State isDark，子组件使用 @Prop（单向）或 @Link（双向），通过条件判断设置不同的颜色属性，正确使用装饰器传参语法",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "实现全局主题切换功能（深色/浅色模式），所有页面同步更新，且重启应用后记住上次的选择",
+      "expected_output": "使用 PersistentStorage.persistProp 持久化主题设置，AppStorage + @StorageLink 在各页面双向同步，在 EntryAbility.onCreate 中初始化，定义 StorageKeys 常量",
+      "files": []
+    }
+  ]
+}

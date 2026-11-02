@@ -1,0 +1,23 @@
+{
+  "skill_name": "arkts-animation-builder",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "实现一个卡片点击展开的动画效果，点击小卡片平滑展开为全屏大图",
+      "expected_output": "使用 geometryTransition 或 animateTo + scale/translate 实现，if/else 切换小卡片和大图状态，配合 transition 或 geometryTransition 实现平滑过渡",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "创建一个列表项左滑显示删除按钮的手势动画，滑动超过阈值自动展开，否则弹回",
+      "expected_output": "使用 PanGesture 监听水平滑动，onActionUpdate 实时更新 translate.x，onActionEnd 判断阈值并用 animateTo + springMotion 弹回或展开，删除按钮用 Stack 层叠在列表项后面",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "实现一个加载中的旋转动画，一个圆环不停旋转",
+      "expected_output": "使用 animateTo + iterations: -1 + Curve.Linear 实现无限旋转，@State angle 从 0 到 360，在 aboutToAppear 中启动",
+      "files": []
+    }
+  ]
+}

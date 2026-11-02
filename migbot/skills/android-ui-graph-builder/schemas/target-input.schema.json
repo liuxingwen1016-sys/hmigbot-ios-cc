@@ -1,0 +1,246 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "target-input.schema.json",
+  "title": "Explicit selected Android input",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "ui_quality_policy",
+    "android_root",
+    "resolution",
+    "target",
+    "source_sets",
+    "resolution_evidence"
+  ],
+  "properties": {
+    "ui_facts_policy": {"enum": ["legacy", "static-v1-shadow", "static-v1"]},
+    "dependencies": {"type": "array", "items": {"type": "object", "required": ["group", "artifact", "version"],
+      "properties": {"group": {"type": "string"}, "artifact": {"type": "string"}, "version": {"type": "string"},
+                     "path": {"type": "string"}, "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}}}},
+    "allowed_symlink_targets": {"type": "array", "items": {"type": "object", "required": ["path", "sha256"],
+      "properties": {"path": {"type": "string"}, "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}}}},
+    "schema_version": {
+      "const": 1
+    },
+    "ui_quality_policy": {
+      "const": "fidelity-v1"
+    },
+    "android_root": {
+      "type": "string",
+      "minLength": 1
+    },
+    "resolution": {
+      "enum": [
+        "resolved",
+        "partial",
+        "unresolved"
+      ]
+    },
+    "target": {
+      "type": "object",
+      "required": [],
+      "properties": {
+        "module": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "variant": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "build_type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "flavor_dimensions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "flavors": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "source_sets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "priority"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "source_dirs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "res_dirs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "asset_dirs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "manifest": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "resolution_evidence": {
+      "type": "array"
+    },
+    "source_revision": {
+      "type": "string",
+      "minLength": 1
+    },
+    "build_files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "sha256"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "reference_packages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "sha256"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "role": {
+            "enum": [
+              "base",
+              "split"
+            ]
+          },
+          "split_name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "package_name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version_code": {
+            "type": [
+              "string",
+              "integer"
+            ]
+          },
+          "required_split_names": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    }
+  },
+  "additionalProperties": true,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "resolution": {
+            "const": "resolved"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "source_revision"
+        ],
+        "properties": {
+          "source_sets": {
+            "minItems": 1
+          },
+          "resolution_evidence": {
+            "minItems": 1
+          },
+          "target": {
+            "required": [
+              "module",
+              "variant",
+              "build_type",
+              "flavor_dimensions",
+              "flavors"
+            ],
+            "properties": {
+              "module": {
+                "type": "string",
+                "minLength": 1
+              },
+              "variant": {
+                "type": "string",
+                "minLength": 1
+              },
+              "build_type": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

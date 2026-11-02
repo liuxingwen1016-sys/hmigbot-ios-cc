@@ -1,0 +1,75 @@
+{
+  "package": "com.example.app",
+  "start_recipe": [
+    {
+      "when": {
+        "text": "测试环境说明"
+      },
+      "tap": {
+        "rid": "btn_continue"
+      },
+      "note": "示例用途：仅关闭测试环境说明；使用前由模型核对实际控件，不接受条款、不提交数据，选择器按实际 inspect 修改"
+    },
+    {
+      "when": {
+        "text": "选择所在城市"
+      },
+      "tap": {
+        "text": "北京市"
+      },
+      "note": "首次启动必选项：只在首次启动出现，选完后每次冷启动直接进首页，所以写进配方、不当根页"
+    },
+    {
+      "when": {
+        "text": "选择你感兴趣的内容"
+      },
+      "tap": {
+        "text": "跳过"
+      },
+      "note": "清数据后首次进入的兴趣引导"
+    },
+    {
+      "when": {
+        "text_contains": "跳过"
+      },
+      "tap": {
+        "text_contains": "跳过"
+      },
+      "note": "开屏广告"
+    }
+  ],
+  "root": {
+    "rid": "bottom_nav"
+  },
+  "deny": [
+    {
+      "activity": "RegionPickerActivity",
+      "rid": "tv_leaf_region",
+      "reason": "最末一级，点了就保存所选地区；省、市这些中间层只进入下一级列表，不拦"
+    },
+    {
+      "activity": "DetailActivity",
+      "rid": "btn_favorite",
+      "reason": "点了就收藏（副作用）"
+    },
+    {
+      "text_contains": "观看完整视频",
+      "reason": "激励视频，跳转广告"
+    }
+  ],
+  "allow": [],
+  "business_readings": [
+    {
+      "name": "region",
+      "selector": {
+        "rid": "tv_current_region"
+      }
+    }
+  ],
+  "extra_containers": [],
+  "limits": {
+    "max_pages": 150,
+    "max_depth": 8,
+    "max_list_items": 3
+  }
+}

@@ -1,0 +1,17 @@
+[
+  {
+    "input": "实现一个音频播放器，支持本地文件和在线流播放",
+    "expected_output_contains": ["AVPlayer", "fd://", "stateChange", "prepared", "play()"],
+    "expected_output_not_contains": ["file://", "any"]
+  },
+  {
+    "input": "添加后台播放功能，切到桌面不中断",
+    "expected_output_contains": ["backgroundTaskManager", "startBackgroundRunning", "AVSession", "WantAgent", "AUDIO_PLAYBACK"],
+    "expected_output_not_contains": ["any"]
+  },
+  {
+    "input": "实现播放队列管理，当前曲目播完自动播下一首",
+    "expected_output_contains": ["completed", "queue", "next"],
+    "expected_output_not_contains": ["any"]
+  }
+]

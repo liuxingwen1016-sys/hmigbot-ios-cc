@@ -1,0 +1,4 @@
+interface:
+  display_name: "visual-verify-speed"
+  short_description: "安卓遍历产物当真值，鸿蒙按安卓树自动走查配对，结构/度量预筛 + 并行判图，标准问题单出单，按文件冲突并行修复，只复验改过的单元"
+  default_prompt: "使用 $visual-verify-speed：安卓真值用 android_traverse_screenshots（没有就先用 $android_fast_traverse 跑），vvs.py init 绑定鸿蒙工程，inspect 后写鸿蒙 profile，walk 一次走完（弹窗请求按协议 respond），drive 补采报告列出的单元，pairs 后每个判图批次派一个子代理并行判图，tickets 出单；需要修复时 fixplan 分组并行修、统一编译装机、next-round 复验。交付 spec/visual-verify/report.md 和 spec/fix/round-N（含 _index/_summary）。"

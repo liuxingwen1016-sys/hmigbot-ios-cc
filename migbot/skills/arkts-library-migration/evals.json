@@ -1,0 +1,23 @@
+{
+  "skill_name": "arkts-library-migration",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "我的 Android 项目用了 Glide 加载图片、OkHttp 做网络请求、Room 做本地数据库，迁移到 HarmonyOS 该用什么替代？",
+      "expected_output": "为每个库提供替代方案：Glide → @ohos/imageknife（L1 ohpm install）或 Image 组件（L2），OkHttp → @kit.NetworkKit http（L2）或 @ohos/axios（L1），Room → @kit.ArkData relationalStore（L2，需手写 SQL）。标注 Level 和风险等级。",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "我们项目用了一个闭源的图片编辑 SDK（ImgLy PESDK），鸿蒙上怎么处理？",
+      "expected_output": "说明这是闭源 SDK 无鸿蒙版的情况（类型 D），给出三条路径：联系厂商（路径 A）、JS-Bridge 过渡（路径 B，如果有 JS 版本）、用 Canvas + @kit.ImageKit 自研简化版（路径 C/L5）。标注为高风险。",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "帮我把这个 build.gradle 的依赖列表做一份 ArkTS 替代方案表：implementation 'com.github.bumptech.glide:glide:4.16.0', implementation 'com.squareup.okhttp3:okhttp:4.12.0', implementation 'com.squareup.retrofit2:retrofit:2.9.0', implementation 'com.google.code.gson:gson:2.10.1', implementation 'org.greenrobot:eventbus:3.3.1', implementation 'com.airbnb.android:lottie:6.3.0'",
+      "expected_output": "产出完整的 SS3 格式替换表，包含每个依赖的 ArkTS 替代、Level、风险等级和安装方式。Glide→imageknife(L1)、OkHttp→NetworkKit(L2)、Retrofit→axios(L1)/NetworkKit(L2)、Gson→JSON.parse(L2)、EventBus→自建Map(L5)、Lottie→@ohos/lottie(L1)。",
+      "files": []
+    }
+  ]
+}

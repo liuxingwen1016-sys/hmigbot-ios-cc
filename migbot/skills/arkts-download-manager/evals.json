@@ -1,0 +1,17 @@
+[
+  {
+    "input": "下载一个播客音频文件并显示进度",
+    "expected_output_contains": ["request.agent", "Config", "progress", "sizes"],
+    "expected_output_not_contains": ["requestInStream", "any"]
+  },
+  {
+    "input": "实现下载队列，支持取消正在进行的下载",
+    "expected_output_contains": ["task.stop", "Map", "cancel"],
+    "expected_output_not_contains": ["any"]
+  },
+  {
+    "input": "下载文件后移到指定目录，处理错误情况",
+    "expected_output_contains": ["mkdirSync", "moveFileSync", "statSync", "try"],
+    "expected_output_not_contains": ["any"]
+  }
+]
