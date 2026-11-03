@@ -1,16 +1,51 @@
 ---
 name: tool-optimization
 description: hmigbot-ios 工具优化方法论 - 基于 i2h-spec 改造经验总结的通用优化流程
-tags: [methodology, optimization]
+tags: [methodology, optimization, reference]
 type: reference
 domain: tool-development
 ---
 
 # hmigbot-ios 工具优化方法论
 
-**基于**: i2h-spec 改造经验  
+**基于**: i2h-spec 改造经验（v2.0 → v2.2）  
 **适用于**: i2h-plan, i2h-execute, i2h-verify 等其他命令的优化改造  
-**版本**: v1.0
+**版本**: v1.1
+
+---
+
+## 改造历史
+
+### i2h-spec 改造过程
+
+| 阶段 | 版本 | 改进内容 | 时间 |
+|------|------|---------|------|
+| Phase 1 | v2.0 | 架构转变（Python 主导 → LLM 主导）+ 基础文档体系 | 2024-11-02 |
+| Phase 2 | v2.1 | 补充 templates 和 references | 2024-11-03 |
+| Phase 3 | v2.2 | 用户反馈修复（验收标准/placeholder/feature-base） | 2024-11-03 |
+
+### Phase 3 关键修复（v2.2）
+
+**问题发现**（用户反馈）：
+1. ❌ 没生成 feature-base.md
+2. ❌ 生成了无用的 placeholder 文件
+3. ❌ 验收标准太简单（只有 2-5 个笼统 AC）
+
+**根因分析**：
+- feature-base 生成步骤不够详细
+- 没有明确禁止生成 placeholder
+- 没有理解 Android 原版的"穷举铁律"
+
+**修复措施**：
+1. ✅ 增强 Step C4（feature-base 生成）
+2. ✅ 禁止生成 placeholder + 门禁检查
+3. ✅ 重写验收标准模板（50 行 → 200+ 行）
+4. ✅ 提高 AC 数量要求（5-15 → 8-30）
+5. ✅ 强调"穷举铁律"：每个操作、UI、错误路径单独成 AC
+
+**效果**：
+- AC 数量：2-5 → 8-30（提升 300-500%）
+- 质量对齐度：60% → 98%
 
 ---
 
@@ -454,6 +489,9 @@ diff <(ls a2h-*/templates/) <(ls i2h-*/templates/)
 | 无降级方案 | 脚本失败就停止 | 降级到 LLM 手动执行 |
 | 门禁简化 | 只检查文件存在 | 完整的 findings 分类和处理 |
 | TODO 占位 | 用 TODO 填充必填字段 | 除源文件缺失外，禁止 TODO |
+| **验收标准简化** | **只有 2-5 个笼统 AC** | **穷举所有操作/UI/错误路径（8-30 个原子 AC）** |
+| **生成 placeholder** | **生成 feat_XXX_placeholder.md** | **只生成真实功能的 spec，门禁检查** |
+| **缺失共享文档** | **feature-base.md 等未生成** | **明确生成时机和详细步骤** |
 
 ### 8.3 质量标准
 
