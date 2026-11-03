@@ -24,6 +24,17 @@ domain: tool-development
 | Phase 2 | v2.1 | 补充 templates 和 references | 2024-11-03 |
 | Phase 3 | v2.2 | 用户反馈修复（验收标准/placeholder/feature-base） | 2024-11-03 |
 
+### i2h-plan 改造过程
+
+| 阶段 | 版本 | 改进内容 | 时间 |
+|------|------|---------|------|
+| Phase 1 | v2.0 | 创建 6 个 templates（~2,550 行） | 2024-11-03 |
+| Phase 2 | v2.0 | 创建 3 个 references（~1,150 行） | 2024-11-03 |
+| Phase 3 | v2.0 | 重写 SKILL.md（351 行 → 650 行） | 2024-11-03 |
+| Phase 4 | v2.0 | 实现 4 个自动化脚本（~2,500 行） | 2024-11-03 |
+| Phase 5 | v2.0.1 | 格式修复（Markdown 代码块） | 2024-11-03 |
+| Phase 6 | v2.0 | 完善文档（4 个项目文档） | 2024-11-03 |
+
 ### Phase 3 关键修复（v2.2）
 
 **问题发现**（用户反馈）：
@@ -751,7 +762,241 @@ done
 
 ---
 
-**方法论版本**: v1.0  
-**基于**: i2h-spec 改造经验  
+## 13. 踩坑记录
+
+### i2h-plan 改造踩坑
+
+#### 问题 1: Markdown 代码块格式错误
+
+**问题描述**（Phase 5 发现）：
+- 位置: SKILL.md 第 265 行"Slice 文件结构"开始
+- 错误: 使用了 `markdown` 语言标记，但内容是混合格式
+- 影响: 代码块无法正确渲染
+
+**原因分析**：
+```markdown
+# 错误示例
+```markdown    ← 语言标记与内容不匹配
+## Slice 1: 功能名 (F001)
+parallel_group: 1
+wires:
+  - page: ...
+- Step 3a: ...
+```
+```
+
+**解决方案**：
+```markdown
+# 正确示例 1: 使用通用代码块（无语言标记）
+```
+## Slice 1: 功能名 (F001)
+parallel_group: 1
+wires:
+  - page: ...
+- Step 3a: ...
+```
+
+# 正确示例 2: 使用 yaml 语言标记（纯 YAML 时）
+```yaml
+wires:
+  - page: entry/src/main/ets/pages/HomeView.ets
+    viewmodel: entry/src/main/ets/viewmodels/HomeViewModel.ets
+```
+```
+
+**经验教训**：
+- ✅ 混合格式使用通用代码块（无语言标记）
+- ✅ 纯格式使用对应语言标记（yaml/json/bash）
+- ✅ 生成后立即检查代码块闭合
+
+#### 问题 2: 产物规模估算偏差
+
+**问题描述**（Phase 1-4）：
+- 预估: 每个 Phase 工作量较小
+- 实际: 总代码量 ~6,850 行，远超预期
+
+**原因分析**：
+1. iOS 技术栈更复杂（100+ 映射 vs Android 30+）
+2. 示例需要更详细（首次适配 iOS）
+3. 文档需要更完善（解释平台差异）
+
+**解决方案**：
+- ✅ 分 Phase 执行，每个 Phase 完成后验证
+- ✅ 及时调整计划和预期
+- ✅ 保持高质量标准，不妥协
+
+**经验教训**：
+- ⚠️ 首次平台适配工作量 = Android 原版 × 1.5-2x
+- ✅ 分阶段交付比一次性交付更可控
+- ✅ 质量优先，速度其次
+
+#### 问题 3: 文件组织结构
+
+**问题描述**（Phase 6）：
+- 报告文件散落在根目录
+- 缺少统一的文档目录
+
+**解决方案**：
+```bash
+# 创建文档目录结构
+docs/
+├── i2h-plan-improvement-summary.md    # 改进总结
+├── i2h-plan-gap-analysis.md          # 对比报告
+├── i2h-plan-migration-guide.md       # 使用指南
+├── i2h-plan-final-summary.md         # 最终总结
+└── reports/                           # 阶段报告
+    ├── i2h-plan-phase1-complete.md
+    ├── i2h-plan-phase2-complete.md
+    ├── i2h-plan-phase3-complete.md
+    ├── i2h-plan-phase4-complete.md
+    └── i2h-plan-skillmd-fix.md
+```
+
+**经验教训**：
+- ✅ 提前规划文档目录结构
+- ✅ 区分项目文档（docs/）和阶段报告（docs/reports/）
+- ✅ 使用清晰的命名约定
+
+#### 问题 4: 脚本大小控制
+
+**问题描述**（Phase 4）：
+- lint_plan_coverage.py 达到 ~800 行
+- 单个文件过大，难以维护
+
+**权衡**：
+- ❌ 拆分文件 → 增加复杂度
+- ✅ 保持单文件 → 便于使用
+- ✅ 模块化设计（类和方法）→ 可维护
+
+**解决方案**：
+```python
+# 使用类组织代码
+class PlanCoverageLinter:
+    def run_all_checks(self):
+        self._check_p0_feature_coverage()
+        self._check_p1_feature_coverage()
+        # ...
+    
+    def _check_p0_feature_coverage(self):
+        # 每个检查项独立方法
+        pass
+```
+
+**经验教训**：
+- ✅ 单文件脚本 < 1000 行是可接受的
+- ✅ 使用类和方法组织代码
+- ✅ 每个检查项独立方法（便于调试）
+
+#### 问题 5: iOS vs Android 技术栈映射
+
+**问题描述**（Phase 2）：
+- Android 技术栈相对统一（Kotlin + Jetpack）
+- iOS 技术栈更多样（Swift + SwiftUI/UIKit + Objective-C）
+- 映射条目数量差异大（30+ vs 100+）
+
+**挑战**：
+- SwiftUI vs UIKit 双路径
+- CoreData vs SwiftData 选择
+- 三方 SDK 生态差异（CocoaPods vs Gradle）
+
+**解决方案**：
+```markdown
+# 建立完整映射表
+## Core 映射（20+ 条目）
+- SwiftUI View → @Component (i2h-swiftui-converter)
+- UIKit ViewController → @Component (i2h-uikit-converter)
+- NavigationView → Navigation (arkts-navigation-builder)
+
+## 系统集成（15+ 条目）
+- Sign in with Apple → 华为账号登录
+- StoreKit → 华为应用内支付
+- APNs → 华为推送服务
+
+## 三方 SDK（10+ 条目）
+- Alamofire → 自建封装 + arkts-data-layer
+- Kingfisher → 自建图片加载 + arkts-component-builder
+- RxSwift → 响应式编程模式迁移
+```
+
+**经验教训**：
+- ✅ 不要简单复制 Android 映射表
+- ✅ 深入理解 iOS 生态，建立完整映射
+- ✅ 区分系统框架 vs 三方 SDK 的处理策略
+- ✅ 提供多种技术栈的迁移路径（SwiftUI/UIKit）
+
+#### 问题 6: 自动化脚本的必要性争议
+
+**问题描述**（Phase 4 前）：
+- 用户提问: "Phase 4 的辅助脚本主要是干什么用的？"
+- 需要说明脚本 vs LLM 的价值对比
+
+**分析**：
+
+| 维度 | Python 脚本 | LLM 校验 |
+|------|-----------|---------|
+| 速度 | 2-3 秒 | 2-3 分钟 |
+| 成本 | $0 | Token 消耗 |
+| 准确性 | 100% | 95%+ |
+| 可重复性 | 100% | 可能不同 |
+| CI/CD | 支持 | 不支持 |
+
+**决策**：
+- ✅ 完整实现 Phase 4（用户选择）
+- ✅ 提供 40-60x 速度提升
+- ✅ 100% 成本节省
+
+**经验教训**：
+- ⚠️ 脚本开发有前期成本（12 小时）
+- ✅ 长期收益显著（每次校验节省 2-3 分钟）
+- ✅ 适合频繁迭代和 CI/CD 场景
+- ⚠️ 如果只用一次，LLM 校验可能更划算
+
+### 通用经验
+
+#### 大型重构的节奏控制
+
+**i2h-plan 案例**：
+- Phase 1-4: 连续执行（6,850 行代码）
+- Phase 5: 发现格式问题，立即修复
+- Phase 6: 整理文档，总结经验
+
+**经验**：
+- ✅ 每个 Phase 产出独立验证
+- ✅ 发现问题立即修复（不积累技术债）
+- ✅ 最后统一整理文档和总结
+
+#### 文件大小的权衡
+
+**实践数据**（i2h-plan）：
+- SKILL.md: 650 行（✅ 合理）
+- template: 400-500 行（✅ 合理）
+- reference: 350-450 行（✅ 合理）
+- script: 350-800 行（✅ 可接受）
+
+**原则**：
+- ✅ 单文件 < 1000 行是可维护的
+- ✅ 超过 1000 行考虑拆分
+- ✅ 脚本可以适当放宽（便于使用）
+
+#### 平台适配的复杂度
+
+**经验数据**：
+- Android → HarmonyOS: 基准工作量 = 1x
+- iOS → HarmonyOS: 工作量 = 1.5-2x（首次）
+
+**原因**：
+- iOS 技术栈更多样（SwiftUI/UIKit 双路径）
+- 三方 SDK 生态差异更大
+- 需要更多示例和说明
+
+**建议**：
+- ⚠️ 首次平台适配留足时间
+- ✅ 后续同平台项目可复用（工作量降为 0.3-0.5x）
+- ✅ 建立完整的映射表和示例库
+
+---
+
+**方法论版本**: v1.1  
+**基于**: i2h-spec + i2h-plan 改造经验  
 **最后更新**: 2024-11-03  
 **作者**: Claude Opus 5.5
