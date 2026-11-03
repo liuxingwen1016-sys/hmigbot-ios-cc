@@ -1,6 +1,6 @@
 ---
 name: i2h-spec
-description: iOS→HarmonyOS 迁移的 Spec 生成（Pipeline 第一步）：扫描 iOS 源码产出 UI 清单与功能 Spec
+description: iOS→HarmonyOS 迁移的 Spec 生成（Pipeline 第一步）：分析 iOS 源码产出 UI 清单与功能 Spec。LLM 主导语义分析，Python 脚本辅助确定性提取。
 tags: [pipeline, migration]
 type: pipeline
 domain: migration
@@ -10,15 +10,37 @@ domain: migration
 
 Pipeline 第一步：分析 iOS 项目，生成完整的迁移规格。
 
+**核心原则**：
+- **LLM 主导**：语义分析、内容生成、复杂度评估
+- **Python 辅助**：只做确定性提取（文件列表、类名、属性名）
+- **References 指导**：所有关键步骤必须加载对应的 reference 文档
+
+---
+
+## 关键约束（Critical）
+
+- **References / Templates 强制加载（HARD-GATE）**：本 skill body 中所有 `[references/X.md]` / `[templates/Y.md]` 引用，在对应步骤执行时**必须** Read 整个文件作为执行规范，不得仅靠 body 摘要或字段名提示执行。跳过加载 = PROCESS_VIOLATION。
+- **门禁失败处置**：任何门禁 FAIL、轮次用完、连续未收敛，按 [references/gate-handling.md](./references/gate-handling.md) 处理——精确类必须修过；推断/管线/环境类有限轮修复，修不掉记账放行。禁止改工具、改门禁报告、为迁就检测器改产物。
+- **两道审批门**：Phase B 后 **Gate B**、Phase C 后 **Gate C**。默认无人值守：无 blocking findings 自动通过，有 blocking 但已记账也通过。用户明确要求逐个确认时，停在 Gate 等确认。
+- **提问一律选项式**：任何需要用户拍板的时刻，必须给 2–4 个具体选项 + `其他`，恰好一个标「← 推荐」并给理由，用户回复编号即可。无人值守时直接取推荐项，不等待。禁止填空式提问。
+- **baseline 已存在 → 停止**：`spec/baseline/` 存在时，提示用户此项目已生成 spec，询问是否重新生成（覆盖）或退出。
+- **下游强约束**：所有产物必须符合 [references/outputs-and-layout.md](./references/outputs-and-layout.md) 规范，缺失关键字段会导致下游 i2h-plan / i2h-execute 失败。
+
+---
+
 ## 启动检查 — 待办 findings
 
 读取 `spec/.i2h/open-findings.json`（不存在 = 首轮，直接开工）：
 
 | 情况 | 行动 |
 |---|---|
-| 有 `owner_stage: spec` 的条目 | 先处理这些，再做本轮正常工作 |
+| 有 `owner_stage: spec` 的条目 | 先处理这些，再做本轮正常工作；处理完重跑对应 linter 确认消失 |
 | 有 `owner_stage` 属上游阶段且 `severity: blocking`、未带 `decision_ref` | 🔴 拒绝开工，提示修复上游问题 |
 | 有 `LOOP.NOT_CONVERGING` | 需要人工决策，记录到 decision-ledger.md |
+
+**findings 只能由「原 linter 重跑后不再报」来关闭**，不能由任何一方声明「已修复」而关闭。
+
+---
 
 ## 1. 前置检查
 
@@ -29,6 +51,10 @@ Pipeline 第一步：分析 iOS 项目，生成完整的迁移规格。
 
 失败 → 停止，提示运行 `/i2h-init`
 
+记录源码根路径 `$IOS_PATH` 和 HarmonyOS 项目根路径 `$HARMONYOS_PATH`。
+
+---
+
 ## 2. 智能路由
 
 检查 `spec/baseline/` 目录状态：
@@ -36,405 +62,642 @@ Pipeline 第一步：分析 iOS 项目，生成完整的迁移规格。
 | 状态 | 行动 |
 |------|------|
 | 不存在 | 初始迁移（执行 Section 3-5） |
-| 已存在 | 增量演进（暂不支持，提示 baseline 已存在） |
+| 已存在 | 提示用户：baseline 已存在，询问是否重新生成（会覆盖）或退出 |
+
+判断细节：
+- `spec/baseline/ui-manifest.md` + `spec/baseline/feature-index.md` 两个文件都存在 → baseline 已完成
+- 只有部分文件存在 → 提示 baseline 不完整，建议重新生成
+- 完全不存在 → 初始迁移
+
+---
 
 ## 3. Phase A: iOS 项目数据准备
 
-### Step A1: 扫描项目结构
+Phase A 负责扫描 iOS 项目，提取页面清单和基础元数据。
 
-运行 iOS 项目扫描器：
+### Phase A-0: 前置准备
+
+**MUST READ**: [references/phase-a-ios-scan.md](./references/phase-a-ios-scan.md) 全文
+
+**MUST READ**: [references/ios-to-harmonyos-mapping.md](./references/ios-to-harmonyos-mapping.md) 全文
+
+确认映射规则和扫描策略。
+
+### Step A1: 扫描项目结构（确定性 + 语义）
+
+#### 确定性提取（脚本优先）
+
+**如果存在 `ios-project-scanner` skill**，调用它生成骨架：
 
 ```bash
-python3 .migbot/bin/scripts/ios_scanner/scan_project.py "$IOS_PATH" \
-  --output spec/.i2h/project-info.json
+# 理想调用（如果 skill 存在）
+python3 .claude/skills/ios-project-scanner/scripts/scan_project.py \
+  "$IOS_PATH" \
+  --output spec/.i2h/project-skeleton.json
 ```
 
-扫描内容：
-- Xcode 项目文件识别
-- Swift 源文件清单
-- SwiftUI View 识别
-- UIKit ViewController 识别
-- Assets.xcassets 资源
-- Storyboard/XIB 文件
+**脚本应输出**（骨架）：
+- Swift 文件路径列表
+- SwiftUI View 类名列表（`struct XXX: View`）
+- UIKit ViewController 类名列表（`: UIViewController`）
+- Info.plist 路径
+- Assets.xcassets 路径
 - 代码行数统计
 
-**验证产出**：
-- [ ] `spec/.i2h/project-info.json` 存在
-- [ ] 包含 `swift_files` 列表
-- [ ] 包含 `swiftui_views` 列表
+#### LLM 补充（语义分析）
+
+**如果脚本不存在或失败**，LLM 执行等价扫描：
+
+1. **扫描项目目录**，识别 iOS 项目结构（.xcodeproj、Swift 文件）
+2. **读取关键文件**，提取类名和基础信息
+3. **生成等价的骨架 JSON**
+
+**LLM 补充语义字段**：
+
+对每个识别出的 View/ViewController，补充：
+- `purpose`: 用途（通过阅读代码推断）
+- `complexity`: 复杂度（simple/medium/complex/very_complex）
+- `dependencies`: 依赖的其他组件
+- `navigation_role`: 导航角色（entry/modal/tab/detail）
+
+#### 产出验证
+
+- [ ] `spec/.i2h/project-skeleton.json` 存在
+- [ ] 包含 `swift_files` 列表（至少 1 个）
+- [ ] 包含 `swiftui_views` 或 `uikit_viewcontrollers`（至少 1 个）
+- [ ] 包含 `info_plist` 路径
+- [ ] 所有文件路径已验证存在
 
 **Findings 报告**：
-- 缺少必需文件 → `IOS.MISSING_REQUIRED_FILE`
-- 项目结构异常 → `IOS.INVALID_PROJECT_STRUCTURE`
+- 缺少必需文件 → `IOS.MISSING_REQUIRED_FILE`（精确类，blocking）
+- 项目结构异常 → `IOS.INVALID_PROJECT_STRUCTURE`（精确类，blocking）
+- 无法识别任何 View → `IOS.NO_VIEWS_FOUND`（精确类，blocking）
 
-### Step A2: 提取 SwiftUI View 清单
+### Step A2: 逐页详细分析（骨架 + 语义）
 
-对每个 SwiftUI View 文件运行解析器：
+对每个 SwiftUI View 和 UIKit ViewController 执行详细分析。
 
-```bash
-for view_file in $SWIFTUI_VIEWS; do
-  python3 .migbot/bin/scripts/swiftui_converter/simple_parser.py \
-    "$IOS_PATH/$view_file" \
-    --output "spec/.i2h/views/$(basename $view_file .swift).json"
-done
-```
+#### Step A2a: 确定性骨架生成（脚本优先）
 
-提取内容：
-- View 名称
-- 属性列表（@State, @Binding 等）
-- body 结构
-- 依赖的自定义组件
-
-**验证产出**：
-- [ ] `spec/.i2h/views/*.json` 文件存在
-- [ ] 每个 JSON 包含 `name`, `properties`, `body_source`
-
-**Findings 报告**：
-- 解析失败 → `IOS.VIEW_PARSE_ERROR`
-- 语法错误 → `IOS.INVALID_SWIFT_SYNTAX`
-- 不支持的语法 → `IOS.UNSUPPORTED_SYNTAX` (推断类)
-
-### Step A3: 分析资源文件
-
-扫描 Assets.xcassets：
+**如果存在 `ios-view-analyzer` skill**，对每个 View 调用：
 
 ```bash
-python3 .migbot/bin/scripts/ios_scanner/scan_assets.py \
-  "$IOS_PATH/Resources/Assets.xcassets" \
-  --output spec/.i2h/resources.json
+python3 .claude/skills/ios-view-analyzer/scripts/extract_view_meta.py \
+  "$IOS_PATH/Cuike/Views/HomeView.swift" \
+  --output spec/baseline/ui-snapshots/page_0001_HomeView/meta.json \
+  --mode scaffold
 ```
 
-提取内容：
-- 图片资源（.imageset）
-- 颜色资源（.colorset）
-- 数据资源（.dataset）
-- 本地化字符串（Localizable.strings）
+**脚本应提取**（确定性）：
+- 属性列表（`@State`, `@Binding`, `@ObservedObject` 等）
+- 属性类型和默认值
+- body 源码文本
+- 依赖的自定义组件（通过 import 和使用识别）
 
-**验证产出**：
-- [ ] `spec/.i2h/resources.json` 存在
-- [ ] 包含资源清单
+#### Step A2b: LLM 语义分析（在骨架基础上补充）
 
-### Step A4: 生成 Phase A 报告
+**必须执行**（无论脚本是否存在）：
 
-生成 `spec/.i2h/phase-a-report.md`:
+1. **读取 View 源码**（完整读取，不能只看摘要）
+2. **分析 UI 结构**：
+   - 主容器类型（VStack/HStack/ZStack/List）
+   - 布局层次（嵌套深度）
+   - 关键组件（按钮、列表、输入框）
+3. **分析状态管理**：
+   - 状态变量用途
+   - 数据流方向
+   - 外部依赖（Store、Service）
+4. **分析交互行为**：
+   - 按钮动作
+   - 导航目标
+   - 表单操作
+5. **评估转换策略**：
+   - 适用转换器（template/semantic/manual）
+   - 预估自动转换率
+   - 人工调整项
+
+#### 补充字段到 meta.json
+
+在脚本骨架基础上，补充以下字段：
+
+```json
+{
+  // 脚本提取的确定性字段
+  "view_name": "HomeView",
+  "file_path": "Cuike/Views/HomeView.swift",
+  "properties": [...],
+  "body_source": "...",
+  
+  // LLM 补充的语义字段
+  "purpose": "应用主页，展示咖啡豆列表和快速操作",
+  "complexity": "medium",
+  "ui_structure": {
+    "container": "VStack",
+    "depth": 3,
+    "key_components": ["List", "NavigationLink", "Button"]
+  },
+  "state_management": {
+    "local_state": ["count"],
+    "observed_objects": ["beanStore"],
+    "data_flow": "parent_to_child"
+  },
+  "interactions": [
+    {
+      "type": "navigation",
+      "trigger": "NavigationLink tap",
+      "target": "BeanDetailView"
+    }
+  ],
+  "conversion_strategy": {
+    "converter": "template",
+    "auto_conversion_rate": 0.85,
+    "manual_adjustments": ["Sheet presentation"]
+  },
+  "ios_source_anchors": {
+    "primary_file": "Cuike/Views/HomeView.swift",
+    "related_files": ["Cuike/Models/Bean.swift"],
+    "key_symbols": ["HomeView.body", "BeanStore.fetchBeans()"]
+  }
+}
+```
+
+#### Confidence 评级
+
+| 级别 | 数据来源 | 特征 |
+|------|---------|------|
+| `high` | 脚本提取 + LLM 阅读源码验证 | 所有字段完整、源码路径已验证 |
+| `medium` | LLM 扫描生成 | 基于代码推断，可能有遗漏 |
+| `low` | 部分源文件缺失或无法解析 | 需要人工补充 |
+
+### Step A3: Info.plist 和权限分析
+
+1. **读取 Info.plist**（XML 或二进制格式）
+2. **提取关键信息**：
+   - Bundle ID
+   - 版本号
+   - 权限声明（Camera、Location、Notifications 等）
+   - URL Schemes
+   - 后台模式
+3. **映射到 HarmonyOS**：
+   - 使用 [references/ios-to-harmonyos-mapping.md](./references/ios-to-harmonyos-mapping.md) § 权限映射
+   - 生成对应的鸿蒙权限列表
+
+#### 产出
+
+`spec/.i2h/info-plist-analysis.json`：
+
+```json
+{
+  "bundle_id": "com.example.cuike",
+  "version": "1.0.0",
+  "permissions": [
+    {
+      "ios_key": "NSCameraUsageDescription",
+      "ios_description": "需要访问相机以扫描咖啡豆信息",
+      "harmonyos_permission": "ohos.permission.CAMERA",
+      "usage": "F101 相机扫描功能"
+    }
+  ]
+}
+```
+
+### Step A4: 输出 Phase A 报告
+
+生成 `spec/.i2h/phase-a-report.md`（简要总结）：
+
+**MUST READ**: [templates/ui-manifest-template.md](./templates/ui-manifest-template.md) § 统计摘要部分
 
 ```markdown
 # Phase A: iOS 项目数据准备完成
 
 ## 统计
-- Swift 文件: 21 个
-- SwiftUI View: 10 个
-- UIKit ViewController: 1 个
-- 资源文件: 3 组
+- Swift 文件: {数量} 个
+- SwiftUI View: {数量} 个
+- UIKit ViewController: {数量} 个
+- 资源文件: {数量} 组
 
 ## 代码规模
-- 总代码行数: 1,878 行
-- SwiftUI 代码: 1,200 行 (64%)
-- UIKit 代码: 200 行 (11%)
-- 其他: 478 行 (25%)
+- 总代码行数: {数量} 行
+- SwiftUI 代码: {数量} 行 ({百分比}%)
+- UIKit 代码: {数量} 行 ({百分比}%)
+
+## Confidence 分布
+- High: {数量} 个
+- Medium: {数量} 个
+- Low: {数量} 个
+
+## Findings
+- Blocking: {数量}
+- Warnings: {数量}
 
 ## 下一步
 Phase B: 生成 UI 清单
 ```
 
-**Linter 运行**：
+### Gate A（自动，无需确认）
 
-```bash
-python3 .migbot/bin/scripts/linters/lint_phase_a.py "$PROJECT_ROOT"
-```
+**检查项**：
+- [ ] `spec/.i2h/project-skeleton.json` 存在
+- [ ] 至少识别出 1 个页面
+- [ ] 所有源文件路径已验证存在
+- [ ] 无 blocking findings（或已记账）
 
-报告 findings 到 `spec/.i2h/open-findings.json` section `spec/phase-a`
+**失败处理**：按 [references/gate-handling.md](./references/gate-handling.md) 处理
+
+---
 
 ## 4. Phase B: UI 清单生成
 
+Phase B 基于 Phase A 的数据，生成结构化的 UI Spec 文档。
+
 ### Step B1: 生成 ui-manifest.md
 
-基于 Phase A 数据，生成完整清单：
+**MUST READ**: [templates/ui-manifest-template.md](./templates/ui-manifest-template.md) 全文
 
-```markdown
-# UI 清单
+基于 Phase A 数据，生成 `spec/baseline/ui-manifest.md`：
 
-## SwiftUI Views
+**必须包含的内容**：
+1. 全局约定（页面 ID 规则、复杂度标准）
+2. SwiftUI Views 清单（表格）
+3. UIKit ViewControllers 清单（表格）
+4. 页面关系图（导航层次）
+5. 状态管理总览
+6. 系统功能使用
+7. 转换批次规划
+8. 共享组件
+9. 资源清单
+10. 统计摘要
 
-| # | View 名称 | 文件路径 | 属性数 | 复杂度 | 行数 |
-|---|----------|---------|--------|--------|------|
-| 1 | HomeView | App/Views/HomeView.swift | 5 | medium | 80 |
-| 2 | SettingsView | App/Views/SettingsView.swift | 3 | simple | 45 |
-...
+**关键约束**：
+- 页面 ID 必须按 `page_NNNN_ClassName` 格式
+- 复杂度评估必须基于 mapping reference 的标准
+- 所有表格必须完整，不用 TODO 占位
 
-### 复杂度分类
-- simple (< 50行): 5 个
-- medium (50-150行): 3 个
-- complex (> 150行): 2 个
+### Step B2: 生成分页 UI Spec
 
-## UIKit ViewControllers
+**MUST READ**: [templates/page-spec-template.md](./templates/page-spec-template.md) 全文
 
-| # | ViewController | 文件路径 | 复杂度 | 行数 |
-|---|---------------|---------|--------|------|
-| 1 | ScanViewController | App/Services/ScanVC.swift | complex | 200 |
+对每个页面生成详细 spec：
 
-## 总计
-- SwiftUI Views: 10 个
-- UIKit ViewControllers: 1 个
-- 总页面: 11 个
-```
+**产出**: `spec/baseline/ui/page_NNNN_ClassName.md`
 
-输出到 `spec/baseline/ui-manifest.md`
+**必填字段**（不得省略）：
+- 基本信息（Page ID、类名、文件路径、类型、复杂度、行数、Confidence）
+- ios_source_anchors（complex/very_complex 页面必填）
+- 页面结构（非空行 ≥ 5）
+- 状态管理
+- 交互行为
+- 转换策略
+- 依赖关系
 
-### Step B2: 生成分页 spec
+**关键约束**：
+- 所有文件路径必须验证存在
+- ios_source_anchors 的 YAML 必须完整
+- 不用 TODO 或占位符
 
-对每个 View/ViewController 生成详细 spec：
-
-```markdown
-# HomeView
-
-## 基本信息
-- ID: page_0001
-- 文件: App/Views/HomeView.swift
-- 类型: SwiftUI View
-- 复杂度: medium
-- 行数: 80
-
-## 属性
-- @State count: Int = 0
-- @State message: String = "Hello"
-
-## UI 结构
-\`\`\`swift
-VStack(spacing: 20) {
-  Text("Count: \\(count)")
-  Button("Increment") { ... }
-}
-\`\`\`
-
-## 转换策略
-- 使用模板转换器
-- 预计自动转换率: 92%
-- 需要人工调整: Button action 闭包
-
-## 依赖
-- 无外部依赖
-
-## 风险
-- 低风险
-```
-
-输出到 `spec/baseline/ui/page_0001_HomeView.md`
-
-### Step B3: 运行 UI 覆盖率审计
-
-```bash
-python3 .migbot/bin/scripts/linters/audit_ui_coverage.py "$PROJECT_ROOT"
-```
+### Step B3: UI 覆盖率审计
 
 检查：
-- [ ] 所有 SwiftUI View 都有 spec
-- [ ] 所有 UIKit VC 都有 spec
+- [ ] 所有 Phase A 识别的 View 都有对应的 page spec
 - [ ] 没有遗漏的 UI 文件
+- [ ] 页面 ID 命名一致（meta.json、文件名、manifest 中的引用）
 
-报告 findings 到 section `spec/ui-coverage`
+**Findings 报告**：
+- 页面 spec 缺失 → `SPEC.PAGE_SPEC_MISSING`（精确类，blocking）
+- 页面 ID 不一致 → `SPEC.PAGE_ID_MISMATCH`（精确类，blocking）
+- 覆盖率 < 90% → `SPEC.UI_COVERAGE_LOW`（推断类，warning）
 
-### Step B4: UI 清单门禁
+### Gate B（可选确认）
 
-检查 UI 清单质量：
+**检查项**：
+- [ ] `spec/baseline/ui-manifest.md` 存在
+- [ ] UI 覆盖率 >= 90%（推断类）
+- [ ] 所有页面都有 page spec
+- [ ] 无 blocking findings（或已记账）
 
-```bash
-python3 .migbot/bin/scripts/linters/gate_ui_manifest.py "$PROJECT_ROOT"
-```
+**默认行为**：无人值守，自动通过（无 blocking 或已记账）
 
-门禁条件：
-- ✅ UI 覆盖率 >= 95%
-- ✅ 所有页面都有复杂度评估
-- ✅ 没有重复的 View 名称
+**用户确认模式**（用户明确要求时）：
+停在 Gate B，提供选项：
 
-**失败处理**：
-- 精确类错误（重复名称）→ 必须修复
-- 推断类问题（复杂度评估缺失）→ 可以记账放行
+1. **[推荐] 继续 Phase C** — 无 blocking findings
+2. 记账放行继续 — 有 findings 但可接受
+3. 停止并修复 — 需要人工介入
+
+记录决策到 `spec/decision-ledger.md`。
+
+---
 
 ## 5. Phase C: 功能 Spec 生成
 
+Phase C 分析功能模块，生成功能级别的 Spec。
+
 ### Step C1: 分析功能模块
 
-基于代码结构识别功能模块：
+**基于代码结构识别功能模块**：
 
-```
-App/
-├── Data/        → F001-F003: 数据管理
-├── Services/    → F101-F103: 系统服务
-├── Navigation/  → F002: 导航功能
-└── Views/       → (已在 Phase B 处理)
-```
+1. **扫描项目目录结构**，识别功能划分：
+   ```
+   App/
+   ├── Data/        → 数据管理功能
+   ├── Services/    → 系统服务功能
+   ├── Navigation/  → 导航功能
+   └── Views/       → (已在 Phase B 处理)
+   ```
 
-运行功能分析器：
+2. **分析关键技术栈**：
+   - SwiftData/Core Data → 数据存储功能
+   - URLSession → 网络请求功能
+   - AVFoundation → 相机功能
+   - UserDefaults/@AppStorage → 用户偏好功能
 
-```bash
-python3 .migbot/bin/scripts/analyzers/analyze_features.py \
-  "$IOS_PATH" \
-  --output spec/.i2h/features-raw.json
-```
+3. **识别系统集成**：
+   - Info.plist 权限 → 对应的系统功能
+   - 第三方 SDK → 集成功能
 
 ### Step C2: 生成 feature-index.md
 
-```markdown
-# 功能索引
+**MUST READ**: [templates/feature-index-template.md](./templates/feature-index-template.md) 全文
 
-## 核心功能
+生成 `spec/baseline/feature-index.md`：
 
-### F001: 数据存储
-- 源文件: App/Data/BrewStore.swift
-- 技术: SwiftData
-- 复杂度: high
-- 目标: 鸿蒙关系型数据库
+**必须包含的内容**：
+1. 功能命名规则（F001-F099, F100-F199, F200-F299）
+2. 核心业务功能清单
+3. 系统集成功能清单
+4. 辅助功能清单
+5. 功能依赖图
+6. 复杂度统计
+7. 优先级分配
+8. 迁移时间预估
+9. 技术栈映射总览
+10. 风险评估
 
-### F002: 导航路由
-- 源文件: App/Navigation/AppRouter.swift
-- 技术: NavigationStack
-- 复杂度: medium
-- 目标: Navigation 组件
+**功能编号规则**：
+- F001-F099: 核心业务功能
+- F100-F199: 系统集成功能
+- F200-F299: 辅助功能
 
-### F003: 用户偏好
-- 源文件: 使用 @AppStorage
-- 技术: UserDefaults
-- 复杂度: low
-- 目标: Preferences
+### Step C3: 生成分功能 Spec
 
-## 系统集成
-
-### F101: 通知
-- 源文件: App/Services/NotificationService.swift
-- 复杂度: medium
-
-### F102: OCR（可选）
-- 源文件: App/Services/OCRService.swift
-- 复杂度: high
-- 备注: 标记为可选功能
-
-## 依赖关系
-- F002 依赖 F001 (导航需要数据)
-- F101 独立
-- F102 独立（可选）
-```
-
-输出到 `spec/baseline/feature-index.md`
-
-### Step C3: 生成分功能 spec
+**MUST READ**: [templates/feature-spec-template.md](./templates/feature-spec-template.md) 全文
 
 对每个功能生成详细 spec：
 
-```markdown
-# F001: 数据存储
+**产出**: `spec/baseline/features/feat_XXX_feature_name.md`
 
-## iOS 实现
-- 使用 SwiftData
-- 模型: BeanRecord, RecipeRecord, BrewRecord
-- 支持: CRUD, 查询, 关系
+**必填字段**（不得省略）：
+- 基本信息（Feature ID、名称、源文件、技术栈、复杂度、优先级）
+- ios_source_anchors（high/very_complex 功能必填）
+- iOS 实现分析（非空行 ≥ 5）
+- HarmonyOS 迁移方案（非空行 ≥ 5）
+- 实现步骤（至少 5 步）
+- 代码示例（可运行的 ArkTS 示例）
+- **对接点（与 UI 页面的接口）** — 必填，说明 UI 如何调用本功能
+- **验收标准（Acceptance Criteria）** — 必填，至少 5-15 个 AC（根据复杂度）
+- 依赖关系
+- 占位策略
+- 测试策略
+- 风险评估
 
-## 迁移策略
-- 使用鸿蒙关系型数据库
-- 重新设计数据模型（保持结构相似）
-- 数据迁移（如需要）
+**关键约束**：
+- 代码示例必须是实际可运行的 ArkTS 代码
+- 迁移方案必须详细、可操作
+- 验收标准必须精确到源码行号
+- 对接点必须列出所有相关页面
+- 不用 TODO 或占位符
 
-## 实现步骤
-1. 定义 ArkTS 数据模型
-2. 创建数据库表
-3. 实现 CRUD 操作
-4. 实现查询接口
-5. 测试数据一致性
+### Step C4: 生成 feature-base.md
 
-## 占位策略
-- Kind: `data-layer-migration`
-- Trigger: Stage 3 优先级 1
-- Fallback: Mock 数据（Stage 1-2）
+**MUST READ**: [templates/feature-base-template.md](./templates/feature-base-template.md) 全文
 
-## 验证
-- 单元测试
-- 数据完整性测试
-```
+**目的**：统一说明共享基础设施，避免在各 feature spec 中重复描述。
 
-输出到 `spec/baseline/features/feat_001_data_storage.md`
+**产出**: `spec/baseline/feature-base.md`
 
-### Step C4: 运行功能覆盖率审计
+**提取内容**：
+1. **数据模型**：从各 feature spec 提取共享的数据模型
+2. **数据层**：提取 Store/Repository 的核心接口
+3. **网络层**：统一的网络请求架构（如适用）
+4. **事件系统**：跨组件通信机制
+5. **导航系统**：全局路由管理（如 AppRouter）
+6. **公共组件库**：从 ui-manifest.md 提取共享组件
+7. **权限声明**：从 info-plist-analysis.json 汇总
+8. **第三方依赖**：列出所有第三方 SDK
 
-```bash
-python3 .migbot/bin/scripts/linters/audit_feature_coverage.py "$PROJECT_ROOT"
-```
+**生成步骤**：
+1. 读取所有 feature spec，识别共享部分
+2. 读取 ui-manifest.md，提取公共组件
+3. 读取 info-plist-analysis.json，提取权限
+4. 按模板生成 feature-base.md
+
+### Step C5: 功能覆盖率审计
 
 检查：
-- [ ] 所有功能模块都有 spec
+- [ ] 所有识别的功能都有 feature spec
+- [ ] 所有 feature spec 都有验收标准和对接点
 - [ ] 依赖关系明确
 - [ ] 复杂度评估完整
+- [ ] 所有 complex 功能都有详细的 ios_source_anchors
+- [ ] feature-base.md 已生成
 
-报告 findings 到 section `spec/feature-coverage`
+**Findings 报告**：
+- 功能 spec 缺失 → `SPEC.FEATURE_SPEC_MISSING`（精确类，blocking）
+- 验收标准缺失 → `SPEC.AC_MISSING`（精确类，blocking）
+- 对接点缺失 → `SPEC.INTERFACE_MISSING`（精确类，blocking）
+- 依赖关系不明确 → `SPEC.DEPENDENCY_UNCLEAR`（推断类，warning）
+- 功能覆盖率 < 85% → `SPEC.FEATURE_COVERAGE_LOW`（推断类，warning）
+
+### Gate C（可选确认）
+
+**检查项**：
+- [ ] `spec/baseline/feature-index.md` 存在
+- [ ] 功能覆盖率 >= 85%（推断类）
+- [ ] 所有功能都有 feature spec
+- [ ] 无 blocking findings（或已记账）
+
+**默认行为**：无人值守，自动通过
+
+**用户确认模式**（用户明确要求时）：
+停在 Gate C，提供选项：
+
+1. **[推荐] 完成 Spec 生成** — 无 blocking findings
+2. 记账放行完成 — 有 findings 但可接受
+3. 停止并修复 — 需要人工介入
+
+记录决策到 `spec/decision-ledger.md`。
+
+---
 
 ## 6. 完成门禁
 
 ### Gate: SPEC-COMPLETE
 
-检查所有产出物：
+**MUST READ**: [references/outputs-and-layout.md](./references/outputs-and-layout.md) § 产物验证
 
-```bash
-python3 .migbot/bin/scripts/linters/gate_spec_complete.py "$PROJECT_ROOT"
-```
+检查所有必需产出：
 
-必需产出：
+**必需文件**：
 - [ ] `spec/baseline/ui-manifest.md`
 - [ ] `spec/baseline/ui/page_*.md` (至少 1 个)
 - [ ] `spec/baseline/feature-index.md`
+- [ ] `spec/baseline/feature-base.md`
 - [ ] `spec/baseline/features/feat_*.md` (至少 1 个)
+- [ ] `spec/baseline/spec-complete.txt`
+- [ ] `spec/decision-ledger.md`
 
-门禁条件：
-- ✅ UI 覆盖率 >= 95%
-- ✅ 功能覆盖率 >= 90%
+**门禁条件**：
+- ✅ UI 覆盖率 >= 90%
+- ✅ 功能覆盖率 >= 85%
 - ✅ 没有 blocking findings（或已记录决策）
+- ✅ 所有文件路径已验证存在
+- ✅ 命名规范一致
 
-**失败处理**：
-- 检查 `spec/.i2h/open-findings.json`
-- 按 gate-handling 规则处理
-- 精确类 → 必须修复
-- 推断类 → 可以记账放行
-- 阶段不可判定 → 推到 verify
+**失败处理**：按 [references/gate-handling.md](./references/gate-handling.md) 处理
 
-## 7. 完成标记
+---
 
-创建 `spec/baseline/spec-complete.txt`:
+## 7. 生成辅助文档
+
+### 7.1 生成 placeholder-registry.md
+
+**MUST READ**: [templates/placeholder-registry-template.md](./templates/placeholder-registry-template.md)
+
+从所有 feature spec 中提取占位策略，统一汇总到 `spec/placeholder-registry.md`。
+
+### 7.2 生成 ui-coverage-report.md
+
+**MUST READ**: [templates/ui-coverage-report-template.md](./templates/ui-coverage-report-template.md)
+
+生成 UI 覆盖率报告到 `spec/ui-coverage-report.md`，统计：
+- 页面覆盖率
+- 组件覆盖率
+- 导航覆盖率
+- 系统功能覆盖率
+- 缺失项分析
+
+---
+
+## 8. 完成标记
+
+创建 `spec/baseline/spec-complete.txt`：
 
 ```
-i2h-spec completed at 2024-11-01T23:59:59Z
-UI pages: 11
-Features: 5
-Findings: 0 blocking, 2 warnings
+i2h-spec completed at {ISO 8601 时间戳}
+UI pages: {数量}
+Features: {数量}
+Findings: {blocking 数量} blocking, {warning 数量} warnings, {deferred 数量} deferred
+Next: Run /i2h-plan to generate execution plan
 ```
 
-## 8. 输出报告
+---
+
+## 9. 输出最终报告
+
+生成人类可读的最终报告：
 
 ```markdown
 # i2h-spec 完成
 
-## 产出物
-✅ spec/baseline/ui-manifest.md
-✅ spec/baseline/ui/page_*.md (11 个)
-✅ spec/baseline/feature-index.md
-✅ spec/baseline/features/feat_*.md (5 个)
+## ✅ 产出物
 
-## 统计
-- SwiftUI Views: 10 个
-- UIKit ViewControllers: 1 个
-- 功能模块: 5 个
-- 代码行数: 1,878 行
+- `spec/baseline/ui-manifest.md` — UI 总清单
+- `spec/baseline/ui/page_*.md` — {数量} 个页面详细 spec
+- `spec/baseline/feature-index.md` — 功能索引
+- `spec/baseline/features/feat_*.md` — {数量} 个功能详细 spec
 
-## Findings
-- Blocking: 0
-- Warnings: 2
-  - IOS.UNSUPPORTED_SYNTAX: 2 处（已记账放行）
+## 📊 统计
 
-## 下一步
-运行 /i2h-plan 生成执行计划
+- **SwiftUI Views**: {数量} 个
+- **UIKit ViewControllers**: {数量} 个
+- **功能模块**: {数量} 个
+- **代码行数**: {数量} 行
+
+## 🔍 Findings
+
+- **Blocking**: {数量}
+- **Warnings**: {数量}
+- **Deferred**: {数量}（推到下游阶段）
+
+{如果有 findings，列出关键的几个}
+
+## ⏭️ 下一步
+
+运行 `/i2h-plan` 生成执行计划。
+
+---
+
+**所有产出物已保存到**: `{HarmonyOS 项目根目录}/spec/`
 ```
 
-## 收尾：上报阶段用量
+---
+
+## 10. 收尾：上报阶段用量
 
 ```bash
 .migbot/bin/i2h mark-stage i2h-spec
 ```
 
 标记阶段水位、刷新用量快照（忽略退出码，不阻断）。
+
+---
+
+## 附录：降级路径
+
+### 脚本不存在或失败
+
+如果 Python 脚本不存在或调用失败：
+
+1. **不阻断流程**
+2. **LLM 执行等价的确定性提取**（扫描文件、提取类名）
+3. **LLM 补充所有语义字段**
+4. **记账"工具缺口，已降级"**
+5. **Confidence 标记为 medium**
+
+### 源文件缺失
+
+如果部分源文件无法访问：
+
+1. **标记 Confidence 为 low**
+2. **在 meta.json 中记录缺失项**
+3. **不阻断后续阶段**
+4. **在 spec 中添加 TODO 标记**（这是唯一允许 TODO 的情况）
+
+### 格式错误
+
+如果生成的产物格式错误：
+
+1. **重试生成（最多 2 次）**
+2. **2 次后仍失败 → 记账放行**
+3. **标记 Confidence 为 low**
+
+---
+
+## 质量保证
+
+### 自检清单
+
+生成每个产物后，LLM 自检：
+
+- [ ] 所有必填字段非空
+- [ ] 文件路径已验证存在
+- [ ] 命名规范一致
+- [ ] 代码示例可运行
+- [ ] 没有用 TODO 占位（除非源文件确实缺失）
+
+### 产物质量标准
+
+**必需达到**：
+- ✅ 结构完整
+- ✅ 关键字段非空
+- ✅ 命名一致
+
+**优秀标准**：
+- ⭐ 语义丰富
+- ⭐ 示例详细
+- ⭐ 风险评估充分
+
+---
+
+**最后更新**: 2024-11-03  
+**版本**: v2.0（重写版，LLM 主导 + Python 辅助）

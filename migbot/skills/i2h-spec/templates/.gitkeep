@@ -1,0 +1,13 @@
+# Templates 目录
+
+此目录包含 i2h-spec 生成产物的模板文档。
+
+## 使用方式
+
+在 SKILL.md 中通过 `**MUST READ**` 指令强制加载：
+
+```markdown
+**MUST READ**: [templates/ui-manifest-template.md](./templates/ui-manifest-template.md) 全文
+```
+
+LLM 必须按照模板生成对应的产物。
