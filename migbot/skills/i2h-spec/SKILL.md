@@ -442,7 +442,13 @@ Phase C 分析功能模块，生成功能级别的 Spec。
 
 **MUST READ**: [templates/feature-spec-template.md](./templates/feature-spec-template.md) 全文
 
-对每个功能生成详细 spec：
+**关键约束**：
+- **只生成真实功能的 spec**，不生成 placeholder 文件
+- **验收标准必须穷举**：每个操作、每个 UI 元素、每个错误路径都要单独成 AC
+- **AC 原子性**：每条 AC 必须原子且可断言，禁止 "详见 xxx" 类延迟描述
+- **AC 数量**：simple ≥8, medium ≥15, complex ≥25, very_complex ≥30
+
+对每个**真实识别的功能**生成详细 spec：
 
 **产出**: `spec/baseline/features/feat_XXX_feature_name.md`
 
@@ -454,18 +460,77 @@ Phase C 分析功能模块，生成功能级别的 Spec。
 - 实现步骤（至少 5 步）
 - 代码示例（可运行的 ArkTS 示例）
 - **对接点（与 UI 页面的接口）** — 必填，说明 UI 如何调用本功能
-- **验收标准（Acceptance Criteria）** — 必填，至少 5-15 个 AC（根据复杂度）
+- **验收标准（Acceptance Criteria）** — 必填，必须穷举
+  - simple: ≥ 8 个 AC
+  - medium: ≥ 15 个 AC  
+  - complex: ≥ 25 个 AC
+  - very_complex: ≥ 30 个 AC
+  - 每个 AC 格式：`- [ ] FXXX-AC{N} {描述}\n      源: → 标: | 判: | 真:`
 - 依赖关系
 - 占位策略
 - 测试策略
 - 风险评估
 
-**关键约束**：
-- 代码示例必须是实际可运行的 ArkTS 代码
-- 迁移方案必须详细、可操作
-- 验收标准必须精确到源码行号
-- 对接点必须列出所有相关页面
-- 不用 TODO 或占位符
+**穷举要求**（验收标准）：
+1. **CRUD 完整性**：每个操作（Create/Read/Update/Delete）单独成 AC
+2. **UI 元素穷举**：每个按钮、列表、输入框单独成 AC
+3. **错误路径穷举**：每种错误情况单独成 AC
+4. **关系管理**：每种关系操作单独成 AC
+5. **集成验证**：每个 UI 集成点单独成 AC
+
+**禁止**：
+- ❌ 不生成 `feat_XXX_placeholder.md` 文件
+- ❌ 不用 "支持各种操作" 这样的笼统描述
+- ❌ 不用 "详见 xxx.md" 延迟描述
+- ❌ AC 数量不足最低要求
+
+**验证**：
+- [ ] 每个 feature spec 文件都有实质内容（不是 placeholder）
+- [ ] 验收标准数量 ≥ 最低要求
+- [ ] 每个 AC 都有完整的 `源: → 标: | 判: | 真:` 格式
+- [ ] 每个 AC 都是原子的、可独立测试的
+
+**示例验收标准**（数据存储功能至少 25 个 AC）：
+```markdown
+### 初始化（3 个）
+- [ ] F001-AC01 应用启动时 BrewStore 自动初始化数据库
+- [ ] F001-AC02 数据库文件创建在正确位置
+- [ ] F001-AC03 表结构创建成功
+
+### CRUD - 创建（5 个）
+- [ ] F001-AC04 addBean() 成功插入新咖啡豆记录
+- [ ] F001-AC05 插入咖啡豆后数据库包含该记录
+- [ ] F001-AC06 插入时自动设置 createdAt 时间戳
+- [ ] F001-AC07 插入时自动生成 UUID
+- [ ] F001-AC08 插入重复 ID 时报错
+
+### CRUD - 读取（5 个）
+- [ ] F001-AC09 getBeans() 返回所有未归档的咖啡豆
+- [ ] F001-AC10 getBeans() 按创建时间升序排序
+- [ ] F001-AC11 getBean(id) 返回指定 ID 的咖啡豆
+- [ ] F001-AC12 查询不存在的 ID 返回 null
+- [ ] F001-AC13 查询已归档的咖啡豆不在默认列表中
+
+### CRUD - 更新（4 个）
+- [ ] F001-AC14 updateBean() 成功更新咖啡豆属性
+- [ ] F001-AC15 更新后查询得到新值
+- [ ] F001-AC16 更新不存在的咖啡豆返回错误
+- [ ] F001-AC17 更新时保持 createdAt 不变
+
+### CRUD - 删除（3 个）
+- [ ] F001-AC18 deleteBean() 成功删除指定咖啡豆
+- [ ] F001-AC19 删除咖啡豆时级联删除关联的配方记录
+- [ ] F001-AC20 删除不存在的咖啡豆不报错
+
+### UI 集成（3 个）
+- [ ] F001-AC21 HomeView 显示 store.beans 列表
+- [ ] F001-AC22 点击咖啡豆卡片跳转到详情页
+- [ ] F001-AC23 添加咖啡豆后 UI 自动刷新
+
+### 错误处理（2 个）
+- [ ] F001-AC24 数据库初始化失败时抛出错误
+- [ ] F001-AC25 并发访问时数据一致性保证
+```
 
 ### Step C4: 生成 feature-base.md
 
@@ -475,27 +540,53 @@ Phase C 分析功能模块，生成功能级别的 Spec。
 
 **产出**: `spec/baseline/feature-base.md`
 
+**执行时机**：所有 feature spec 生成完成后
+
 **提取内容**：
 1. **数据模型**：从各 feature spec 提取共享的数据模型
+   - 遍历所有 feat_*.md，提取数据模型定义
+   - 去重，只保留唯一的模型定义
+   
 2. **数据层**：提取 Store/Repository 的核心接口
+   - 提取所有 Store 类的接口定义
+   - 汇总为统一的数据层说明
+   
 3. **网络层**：统一的网络请求架构（如适用）
+   - 如果有网络请求，提取 HTTP 封装
+   
 4. **事件系统**：跨组件通信机制
+   - 如果使用 @EnvironmentObject 或 EventBus
+   
 5. **导航系统**：全局路由管理（如 AppRouter）
+   - 从各 page spec 和 feature spec 提取导航逻辑
+   - 汇总为统一的导航系统说明
+   
 6. **公共组件库**：从 ui-manifest.md 提取共享组件
+   - 读取 ui-manifest.md § 共享组件
+   - 列出所有可复用组件
+   
 7. **权限声明**：从 info-plist-analysis.json 汇总
+   - 读取 `.i2h/info-plist-analysis.json`
+   - 列出所有权限及其用途
+   
 8. **第三方依赖**：列出所有第三方 SDK
+   - 从 project-skeleton.json 提取依赖
 
 **生成步骤**：
 1. 读取所有 feature spec，识别共享部分
 2. 读取 ui-manifest.md，提取公共组件
 3. 读取 info-plist-analysis.json，提取权限
 4. 按模板生成 feature-base.md
+5. 验证内容完整性
 
 ### Step C5: 功能覆盖率审计
 
 检查：
 - [ ] 所有识别的功能都有 feature spec
+- [ ] **没有生成 placeholder 文件**（feat_XXX_placeholder.md）
 - [ ] 所有 feature spec 都有验收标准和对接点
+- [ ] 验收标准数量符合最低要求（simple ≥8, medium ≥15, complex ≥25, very_complex ≥30）
+- [ ] 每个 AC 都有完整格式（`源: → 标: | 判: | 真:`）
 - [ ] 依赖关系明确
 - [ ] 复杂度评估完整
 - [ ] 所有 complex 功能都有详细的 ios_source_anchors
@@ -503,10 +594,39 @@ Phase C 分析功能模块，生成功能级别的 Spec。
 
 **Findings 报告**：
 - 功能 spec 缺失 → `SPEC.FEATURE_SPEC_MISSING`（精确类，blocking）
+- 生成了 placeholder 文件 → `SPEC.PLACEHOLDER_FILE_GENERATED`（精确类，blocking）
 - 验收标准缺失 → `SPEC.AC_MISSING`（精确类，blocking）
+- 验收标准数量不足 → `SPEC.AC_INSUFFICIENT`（精确类，blocking）
+- AC 格式不完整 → `SPEC.AC_FORMAT_INVALID`（精确类，blocking）
 - 对接点缺失 → `SPEC.INTERFACE_MISSING`（精确类，blocking）
 - 依赖关系不明确 → `SPEC.DEPENDENCY_UNCLEAR`（推断类，warning）
 - 功能覆盖率 < 85% → `SPEC.FEATURE_COVERAGE_LOW`（推断类，warning）
+
+**验证脚本示例**：
+```bash
+# 检查是否有 placeholder 文件
+if ls spec/baseline/features/*_placeholder.md 2>/dev/null; then
+  echo "ERROR: 发现 placeholder 文件，应删除"
+  exit 1
+fi
+
+# 检查验收标准数量
+for file in spec/baseline/features/feat_*.md; do
+  ac_count=$(grep -c "^- \[ \] F[0-9]\+-AC[0-9]\+" "$file")
+  complexity=$(grep "复杂度:" "$file" | awk '{print $2}')
+  
+  case $complexity in
+    simple) min_ac=8 ;;
+    medium) min_ac=15 ;;
+    complex) min_ac=25 ;;
+    very_complex) min_ac=30 ;;
+  esac
+  
+  if [ "$ac_count" -lt "$min_ac" ]; then
+    echo "ERROR: $file AC 数量不足（$ac_count < $min_ac）"
+  fi
+done
+```
 
 ### Gate C（可选确认）
 

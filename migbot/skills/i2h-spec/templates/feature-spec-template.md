@@ -320,62 +320,171 @@ BeanLibraryView (page_0002):
 
 ## 验收标准（Acceptance Criteria）
 
-**必填段落**：详细的、可验证的验收标准。每个 AC 必须包含：
-- ✅ `源`: iOS 源码锚点（类名.方法名）
-- ✅ `标`: HarmonyOS 目标（类名.方法名）
-- ✅ `判`: 判定类型（ui/visual/route/contract/data）
-- ✅ `真`: 源码文件路径和行号
+**必填段落**：详细的、可验证的验收标准。
 
-**格式**：
+### AC 原子性 + 穷举铁律（无论 complexity）
+
+`## 验收标准` 必须**始终位于主文件**，每条 `- [ ]` 必须**原子且可断言**——禁止 "(详见 xxx.md §y)" 类延迟描述。
+
+**核心要求**：
+1. **原子性**：每条 AC 独立可测，若需要 addendum 才能理解，必须拆成多条原子 AC
+2. **穷举性**：必须穷举所有可枚举的分支——"少而精"是 anti-pattern
+   - 每种功能单独成 AC
+   - 每个 UI 元素单独成 AC  
+   - 每种错误路径单独成 AC
+   - 每个数据操作单独成 AC
+3. **可追溯**：每条 AC 带稳定 ID，精确追溯到源码
+
+### 格式规范
 
 ```markdown
-- [ ] FXXX-AC01 {验收标准描述}
-      `源:{iOS 源码锚点} → 标:{HarmonyOS 目标}`
-      `判:{判定类型} | {判定条件}`
+- [ ] FXXX-AC{序号} {详细的验收标准描述}
+      `源:{iOS 符号/组件} → 标:{ArkTS 方法/组件}`
+      `判:{判定类型} | {具体判定条件}`
       `真:{源码文件路径}:{行号}`
 ```
 
-**判定类型说明**：
-- `ui`: UI 元素存在性和状态（按钮可见、列表渲染）
-- `visual`: 视觉效果（布局、样式、动画）
-- `route`: 导航和路由（页面跳转、参数传递）
-- `contract`: 接口契约（方法返回值、数据格式）
-- `data`: 数据正确性（数据库查询、状态更新）
+**字段说明**：
 
-**示例**：
+| 字段 | 说明 | 示例 |
+|------|------|------|
+| `FXXX-AC{序号}` | 稳定 AC ID，前缀=本功能编号，序号递增 | `F001-AC01` |
+| `源:` | iOS 源码锚点（类.方法/组件） | `BrewStore.addBean(_:)` |
+| `标:` | HarmonyOS 目标实现 | `BrewStore.addBean(bean)` |
+| `判:` | 判定类型 + 具体条件 | `contract \| 返回插入的 BeanRecord` |
+| `真:` | 源码文件路径:行号 | `App/Data/BrewStore.swift:120` |
+
+**判定类型**：
+- `ui`: UI 元素存在性和状态（按钮可见、列表渲染、文本内容）
+- `visual`: 视觉效果（布局、颜色、动画、间距）
+- `route`: 导航和路由（页面跳转、参数传递、返回）
+- `contract`: 接口契约（方法返回值、数据格式、异常处理）
+- `data`: 数据正确性（数据库查询、状态更新、持久化）
+
+### 穷举示例（数据存储功能）
 
 ```markdown
+## 验收标准
+
+### 初始化
 - [ ] F001-AC01 应用启动时 BrewStore 自动初始化数据库
       `源:BrewStore.init() → 标:BrewStore.init(context)`
       `判:contract | ModelContainer 创建成功，返回 BrewStore 实例`
       `真:App/Data/BrewStore.swift:45`
 
-- [ ] F001-AC02 调用 addBean() 成功插入咖啡豆记录
+- [ ] F001-AC02 数据库文件创建在正确位置
+      `源:ModelContainer(schema) → 标:getRdbStore(context, config)`
+      `判:data | 数据库文件存在于 files/cuike.db`
+      `真:App/Data/BrewStore.swift:48`
+
+### CRUD - 创建
+- [ ] F001-AC03 addBean() 成功插入新咖啡豆记录
       `源:BrewStore.addBean(_:) → 标:BrewStore.addBean(bean)`
-      `判:contract | 返回插入的 BeanRecord，数据库包含新记录`
+      `判:contract | 返回插入的 BeanRecord，id 已赋值`
       `真:App/Data/BrewStore.swift:120`
 
-- [ ] F001-AC03 删除咖啡豆时级联删除关联的配方记录
-      `源:cascade delete 逻辑 → 标:deleteBean 触发级联删除`
-      `判:contract | 删除 Bean 后，关联 Recipe 也被删除`
-      `真:App/Data/BrewStore.swift:180`
+- [ ] F001-AC04 插入咖啡豆后数据库包含该记录
+      `源:context.insert(bean) → 标:rdbStore.insert('bean', valueBucket)`
+      `判:data | 查询数据库可获取刚插入的记录`
+      `真:App/Data/BrewStore.swift:123`
 
-- [ ] F001-AC04 HomeView 显示 store.beans 列表
-      `源:HomeView.body → 标:HomeView.build()`
+- [ ] F001-AC05 插入时自动设置 createdAt 时间戳
+      `源:bean.createdAt = Date() → 标:created_at: bean.createdAt.getTime()`
+      `判:data | createdAt 字段为当前时间戳`
+      `真:App/Models/Bean.swift:25`
+
+### CRUD - 读取
+- [ ] F001-AC06 getBeans() 返回所有未归档的咖啡豆
+      `源:BrewStore.fetchBeans() → 标:BrewStore.getBeans()`
+      `判:contract | 返回 BeanRecord 数组，不含 archived=true 的记录`
+      `真:App/Data/BrewStore.swift:140`
+
+- [ ] F001-AC07 getBeans() 按创建时间升序排序
+      `源:@Query sort: \.createdAt → 标:predicates.orderByAsc('created_at')`
+      `判:data | 返回数组按 createdAt 升序`
+      `真:App/Data/BrewStore.swift:142`
+
+- [ ] F001-AC08 getBean(id) 返回指定 ID 的咖啡豆
+      `源:beans.first(where: {$0.id == id}) → 标:query(predicates.equalTo('id', id))`
+      `判:contract | id 匹配时返回记录，不匹配返回 null`
+      `真:App/Data/BrewStore.swift:155`
+
+### CRUD - 更新
+- [ ] F001-AC09 updateBean() 成功更新咖啡豆属性
+      `源:bean.name = newName → 标:rdbStore.update(valueBucket, predicates)`
+      `判:data | 更新后查询得到新值`
+      `真:App/Data/BrewStore.swift:170`
+
+- [ ] F001-AC10 更新不存在的咖啡豆返回错误
+      `源:context.save() throws → 标:update() 返回 0 行`
+      `判:contract | 更新不存在的 id 不抛异常但返回 0`
+      `真:App/Data/BrewStore.swift:175`
+
+### CRUD - 删除
+- [ ] F001-AC11 deleteBean() 成功删除指定咖啡豆
+      `源:context.delete(bean) → 标:rdbStore.delete(predicates.equalTo('id', id))`
+      `判:data | 删除后查询不到该记录`
+      `真:App/Data/BrewStore.swift:190`
+
+- [ ] F001-AC12 删除咖啡豆时级联删除关联的配方记录
+      `源:@Relationship(deleteRule: .cascade) → 标:FOREIGN KEY ON DELETE CASCADE`
+      `判:data | 删除 Bean 后，关联 Recipe 也被删除`
+      `真:App/Models/Bean.swift:30`
+
+- [ ] F001-AC13 删除不存在的咖啡豆不报错
+      `源:context.delete() 幂等 → 标:delete() 返回 0 行不抛异常`
+      `判:contract | 删除不存在的 id 正常返回`
+      `真:App/Data/BrewStore.swift:195`
+
+### 关系管理
+- [ ] F001-AC14 Bean 和 Recipe 一对多关系正确建立
+      `源:bean.recipes → 标:JOIN bean.id = recipe.bean_id`
+      `判:data | 查询 Bean 可获取关联的 Recipe 列表`
+      `真:App/Models/Bean.swift:32`
+
+- [ ] F001-AC15 删除 Bean 时关联的 Recipe 自动删除（级联）
+      `源:deleteRule: .cascade → 标:ON DELETE CASCADE`
+      `判:data | 删除 Bean 后，recipe 表中 bean_id 匹配的记录消失`
+      `真:App/Models/Bean.swift:30`
+
+### UI 集成
+- [ ] F001-AC16 HomeView 显示 store.beans 列表
+      `源:@ObjectLink store → 标:@ObjectLink store`
       `判:ui | List 显示 BeanRecord 数组，每项显示名称和产地`
       `真:App/Views/HomeView.swift:60`
 
-- [ ] F001-AC05 点击咖啡豆卡片跳转到详情页
+- [ ] F001-AC17 点击咖啡豆卡片跳转到详情页
       `源:NavigationLink(value: bean) → 标:NavPathStack.pushPath('BeanDetail', bean.id)`
       `判:route | 跳转到 BeanDetailView 且传递正确的 bean.id`
       `真:App/Views/BeanLibraryView.swift:85`
+
+- [ ] F001-AC18 添加咖啡豆后 UI 自动刷新
+      `源:@Published beans → 标:@Trace beans 触发 UI 更新`
+      `判:ui | addBean() 后 List 立即显示新项`
+      `真:App/Views/BeanLibraryView.swift:90`
+
+### 错误处理
+- [ ] F001-AC19 数据库初始化失败时抛出错误
+      `源:ModelContainer init throws → 标:getRdbStore() throws`
+      `判:contract | 数据库文件损坏时抛异常`
+      `真:App/Data/BrewStore.swift:50`
+
+- [ ] F001-AC20 插入重复 ID 时报错
+      `源:@Attribute(.unique) id → 标:PRIMARY KEY 约束`
+      `判:contract | 插入相同 id 抛 UNIQUE 约束异常`
+      `真:App/Models/Bean.swift:20`
 ```
 
-**数量要求**：
-- simple 功能：至少 5 个 AC
-- medium 功能：至少 8 个 AC
-- complex 功能：至少 12 个 AC
-- very_complex 功能：至少 15 个 AC
+### 数量要求（最低标准）
+
+| 复杂度 | 最少 AC 数 | 说明 |
+|--------|-----------|------|
+| simple | 5-8 个 | 基础 CRUD + UI 集成 |
+| medium | 10-15 个 | 完整 CRUD + 关系 + UI + 错误处理 |
+| complex | 15-25 个 | 完整功能 + 所有分支 + 边界情况 |
+| very_complex | 25+ 个 | 穷举所有路径和状态 |
+
+**注意**：以上是最低要求，实际 AC 数量应与功能复杂度成正比。一条 "支持各种操作" 不可接受，必须拆成 "支持添加 / 支持删除 / 支持更新 / ..."。
 
 ## 占位策略
 
