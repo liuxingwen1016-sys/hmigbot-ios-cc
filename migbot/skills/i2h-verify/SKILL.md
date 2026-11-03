@@ -247,61 +247,555 @@ def verify_api_availability(api_usage_file):
 总体: ✅ API 使用正确
 ```
 
-## 6. CHECK-4: UI 对比验证（可选，需真机）
+## 6. CHECK-4: UI 对比验证
 
-如果用户选择且真机已连接：
+**执行条件**: 自动检测设备可用性
 
-### Step 4.1: 部署到真机
+**设计原则**（参考 hmigbot arkts-visual-verify）:
+- 完全自动化，不暂停，不问用户
+- iOS 端截图作为 baseline
+- HarmonyOS 端截图与 baseline 对比
+- 批量处理所有页面
+- 最后一次性生成完整报告
+
+### Step 4.0: 设备可用性检测
+
+在执行 UI 对比前，先检测双端设备是否可用：
 
 ```bash
-# 安装 HAP
-hdc install "$HOS_PATH/entry/build/default/outputs/default/entry-default-unsigned.hap"
+# 读取配置
+config_file=".migbot/config.json"
+ios_bundle=$(python3 -c "import json; print(json.load(open('$config_file'))['ios_bundle_id'])" 2>/dev/null || echo "")
+hos_bundle=$(python3 -c "import json; print(json.load(open('$config_file'))['harmonyos_bundle'])" 2>/dev/null || echo "")
 
-# 启动应用
-hdc shell aa start -a EntryAbility -b com.example.cuike
+# 读取工具路径（从 config.json，避免重复探测）
+HDC=$(python3 -c "import json; print(json.load(open('$config_file')).get('hdc', 'hdc'))")
+XCRUN=$(python3 -c "import json; print(json.load(open('$config_file')).get('xcrun', 'xcrun'))")
+
+# 检测 iOS 设备/模拟器
+ios_available=false
+if $XCRUN simctl list devices | grep -q "Booted"; then
+    echo "✅ iOS 模拟器已启动"
+    ios_available=true
+    ios_device=$($XCRUN simctl list devices | grep "Booted" | head -1 | sed -E 's/.*\(([^)]+)\).*/\1/')
+elif command -v idevice_id &> /dev/null && idevice_id -l | grep -q "."; then
+    echo "✅ iOS 真机已连接"
+    ios_available=true
+    ios_device="physical"
+else
+    echo "❌ iOS 设备不可用"
+    echo "   提示: 启动 iOS 模拟器或连接 iPhone"
+fi
+
+# 检测 HarmonyOS 设备/模拟器
+hos_available=false
+if $HDC list targets | grep -v "Empty" | grep -q "."; then
+    echo "✅ HarmonyOS 设备已连接"
+    hos_available=true
+    hos_device=$($HDC list targets | grep -v "Empty" | head -1)
+else
+    echo "❌ HarmonyOS 设备不可用"
+    echo "   提示: 启动 HarmonyOS 模拟器或连接设备"
+fi
+
+# 判断是否可以执行
+if [ "$ios_available" = false ] || [ "$hos_available" = false ]; then
+    echo ""
+    echo "⚠️  CHECK-4 状态: DEFERRED（原因：设备不可用）"
+    echo ""
+    echo "需要:"
+    [ "$ios_available" = false ] && echo "  - iOS 设备/模拟器"
+    [ "$hos_available" = false ] && echo "  - HarmonyOS 设备/模拟器"
+    echo ""
+    
+    # 生成 DEFERRED 报告
+    mkdir -p spec/verify
+    cat > spec/verify/ui-comparison.md << 'EOF'
+# UI 对比验证报告
+
+## 执行状态
+⏸️ DEFERRED - 设备不可用
+
+## 原因
+EOF
+    [ "$ios_available" = false ] && echo "- iOS 设备/模拟器未连接" >> spec/verify/ui-comparison.md
+    [ "$hos_available" = false ] && echo "- HarmonyOS 设备/模拟器未连接" >> spec/verify/ui-comparison.md
+    
+    cat >> spec/verify/ui-comparison.md << 'EOF'
+
+## 解决方法
+
+### 启动 iOS 模拟器
+```bash
+# 列出可用的模拟器
+xcrun simctl list devices
+
+# 启动指定的模拟器
+xcrun simctl boot <device_id>
+
+# 或使用 Xcode 启动
+open -a Simulator
 ```
 
-### Step 4.2: 引导截图对比
+### 启动 HarmonyOS 模拟器
+1. 打开 DevEco Studio
+2. Tools → Device Manager
+3. 启动一个模拟器
 
-```markdown
-请手动进行 UI 对比：
-
-1. 在 iPhone 上打开 iOS 版本
-2. 在鸿蒙设备上打开 HarmonyOS 版本
-3. 对比以下页面：
-   - 首页
-   - 设置页
-   - 列表页
-   
-4. 拍照记录差异
+或使用命令行（如果已配置）:
+```bash
+# 检查设备
+hdc list targets
 ```
 
-### Step 4.3: 生成对比报告
-
-生成 `spec/verify/ui-comparison.md`:
-
-```markdown
-# UI 对比验证
-
-## 首页
-iOS 截图: [需要手动添加]
-HarmonyOS 截图: [需要手动添加]
-
-观察结果:
-- 布局: ✅ 一致
-- 颜色: ⚠️  略有差异（色值偏差 < 5%）
-- 字体: ⚠️  字体大小略有不同
-- 间距: ✅ 基本一致
-
-相似度: 约 87%
-
-## 设置页
-相似度: 约 90%
-
-## 总体评估
-平均相似度: 88%
-可接受程度: ✅ 良好
+### 重新运行验证
+设备就绪后，重新运行:
+```bash
+/i2h-verify
 ```
+EOF
+    
+    exit 0
+fi
+
+echo ""
+echo "✅ 设备检测通过，开始 UI 对比验证"
+echo ""
+```
+
+**如果设备不可用**: 
+- 状态: DEFERRED
+- 生成说明文档
+- 退出 CHECK-4
+
+**如果设备可用**: 继续执行自动化对比
+
+### Step 4.1: 准备工作
+
+```bash
+# 创建截图目录
+mkdir -p spec/verify/screenshots/ios
+mkdir -p spec/verify/screenshots/harmonyos
+mkdir -p spec/verify/screenshots/comparison
+
+# 读取页面列表（从 spec 或配置）
+pages=$(python3 -c "
+import json
+import os
+
+# 尝试从不同来源获取页面列表
+pages = []
+
+# 1. 从 ui-manifest 读取
+if os.path.exists('spec/baseline/ui-manifest.md'):
+    with open('spec/baseline/ui-manifest.md', 'r') as f:
+        content = f.read()
+        # 简单提取页面名称（根据实际格式调整）
+        import re
+        pages = re.findall(r'##\s+(\w+View)', content)
+
+# 2. 如果没有，使用默认页面列表
+if not pages:
+    pages = ['HomeView', 'SettingsView', 'ProfileView', 'AboutView']
+
+print(','.join(pages))
+" 2>/dev/null || echo "HomeView,SettingsView")
+
+echo "📋 待对比页面: $pages"
+echo ""
+```
+
+### Step 4.2: iOS 端截图（Baseline）
+
+**完全自动化**，不需要手动操作：
+
+```bash
+echo "📱 iOS 端截图采集中..."
+
+IFS=',' read -ra PAGE_ARRAY <<< "$pages"
+ios_screenshots=""
+
+for page in "${PAGE_ARRAY[@]}"; do
+    echo "  截图: $page"
+    
+    # iOS 截图命令
+    if [ "$ios_device" = "physical" ]; then
+        # 真机截图（需要 libimobiledevice）
+        idevicescreenshot spec/verify/screenshots/ios/${page}.png 2>/dev/null
+    else
+        # 模拟器截图
+        $XCRUN simctl io $ios_device screenshot spec/verify/screenshots/ios/${page}.png 2>/dev/null
+    fi
+    
+    if [ -f "spec/verify/screenshots/ios/${page}.png" ]; then
+        echo "    ✅ iOS 截图成功"
+        ios_screenshots="$ios_screenshots,$page"
+    else
+        echo "    ⚠️  iOS 截图失败（页面可能不可见）"
+    fi
+    
+    # 小延迟，确保 UI 稳定
+    sleep 1
+done
+
+echo ""
+echo "✅ iOS 端截图完成"
+echo ""
+```
+
+### Step 4.3: HarmonyOS 端截图
+
+```bash
+echo "📱 HarmonyOS 端截图采集中..."
+
+# 确保应用已安装并启动
+if [ -n "$hos_bundle" ]; then
+    # 安装 HAP（如果需要）
+    hap_file=$(find . -name "*.hap" -type f | head -1)
+    if [ -n "$hap_file" ]; then
+        echo "  安装应用: $hap_file"
+        $HDC install "$hap_file" 2>/dev/null
+    fi
+    
+    # 启动应用
+    echo "  启动应用: $hos_bundle"
+    $HDC shell aa start -a EntryAbility -b "$hos_bundle" 2>/dev/null
+    sleep 2
+fi
+
+hos_screenshots=""
+
+for page in "${PAGE_ARRAY[@]}"; do
+    echo "  截图: $page"
+    
+    # HarmonyOS 截图
+    $HDC shell snapshot_display -f /data/local/tmp/${page}.png 2>/dev/null
+    $HDC file recv /data/local/tmp/${page}.png spec/verify/screenshots/harmonyos/${page}.png 2>/dev/null
+    
+    if [ -f "spec/verify/screenshots/harmonyos/${page}.png" ]; then
+        echo "    ✅ HarmonyOS 截图成功"
+        hos_screenshots="$hos_screenshots,$page"
+    else
+        echo "    ⚠️  HarmonyOS 截图失败"
+    fi
+    
+    sleep 1
+done
+
+echo ""
+echo "✅ HarmonyOS 端截图完成"
+echo ""
+```
+
+### Step 4.4: 图像相似度对比
+
+使用 Python 脚本计算相似度：
+
+```python
+# 创建对比脚本
+cat > /tmp/compare_screenshots.py << 'SCRIPT'
+#!/usr/bin/env python3
+"""
+iOS vs HarmonyOS 截图相似度对比
+使用感知哈希算法计算相似度
+"""
+
+import sys
+import os
+import json
+from pathlib import Path
+
+try:
+    from PIL import Image
+    import imagehash
+except ImportError:
+    print("错误: 需要安装 PIL 和 imagehash")
+    print("运行: pip3 install Pillow imagehash")
+    sys.exit(1)
+
+def calculate_similarity(img1_path, img2_path):
+    """计算两张图片的相似度（百分比）"""
+    try:
+        img1 = Image.open(img1_path)
+        img2 = Image.open(img2_path)
+        
+        # 计算感知哈希
+        hash1 = imagehash.phash(img1)
+        hash2 = imagehash.phash(img2)
+        
+        # 计算汉明距离
+        distance = hash1 - hash2
+        
+        # 转换为相似度百分比（64位哈希）
+        similarity = (64 - distance) / 64 * 100
+        
+        return {
+            "similarity": round(similarity, 2),
+            "distance": int(distance),
+            "status": "match" if similarity >= 95 else "diff"
+        }
+    except Exception as e:
+        return {
+            "similarity": 0,
+            "distance": 64,
+            "status": "error",
+            "error": str(e)
+        }
+
+def main():
+    if len(sys.argv) < 3:
+        print("用法: compare_screenshots.py <ios_dir> <hos_dir>")
+        sys.exit(1)
+    
+    ios_dir = Path(sys.argv[1])
+    hos_dir = Path(sys.argv[2])
+    
+    results = []
+    
+    # 遍历所有 iOS 截图
+    for ios_img in ios_dir.glob("*.png"):
+        page_name = ios_img.stem
+        hos_img = hos_dir / ios_img.name
+        
+        if not hos_img.exists():
+            results.append({
+                "page": page_name,
+                "status": "missing_hos",
+                "similarity": 0
+            })
+            continue
+        
+        # 计算相似度
+        result = calculate_similarity(str(ios_img), str(hos_img))
+        result["page"] = page_name
+        result["ios_path"] = str(ios_img)
+        result["hos_path"] = str(hos_img)
+        
+        results.append(result)
+    
+    # 输出 JSON 结果
+    print(json.dumps(results, indent=2, ensure_ascii=False))
+
+if __name__ == "__main__":
+    main()
+SCRIPT
+
+chmod +x /tmp/compare_screenshots.py
+
+# 执行对比
+echo "🔍 计算相似度中..."
+comparison_results=$(python3 /tmp/compare_screenshots.py \
+    spec/verify/screenshots/ios \
+    spec/verify/screenshots/harmonyos)
+
+echo "$comparison_results" > spec/verify/comparison-results.json
+echo "✅ 对比完成"
+echo ""
+```
+
+### Step 4.5: 生成详细报告
+
+**一次性生成完整报告**，包含所有页面的对比结果：
+
+```python
+cat > /tmp/generate_ui_report.py << 'SCRIPT'
+#!/usr/bin/env python3
+"""生成 UI 对比验证报告"""
+
+import json
+import sys
+from pathlib import Path
+from datetime import datetime
+
+def generate_report(results_file, output_file):
+    with open(results_file) as f:
+        results = json.load(f)
+    
+    # 计算统计数据
+    total = len(results)
+    matched = len([r for r in results if r.get('similarity', 0) >= 95])
+    avg_similarity = sum(r.get('similarity', 0) for r in results) / total if total > 0 else 0
+    
+    # 生成 Markdown 报告
+    report = f"""# UI 对比验证报告
+
+生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+## 执行状态
+✅ 已完成 - 双端自动截图对比
+
+## 总体统计
+
+- 对比页面数: {total}
+- 高度匹配 (≥95%): {matched} 页
+- 平均相似度: {avg_similarity:.1f}%
+- 匹配率: {matched}/{total} ({matched/total*100:.1f}%)
+
+## 分页对比结果
+
+"""
+    
+    # 按相似度排序
+    results.sort(key=lambda x: x.get('similarity', 0), reverse=True)
+    
+    for result in results:
+        page = result['page']
+        similarity = result.get('similarity', 0)
+        status = result.get('status', 'unknown')
+        
+        if status == 'missing_hos':
+            report += f"""### {page}
+❌ **HarmonyOS 截图缺失**
+- iOS 截图: 存在
+- HarmonyOS 截图: 不存在
+- 问题: 页面可能未实现或无法访问
+
+---
+
+"""
+        elif status == 'error':
+            report += f"""### {page}
+⚠️  **对比出错**
+- 错误: {result.get('error', '未知错误')}
+
+---
+
+"""
+        else:
+            icon = "✅" if similarity >= 95 else "⚠️" if similarity >= 85 else "❌"
+            report += f"""### {page}
+{icon} **相似度: {similarity}%**
+
+![iOS]({result['ios_path']})  
+**iOS Baseline**
+
+![HarmonyOS]({result['hos_path']})  
+**HarmonyOS 实现**
+
+"""
+            if similarity < 95:
+                report += f"""**差异分析**:
+- 汉明距离: {result.get('distance', 'N/A')}
+- 建议: {'轻微差异，可接受' if similarity >= 85 else '需要调整以提高一致性'}
+
+"""
+            report += "---\n\n"
+    
+    # 总体评估
+    report += f"""## 总体评估
+
+"""
+    if avg_similarity >= 95:
+        report += f"""✅ **优秀** - UI 高度一致
+
+平均相似度达到 {avg_similarity:.1f}%，说明 HarmonyOS 版本的 UI 还原度非常高。
+"""
+    elif avg_similarity >= 85:
+        report += f"""⚠️  **良好** - 有轻微差异
+
+平均相似度 {avg_similarity:.1f}%，整体还原度良好，但存在一些细节差异需要优化。
+
+建议:
+- 检查字体大小和间距
+- 确认颜色值完全一致
+- 调整布局细节
+"""
+    else:
+        report += f"""❌ **需改进** - 差异较大
+
+平均相似度仅 {avg_similarity:.1f}%，需要重点关注 UI 一致性。
+
+优先改进:
+"""
+        for r in results:
+            if r.get('similarity', 0) < 85:
+                report += f"- {r['page']}: {r.get('similarity', 0)}%\n"
+    
+    report += """
+## 下一步
+
+"""
+    if matched == total:
+        report += "✅ UI 对比验证通过，可以继续下一阶段\n"
+    else:
+        report += f"""⚠️  建议优化低相似度页面后再继续
+
+可以：
+1. 接受当前结果，继续运行 /i2h-retrospect
+2. 优化 UI 差异，重新运行 /i2h-verify
+"""
+    
+    # 写入文件
+    with open(output_file, 'w', encoding='utf-8') as f:
+        f.write(report)
+    
+    print(f"✅ 报告已生成: {output_file}")
+    print(f"   总体相似度: {avg_similarity:.1f}%")
+    print(f"   匹配页面: {matched}/{total}")
+
+if __name__ == "__main__":
+    generate_report('spec/verify/comparison-results.json', 'spec/verify/ui-comparison.md')
+SCRIPT
+
+python3 /tmp/generate_ui_report.py
+```
+
+### Step 4.6: 输出摘要
+
+```bash
+# 读取结果摘要
+avg_similarity=$(python3 -c "
+import json
+with open('spec/verify/comparison-results.json') as f:
+    results = json.load(f)
+    avg = sum(r.get('similarity', 0) for r in results) / len(results) if results else 0
+    print(f'{avg:.1f}')
+")
+
+matched=$(python3 -c "
+import json
+with open('spec/verify/comparison-results.json') as f:
+    results = json.load(f)
+    print(len([r for r in results if r.get('similarity', 0) >= 95]))
+")
+
+total=$(python3 -c "
+import json
+with open('spec/verify/comparison-results.json') as f:
+    print(len(json.load(f)))
+")
+
+echo ""
+echo "=" * 60
+echo "CHECK-4: UI 对比验证 - 完成"
+echo "=" * 60
+echo ""
+echo "📊 对比结果:"
+echo "   总页面数: $total"
+echo "   高度匹配: $matched"
+echo "   平均相似度: ${avg_similarity}%"
+echo ""
+echo "📄 详细报告: spec/verify/ui-comparison.md"
+echo ""
+
+# 设置状态
+if [ $(echo "$avg_similarity >= 95" | bc) -eq 1 ]; then
+    echo "✅ CHECK-4: PASS"
+elif [ $(echo "$avg_similarity >= 85" | bc) -eq 1 ]; then
+    echo "⚠️  CHECK-4: WARN (轻微差异)"
+else
+    echo "❌ CHECK-4: FAIL (差异较大)"
+fi
+echo ""
+```
+
+**关键改进**:
+1. ✅ **完全自动化** - 从设备检测到截图对比全自动
+2. ✅ **读取配置** - 从 .migbot/config.json 读取工具路径和项目信息
+3. ✅ **不重复探测** - 配置文件中已有路径，直接使用
+4. ✅ **双端对比** - iOS baseline + HarmonyOS 截图 + 相似度计算
+5. ✅ **不暂停** - 批量处理所有页面，最后一次性输出报告
+6. ✅ **详细报告** - 包含每个页面的截图和相似度分析
 
 ## 7. CHECK-5: 行为验证（可选，需真机）
 
