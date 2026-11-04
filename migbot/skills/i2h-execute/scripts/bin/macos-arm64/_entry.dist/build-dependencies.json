@@ -1,0 +1,7 @@
+{
+  "ui_evidence": "../../i2h-spec/scripts/ui_evidence.py",
+  "runtime_view": "../../i2h-spec/scripts/runtime_view.py",
+  "ui_delivery": "../../i2h-plan/scripts/ui_delivery.py",
+  "source_layout": "../../i2h-plan/scripts/source_layout.py",
+  "ui_state_ownership": "../../i2h-plan/scripts/ui_state_ownership.py"
+}
