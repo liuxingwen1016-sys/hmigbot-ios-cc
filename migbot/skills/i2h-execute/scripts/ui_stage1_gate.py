@@ -1,30 +1,29 @@
-#!/usr/bin/env python3
-"""
-Ui Stage1 Gate
-
-用途: UI Stage 1 门禁
-"""
-
-import argparse
-import json
+# AUTO-GENERATED launcher — the real implementation is compiled in ./bin/<platform>/.
+import os
+import platform
+import subprocess
 import sys
-from pathlib import Path
 
-def main():
-    parser = argparse.ArgumentParser(description='UI Stage 1 门禁')
-    parser.add_argument('--project-root', required=True, help='项目根目录')
-
-    # TODO: 添加其他参数
-
-    args = parser.parse_args()
-
-    print(f"执行 Ui Stage1 Gate...")
-    print(f"项目根目录: {args.project_root}")
-
-    # TODO: 实现具体逻辑
-
-    print("✅ 完成")
-    return 0
-
-if __name__ == '__main__':
-    sys.exit(main())
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_OS = {"Darwin": "macos", "Linux": "linux", "Windows": "windows"}.get(platform.system())
+_ARCH = "arm64" if platform.machine().lower() in ("arm64", "aarch64") else "x64"
+if _OS is None:
+    sys.stderr.write("unsupported platform: %s\n" % platform.system())
+    sys.exit(2)
+_DIST = os.path.join(_HERE, "bin", "%s-%s" % (_OS, _ARCH), "_entry.dist")
+# Nuitka names the standalone binary <name>.exe on Windows, <name>.bin elsewhere.
+_EXE = os.path.join(_DIST, "_entry" + (".exe" if _OS == "windows" else ".bin"))
+if not os.path.exists(_EXE):
+    sys.stderr.write("no bundled binary for %s-%s at %s\n" % (_OS, _ARCH, _EXE))
+    sys.exit(2)
+if _OS == "macos":  # idempotent; failure must not block execution
+    try:
+        subprocess.run(["xattr", "-dr", "com.apple.quarantine", _DIST],
+                       check=False, capture_output=True)
+    except OSError:
+        pass
+os.environ.setdefault("ARKTS_SKILL_DIR", _HERE)  # let bundled lib modules locate the real scripts/ dir
+_argv = [_EXE, "ui_stage1_gate", *sys.argv[1:]]
+if _OS == "windows":
+    sys.exit(subprocess.run(_argv).returncode)
+os.execv(_EXE, _argv)
