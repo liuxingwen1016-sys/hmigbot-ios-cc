@@ -23,7 +23,8 @@ Execute 阶段消费 Spec 阶段采集的运行时快照，用于辅助代码生
 ### runtime_required（严格模式）
 - 必须真实审计证据
 - 必须有真机截图
-- 必须有 UIAutomator XML
+- Android 必须有 UIAutomator XML
+- iOS 必须有 accessibility JSON，不能要求或伪造 `view.xml`
 
 ### source_only（源码模式）
 - 允许源码支持的合成 view
@@ -46,7 +47,8 @@ spec/baseline/ui-snapshots/<page_id>/
   ├── meta.json                 # 元数据（含 runtime_evidence.status=audited）
   ├── visual.json              # 可选：静态事实投影
   ├── fixture.json             # 可选：展示候选数据
-  ├── view.xml                 # 真实 UIAutomator XML
+  ├── view.xml                 # Android 真实 UIAutomator XML
+  ├── ios-accessibility.json   # iOS 真实 accessibility tree
   ├── view.static.xml          # 可选：静态结构备份
   └── ios-runtime.png          # 真实运行时截图
 ```
@@ -138,9 +140,9 @@ python3 scripts/validate_runtime_snapshots.py \
 **对每个页面检查**:
 1. ✅ `meta.json` 存在且包含 `runtime_evidence`
 2. ✅ `ios-runtime.png` 存在
-3. ✅ `view.xml` 存在
+3. ✅ Android 的 `view.xml` 或 iOS 的 `ui_json_path` 存在
 4. ✅ `runtime_evidence.status` = `audited`
-5. ✅ PNG/XML 的 SHA256 与 meta.json 一致
+5. ✅ PNG 和 XML/accessibility JSON 的 SHA256 与 meta.json 一致
 
 **验证失败处理**:
 - **runtime_required** — 阻断该 batch

@@ -95,8 +95,38 @@ python3 "${CLAUDE_PLUGIN_ROOT:-.claude}/skills/i2h-spec/scripts/ui_evidence.py" 
   "$IOS_PATH" \
   --output spec/.i2h/resources-inventory.json \
   --skeleton-output spec/.i2h/project-skeleton.json \
-  --res-index spec/baseline/res-index
+  --res-index spec/baseline/res-index \
+  --source-index-output spec/.i2h/cache/source-index.json
 ```
+
+`ui_evidence.py` 同时生成内容寻址的 `spec/.i2h/cache/source-index.json`。索引包含
+全量 Swift 文件的 SHA256、声明行、属性包装器、方法、依赖、路由、资源引用和页面
+归属。其 cache key 由 source tree hash、tool version 和 references/templates hash
+组成。页面或 feature worker 必须先读取索引切片，禁止再次 Read 整个 Swift 项目。
+
+页面分析使用 `pipeline_workers.run_bounded`，默认 4 个 worker，每批 3–5 页。每个
+worker 写入 `spec/.i2h/checkpoints/pages/` 下的独立 checkpoint 和临时目录，失败时只
+重试该 worker。主线程只做稳定排序、合并和门禁，不能因为单个模型请求异常退回整批
+串行执行。增量运行按 page/feature 的 source hash 复用 checkpoint。
+
+如果 `.migbot/config.json` 已确认 `xcode`、`xcrun`、`simctl`，在页面状态计划生成后执行
+`scripts/ios_runtime_capture.py`。它负责启动 Simulator、构建并安装 App、抓取 PNG，
+并通过 XCTest/XCUITest helper 生成 accessibility JSON。没有 accessibility JSON 时必须
+阻断 `runtime_required`，不能把截图或源码推断伪装成运行时树。
+
+```bash
+python3 .claude/skills/i2h-spec/scripts/ios_runtime_capture.py \
+  --project-root . \
+  --project ../cuike-ios/Cuike.xcodeproj \
+  --scheme Cuike \
+  --output-dir spec/baseline/ui-snapshots/page_0001_HomeView/states/normal \
+  --page-id page_0001_HomeView \
+  --state-id normal \
+  --accessibility-command '<XCTest helper writes $I2H_UI_JSON_OUT>'
+```
+
+运行时证据使用 PNG + accessibility JSON。Android 的 `view.xml` 只适用于 legacy
+或 Android 输入，不得作为 iOS 的必需格式。
 
 **脚本应输出**（骨架）：
 - Swift 文件路径列表

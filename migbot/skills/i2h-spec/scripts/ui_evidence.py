@@ -22,8 +22,13 @@ import sys
 from pathlib import Path
 from typing import Any, Iterable
 
+try:
+    from source_index import build_index
+except ImportError:  # pragma: no cover - package/installed-tree fallback
+    from .source_index import build_index  # type: ignore
 
-TOOL_VERSION = "i2h-ui-evidence/1.0"
+
+TOOL_VERSION = "i2h-ui-evidence/1.1"
 SCHEMA_VERSION = 1
 
 
@@ -219,17 +224,27 @@ def parse_catalog(catalog: Path, root: Path) -> dict[str, Any]:
 
 
 def scan_resources(root: Path) -> tuple[dict[str, Any], list[Path]]:
-    catalogs = [parse_catalog(path, root) for path in sorted(root.rglob("*.xcassets"))]
-    input_files: list[Path] = [path for path in root.rglob("*.swift") if "Tests" not in path.parts and "Test" not in path.name]
-    input_files += [p for p in root.rglob("*.json") if ".git" not in p.parts]
-    input_files += [p for p in root.rglob("*.strings") if ".git" not in p.parts]
+    excluded_parts = {".git", ".i2h", ".migbot", "spec", "build", "DerivedData"}
+    def eligible(path: Path) -> bool:
+        return not any(part in excluded_parts for part in path.parts)
+
+    catalogs = [parse_catalog(path, root) for path in sorted(root.rglob("*.xcassets")) if eligible(path)]
+    source_files = [
+        path for path in sorted(root.rglob("*.swift"))
+        if eligible(path) and "Tests" not in path.parts and "Test" not in path.name
+    ]
+    input_files: list[Path] = list(source_files)
+    input_files += [p for p in root.rglob("*.json") if eligible(p)]
+    input_files += [p for p in root.rglob("*.strings") if eligible(p)]
     references: list[dict[str, Any]] = []
     localizations: dict[str, dict[str, Any]] = {}
     for strings in sorted(root.rglob("*.strings")):
+        if not eligible(strings):
+            continue
         language = next((part[:-5] for part in strings.parts if part.endswith(".lproj")), "und")
         localizations.setdefault(language, {})[relative(strings, root)] = parse_strings(strings)
     for path in root.rglob("*.swift"):
-        if "Tests" in path.parts or "Test" in path.name:
+        if not eligible(path) or "Tests" in path.parts or "Test" in path.name:
             continue
         try:
             text = path.read_text(encoding="utf-8")
@@ -250,13 +265,14 @@ def scan_resources(root: Path) -> tuple[dict[str, Any], list[Path]]:
                     continue
                 input_files.append(path)
                 references.append({"kind": kind, "name": name, "file": relative(path, root), "line": line_number(text, match.start())})
-    all_assets = [p for p in root.rglob("*") if p.is_file() and (p.suffix.lower() in {".png", ".jpg", ".jpeg", ".pdf", ".svg", ".gif", ".webp"})]
+    all_assets = [p for p in root.rglob("*") if eligible(p) and p.is_file() and (p.suffix.lower() in {".png", ".jpg", ".jpeg", ".pdf", ".svg", ".gif", ".webp"})]
     input_files += all_assets
     inventory = {
         "schema_version": SCHEMA_VERSION,
         "tool_version": TOOL_VERSION,
         "project_root": str(root),
         "catalogs": catalogs,
+        "source_files": [file_entry(path, root) for path in source_files],
         "localizations": localizations,
         "code_references": references,
         "standalone_assets": [file_entry(path, root) for path in sorted(all_assets)],
@@ -267,12 +283,13 @@ def scan_resources(root: Path) -> tuple[dict[str, Any], list[Path]]:
             "app_icons": sum(len(c["app_icons"]) for c in catalogs),
             "localization_languages": len(localizations),
             "code_reference_count": len(references),
+            "source_file_count": len(source_files),
         },
     }
     return inventory, input_files
 
 
-def build_res_index(inventory: dict[str, Any], views: list[dict[str, Any]], target_hash: str) -> dict[str, dict[str, Any]]:
+def build_res_index(inventory: dict[str, Any], views: list[dict[str, Any]], target_hash: str, runtime_required: bool = False) -> dict[str, dict[str, Any]]:
     metadata = {"schema_version": 1, "tool_version": TOOL_VERSION, "target_input_sha256": target_hash}
     values: list[dict[str, Any]] = []
     drawables: dict[str, Any] = {}
@@ -299,10 +316,17 @@ def build_res_index(inventory: dict[str, Any], views: list[dict[str, Any]], targ
     for name, rows in refs_by_name.items():
         usage[name] = {"references": rows, "resolved": any(name == d.get("name") for d in drawables.values()) or any(name == v.get("name") for v in values), "disposition": "resolved" if name in {d.get("name") for d in drawables.values()} or name in {v.get("name") for v in values} else "unresolved"}
     usage_payload = {**metadata, "resources": usage}
-    return {"values": {**metadata, "resources": values}, "drawables": {**metadata, "resources": drawables}, "usage": usage_payload, "design-tokens": {**metadata, "tokens": tokens}, "handoff": {**metadata, "source": "ios-static-evidence", "runtime_required": False, "unresolved": [name for name, row in usage.items() if row["disposition"] == "unresolved"]}}
+    return {"values": {**metadata, "resources": values}, "drawables": {**metadata, "resources": drawables}, "usage": usage_payload, "design-tokens": {**metadata, "tokens": tokens}, "handoff": {**metadata, "source": "ios-static-evidence", "runtime_required": runtime_required, "unresolved": [name for name, row in usage.items() if row["disposition"] == "unresolved"]}}
 
 
-def run(project_root: str, output: str, res_index: str | None = None) -> dict[str, Any]:
+def run(
+    project_root: str,
+    output: str,
+    res_index: str | None = None,
+    runtime_required: bool = False,
+    source_index_output: str | None = None,
+    source_index_force: bool = False,
+) -> dict[str, Any]:
     root = Path(project_root).expanduser().resolve()
     if not root.is_dir():
         raise FileNotFoundError(f"iOS project directory not found: {project_root}")
@@ -312,11 +336,25 @@ def run(project_root: str, output: str, res_index: str | None = None) -> dict[st
         if "Tests" not in swift.parts and "Test" not in swift.name:
             views.extend(detect_views(swift, root))
     target_hash = source_digest(root, inputs)
+    output_path = Path(output).expanduser().resolve()
+    index_path = Path(source_index_output).expanduser().resolve() if source_index_output else output_path.parent / "cache/source-index.json"
+    source_index = build_index(
+        root,
+        index_path,
+        source_tree_hash=target_hash,
+        skill_root=Path(__file__).resolve().parents[1],
+        force=source_index_force,
+    )
     inventory["target_input_sha256"] = target_hash
+    inventory["source_index"] = {
+        "path": str(index_path),
+        "cache_key": source_index.get("cache_key"),
+        "cache_hit": source_index.get("cache_hit", False),
+        "source_tree_sha256": source_index.get("source_tree_sha256"),
+    }
     inventory["views"] = views
     inventory["summary"]["view_count"] = len(views)
-    payload = {"schema_version": SCHEMA_VERSION, "tool_version": TOOL_VERSION, "target_input_sha256": target_hash, "project_root": str(root), "views": views, "resources": inventory}
-    output_path = Path(output).expanduser().resolve()
+    payload = {"schema_version": SCHEMA_VERSION, "tool_version": TOOL_VERSION, "target_input_sha256": target_hash, "project_root": str(root), "runtime_required": runtime_required, "views": views, "resources": inventory}
     atomic_json(output_path, payload)
     # Stable handoff consumed by execute/resource-facts.  Keep it separate
     # from the human-facing inventory so downstream scripts can verify the
@@ -325,10 +363,11 @@ def run(project_root: str, output: str, res_index: str | None = None) -> dict[st
         "schema_version": 1,
         "target_input_sha256": target_hash,
         "source": "ios-static-evidence",
+        "runtime_required": runtime_required,
         "inventory": str(output_path),
     })
     if res_index:
-        index = build_res_index(inventory, views, target_hash)
+        index = build_res_index(inventory, views, target_hash, runtime_required)
         destination = Path(res_index)
         for name, value in index.items():
             atomic_json(destination / (name + ".json"), value)
@@ -338,7 +377,18 @@ def run(project_root: str, output: str, res_index: str | None = None) -> dict[st
 def build_skeleton(payload: dict[str, Any]) -> dict[str, Any]:
     """Project skeleton consumed by the semantic Phase-A steps."""
     views = payload.get("views", [])
-    swift_files = sorted({view.get("file_path") for view in views if view.get("file_path")})
+    resources = payload.get("resources", {})
+    source_files = resources.get("source_files", [])
+    swift_files = sorted(
+        {
+            row.get("path")
+            for row in source_files
+            if isinstance(row, dict) and row.get("path")
+        }
+    )
+    if not swift_files:
+        # Keep compatibility with evidence files produced by older installers.
+        swift_files = sorted({view.get("file_path") for view in views if view.get("file_path")})
     swiftui_views = [
         {
             "class_name": view["view_name"],
@@ -357,7 +407,6 @@ def build_skeleton(payload: dict[str, Any]) -> dict[str, Any]:
         }
         for view in views if view.get("type") != "SwiftUI View"
     ]
-    resources = payload.get("resources", {})
     catalogs = resources.get("catalogs", [])
     assets = [catalog.get("path") for catalog in catalogs if catalog.get("path")]
     root = Path(payload.get("project_root", ""))
@@ -373,6 +422,7 @@ def build_skeleton(payload: dict[str, Any]) -> dict[str, Any]:
         "uikit_viewcontrollers": uikit_viewcontrollers,
         "info_plist": info_plists[0] if info_plists else None,
         "assets": assets,
+        "source_file_count": len(swift_files),
     }
 
 
@@ -383,9 +433,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--resources-output", help="alias for --output, retained for pipeline compatibility")
     parser.add_argument("--res-index", help="optional spec/baseline/res-index directory")
     parser.add_argument("--skeleton-output", help="optional Phase-A project skeleton JSON")
+    parser.add_argument("--runtime-required", action="store_true", help="require audited iOS runtime evidence downstream")
+    parser.add_argument("--source-index-output", help="content-addressed Swift source index output")
+    parser.add_argument("--source-index-force", action="store_true", help="rebuild source index even when cache key matches")
     args = parser.parse_args(argv)
     try:
-        payload = run(args.project_root, args.resources_output or args.output, args.res_index)
+        payload = run(
+            args.project_root,
+            args.resources_output or args.output,
+            args.res_index,
+            args.runtime_required,
+            args.source_index_output,
+            args.source_index_force,
+        )
         if args.skeleton_output:
             atomic_json(Path(args.skeleton_output), build_skeleton(payload))
     except (FileNotFoundError, OSError) as exc:

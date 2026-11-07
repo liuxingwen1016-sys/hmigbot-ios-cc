@@ -62,3 +62,45 @@ class InputPolicies(unittest.TestCase):
         self.meta['view_xml_synthesized'] = False
         self.save()
         self.assertEqual(check(self.root, [self.page], 'source_only')['status'], 'fail')
+
+    def _ios_evidence(self):
+        png = self.snap / 'ios-runtime.png'
+        ui_json = self.snap / 'ios-accessibility.json'
+        png.write_bytes(b'ios-png')
+        ui_json.write_text(json.dumps({'nodes': [{'id': 'title', 'role': 'staticText', 'label': '首页', 'frame': [0, 0, 100, 40]}]}))
+        import hashlib
+        return {
+            'status': 'audited',
+            'state': 'normal',
+            'png_path': 'ios-runtime.png',
+            'png_sha256': hashlib.sha256(png.read_bytes()).hexdigest(),
+            'ui_json_path': 'ios-accessibility.json',
+            'ui_json_sha256': hashlib.sha256(ui_json.read_bytes()).hexdigest(),
+            'app': {'bundle_id': 'com.example.cuike'},
+        }
+
+    def test_ios_runtime_evidence_requires_png_and_accessibility_json(self):
+        self.meta = {'runtime_evidence': self._ios_evidence(), 'confidence': 'high'}
+        self.save()
+        result = check(self.root, [self.page], 'runtime')
+        self.assertEqual(result['status'], 'pass')
+        self.assertTrue(result['source_fallbacks'][0]['runtime_captured'])
+        self.assertEqual(baseline(self.root, self.page)['evidence_kind'], 'ios-accessibility-json')
+
+    def test_ios_runtime_evidence_missing_json_fails(self):
+        evidence = self._ios_evidence()
+        (self.snap / 'ios-accessibility.json').unlink()
+        self.meta = {'runtime_evidence': evidence}
+        self.save()
+        result = check(self.root, [self.page], 'runtime')
+        self.assertEqual(result['status'], 'fail')
+        self.assertTrue(any('accessibility JSON file missing' in error for error in result['errors']))
+
+    def test_ios_runtime_evidence_state_mismatch_fails(self):
+        evidence = self._ios_evidence()
+        evidence['state'] = 'other'
+        self.meta = {'runtime_evidence': evidence}
+        self.save()
+        result = check(self.root, [self.page], 'runtime')
+        self.assertEqual(result['status'], 'fail')
+        self.assertTrue(any('state mismatch' in error for error in result['errors']))

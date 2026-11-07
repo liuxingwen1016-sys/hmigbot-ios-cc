@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Normalize optional iOS simulator UI captures for downstream stages.
+"""Normalize iOS simulator UI captures for downstream stages.
 
 Android's runtime handoff is XML based.  iOS captures are intentionally JSON
 sidecars because SwiftUI accessibility trees and UIKit hierarchies do not have
@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 
-TOOL_VERSION = "i2h-runtime-view/1.0"
+TOOL_VERSION = "i2h-runtime-view/2.0"
 
 
 def digest(path: Path) -> str:
@@ -29,6 +29,13 @@ def atomic_json(path: Path, payload: Any) -> None:
     temp = path.with_name(path.name + ".tmp")
     temp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     temp.replace(path)
+
+
+def resolve_artifact(source: Path, value: str | None) -> Path | None:
+    if not value:
+        return None
+    path = Path(value).expanduser()
+    return path if path.is_absolute() else source.parent / path
 
 
 def normalize(path: Path) -> dict[str, Any]:
@@ -58,23 +65,56 @@ def normalize(path: Path) -> dict[str, Any]:
             "children": node.get("children", []),
             "source": node.get("source"),
         })
+    screenshot_value = source.get("screenshot") or source.get("screenshot_path")
+    ui_json_value = (
+        source.get("ui_json")
+        or source.get("ui_json_path")
+        or source.get("accessibility_json")
+        or source.get("accessibility_json_path")
+    )
+    screenshot_path = resolve_artifact(path, screenshot_value)
+    ui_json_path = resolve_artifact(path, ui_json_value)
     warnings = []
     if not normalized_nodes:
         warnings.append("capture contains no accessibility nodes")
-    if not source.get("screenshot"):
+    if not screenshot_value:
         warnings.append("capture has no screenshot path; visual comparison remains unavailable")
+    elif not screenshot_path or not screenshot_path.is_file():
+        warnings.append("capture screenshot path does not exist")
+    if not ui_json_value:
+        warnings.append("capture has no accessibility JSON path")
+    elif not ui_json_path or not ui_json_path.is_file():
+        warnings.append("capture accessibility JSON path does not exist")
+    app = source.get("app", {})
+    if not isinstance(app, dict):
+        app = {}
+    page_id = source.get("page_id")
+    state_id = source.get("state_id") or source.get("state")
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "tool_version": TOOL_VERSION,
-        "runtime_available": True,
+        "runtime_available": bool(normalized_nodes or screenshot_value or ui_json_value),
         "capture_sha256": digest(path),
-        "page_id": source.get("page_id"),
+        "page_id": page_id,
+        "state_id": state_id,
+        "state": state_id,
         "captured_at": source.get("captured_at"),
         "device": source.get("device", {}),
-        "screenshot": source.get("screenshot"),
+        "app": app,
+        "screenshot": screenshot_value,
+        "screenshot_path": screenshot_value,
+        "screenshot_sha256": digest(screenshot_path) if screenshot_path and screenshot_path.is_file() else None,
+        "ui_json": ui_json_value,
+        "ui_json_path": ui_json_value,
+        "ui_json_sha256": digest(ui_json_path) if ui_json_path and ui_json_path.is_file() else None,
         "nodes": normalized_nodes,
         "warnings": warnings,
-        "provenance": {"source_file": str(path.resolve()), "format": "ios-accessibility-json"},
+        "provenance": {
+            "source_file": str(path.resolve()),
+            "format": "ios-accessibility-json",
+            "device": source.get("device", {}),
+            "app": app,
+        },
     }
 
 
