@@ -64,7 +64,7 @@ class PipelineResumeTests(unittest.TestCase):
         ownership.write_text(json.dumps({
             'schema_version': 1, 'status': 'PASS', 'errors': [],
             'warnings': [{'code': 'VERIFICATION_STATES_EMPTY', 'message': 'full_ui inventory has no composition verification states yet'}],
-            'owners': {'home::content': 'home'},
+            'owners': {'__global__::home::content': 'home'},
         }), encoding='utf-8')
         (self.root / 'spec/verify-report.md').parent.mkdir(parents=True, exist_ok=True)
         (self.root / 'spec/verify-report.md').write_text('CHECK-1: PASS\nCHECK-3: DEFERRED\n', encoding='utf-8')
