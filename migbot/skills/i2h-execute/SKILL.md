@@ -130,6 +130,20 @@ echo "  - 功能数: $TOTAL_FEATURES"
 echo "  - 页面数: $TOTAL_PAGES"
 ```
 
+### Step 0.5: 冻结 iOS 固定几何 scale（有目标 presentation 时）
+
+如果执行输入已经记录了目标逻辑宽度和 iOS runtime Accessibility JSON，先生成
+`spec/execution/layout-scale.json`：
+
+```bash
+python3 .claude/skills/i2h-execute/scripts/layout_scale.py \
+  --ios-accessibility-json <ios-accessibility.json> \
+  --target-logical-width-vp <target_width_vp> \
+  --out spec/execution/layout-scale.json
+```
+
+转换器只将该 scale 用于有共同设计宽度证据的固定几何量。字体、动态内容、安全区、系统栏和百分比布局不继承该 scale。目标宽度缺失时保留源数值，并把归一化列为待验证项。
+
 ### Stage 0 完成标记
 
 ```

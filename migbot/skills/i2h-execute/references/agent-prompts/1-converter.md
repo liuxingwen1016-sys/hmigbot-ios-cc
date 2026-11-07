@@ -308,6 +308,17 @@ async loadData(): Promise<void> {
 - 记录每个页面或屏幕类别使用的 `source_reference_width_pt`、`target_logical_width_vp` 和 `layout_scale`。没有这三项证据时，沿用 source 数值并把尺寸归一化列为待验证项，不能凭经验套用全局除数。
 - 完成首轮构建后，用目标设备 Accessibility/layout dump 与 iOS runtime frame 对齐局部几何，再单变量修正偏差。不要把状态栏、导航栏或字体光栅化差异当作应用布局缩放依据。
 
+当 `presentation` 已冻结目标逻辑宽度时，先生成可追溯的 scale 产物：
+
+```bash
+python3 .claude/skills/i2h-execute/scripts/layout_scale.py \
+  --ios-accessibility-json <ios-accessibility.json> \
+  --target-logical-width-vp <target_width_vp> \
+  --out spec/execution/layout-scale.json
+```
+
+转换报告必须引用该文件及其输入哈希。没有目标逻辑宽度时不要猜测 scale，保留原值并登记待验证项。
+
 **布局检查**:
 
 1. **间距保真**:
