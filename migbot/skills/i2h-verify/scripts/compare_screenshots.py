@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 try:
-    from PIL import Image
+    from PIL import Image, ImageChops, ImageStat
     import imagehash
 except ImportError:
     print("错误: 需要安装 PIL 和 imagehash", file=sys.stderr)
@@ -29,6 +29,8 @@ class ScreenshotComparator:
         content_region: bool = False,
         crop_top: float = 0.05,
         crop_bottom: float = 0.05,
+        pixel_metrics: bool = False,
+        pixel_threshold: int = 30,
     ):
         self.ios_dir = Path(ios_dir)
         self.harmonyos_dir = Path(harmonyos_dir)
@@ -37,6 +39,8 @@ class ScreenshotComparator:
         self.content_region = content_region
         self.crop_top = crop_top
         self.crop_bottom = crop_bottom
+        self.pixel_metrics = pixel_metrics
+        self.pixel_threshold = pixel_threshold
 
     def _prepare_image(self, image: Image.Image) -> Image.Image:
         if not self.content_region:
@@ -48,6 +52,28 @@ class ScreenshotComparator:
         if top >= bottom:
             raise ValueError("content crop removes the entire image")
         return image.crop((0, top, width, bottom)).resize((1000, 2000))
+
+    def _prepare_pixel_image(self, image: Image.Image) -> Image.Image:
+        prepared = self._prepare_image(image).convert("RGB")
+        if prepared.size != (1000, 2000):
+            prepared = prepared.resize((1000, 2000))
+        return prepared
+
+    def _pixel_metrics(self, img1: Image.Image, img2: Image.Image) -> Dict:
+        first = self._prepare_pixel_image(img1)
+        second = self._prepare_pixel_image(img2)
+        difference = ImageChops.difference(first, second)
+        channel_means = ImageStat.Stat(difference).mean
+        mae = sum(channel_means) / len(channel_means)
+        changed = difference.convert("L")
+        values = list(changed.getdata())
+        over_threshold = sum(value > self.pixel_threshold for value in values)
+        return {
+            "pixel_normalized_size": [1000, 2000],
+            "pixel_mae": round(mae, 4),
+            "pixel_threshold": self.pixel_threshold,
+            "pixel_over_threshold_pct": round(over_threshold / len(values) * 100, 4),
+        }
 
     def calculate_similarity(self, img1_path: Path, img2_path: Path) -> Dict:
         """计算两张图片的相似度"""
@@ -74,13 +100,16 @@ class ScreenshotComparator:
             else:
                 status = "different"
 
-            return {
+            result = {
                 "similarity": round(similarity, 2),
                 "distance": int(distance),
                 "status": status,
                 "hash1": str(hash1),
                 "hash2": str(hash2)
             }
+            if self.pixel_metrics:
+                result.update(self._pixel_metrics(Image.open(img1_path), Image.open(img2_path)))
+            return result
 
         except Exception as e:
             return {
@@ -266,6 +295,10 @@ def main():
                        help='content-region 顶部裁剪比例 (默认: 0.05)')
     parser.add_argument('--crop-bottom', type=float, default=0.05,
                        help='content-region 底部裁剪比例 (默认: 0.05)')
+    parser.add_argument('--pixel-metrics', action='store_true',
+                       help='输出归一化像素 MAE 和超过阈值的像素比例，不改变 pHash 门禁')
+    parser.add_argument('--pixel-threshold', type=int, default=30,
+                       help='像素差阈值 (默认: 30)')
 
     args = parser.parse_args()
 
@@ -277,6 +310,8 @@ def main():
         args.content_region,
         args.crop_top,
         args.crop_bottom,
+        args.pixel_metrics,
+        args.pixel_threshold,
     )
     results = comparator.compare_all()
 
