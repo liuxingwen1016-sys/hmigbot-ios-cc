@@ -45,3 +45,29 @@ labels for every toolbar and tab action. The visual report records both the
 screen comparison and the end-of-scroll reachability result. Occluded final
 content is a `FAIL` finding even when the initial screenshot perceptual score
 does not regress.
+
+## F101 camera and OCR capability closure
+
+When the iOS source contains camera or VisionKit OCR behavior, the Harmony
+delivery is not complete after a static `CameraKit` import. The execute slice
+must verify the following on the selected real device when available.
+
+- `module.json5` declares `ohos.permission.CAMERA` with a user-facing reason
+  and an `EntryAbility` in-use scene.
+- The page requests runtime permission through `abilityAccessCtrl` and shows a
+  source-backed fallback when the user denies it.
+- `cameraPicker.PickerProfile` is created with an object literal containing the
+  back camera and a writable `saveUri`. Some Harmony releases expose profile
+  properties as read-only after construction, so mutating `new PickerProfile()`
+  is a runtime crash pattern.
+- The picker call is protected on both synchronous and Promise failure paths.
+  A failed camera path must leave the app alive and expose album selection,
+  sample-image OCR, and manual BeanEditor entry.
+- OCR distinguishes an unreadable image from an image containing no text. The
+  latter remains `ERR_OCR_EMPTY` so the user can correct the image or use a
+  fallback. Evidence records the actual camera result and OCR text or error.
+
+The F101 acceptance record has separate results for permission, camera launch,
+image return, OCR, sample-image fallback, album fallback, and manual entry. A
+physical lens obstruction is an environmental PARTIAL result when the same
+OCR chain succeeds on a sample or album image.
