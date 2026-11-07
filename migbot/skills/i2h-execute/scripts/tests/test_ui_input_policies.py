@@ -87,6 +87,16 @@ class InputPolicies(unittest.TestCase):
         self.assertTrue(result['source_fallbacks'][0]['runtime_captured'])
         self.assertEqual(baseline(self.root, self.page)['evidence_kind'], 'ios-accessibility-json')
 
+    def test_ios_accessibility_json_alias_is_not_misclassified_as_android_xml(self):
+        evidence = self._ios_evidence()
+        evidence['accessibility_json_path'] = evidence.pop('ui_json_path')
+        evidence['accessibility_json_sha256'] = evidence.pop('ui_json_sha256')
+        self.meta = {'runtime_evidence': evidence, 'confidence': 'high'}
+        self.save()
+        result = check(self.root, [self.page], 'runtime')
+        self.assertEqual(result['status'], 'pass')
+        self.assertEqual(result['source_fallbacks'][0]['evidence_kind'], 'ios-accessibility-json')
+
     def test_ios_runtime_evidence_missing_json_fails(self):
         evidence = self._ios_evidence()
         (self.snap / 'ios-accessibility.json').unlink()

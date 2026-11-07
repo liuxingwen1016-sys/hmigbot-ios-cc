@@ -81,7 +81,11 @@ def check(root: Path | str, pages: list[dict], policy='runtime', facts=None) -> 
                 errors.append(f'{page_id}/{state}: UI tree evidence missing')
             runtime_captured = not any(item.startswith(f'{page_id}/{state}') for item in errors)
             fallback['runtime_captured'] = runtime_captured
-            fallback['evidence_kind'] = 'ios-accessibility-json' if evidence.get('ui_json_path') else 'android-view-xml'
+            fallback['evidence_kind'] = (
+                'ios-accessibility-json'
+                if any(evidence.get(key) for key in ('ui_json_path', 'accessibility_json_path', 'accessibility_path'))
+                else 'android-view-xml'
+            )
         elif not synthetic and policy == 'source_only':
             fallback['reason'] = 'source_only'
         elif not synthetic:
