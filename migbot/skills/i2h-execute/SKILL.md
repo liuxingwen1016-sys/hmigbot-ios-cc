@@ -1157,6 +1157,19 @@ ${componentFiles.map(f => `- ${f}`).join('\n')}
 
 ### Stage 5 完成标记
 
+在写入 Stage 5 marker 前，针对 iOS 源码中识别到的系统能力运行确定性平台门禁：
+
+```bash
+python3 .claude/skills/i2h-execute/scripts/capability_gate.py \
+  --project-root . \
+  --output-json spec/execution/capability-gate.json
+```
+
+该门禁检查 F101 CAMERA/OCR、F102 LiveForm 与通知降级、F103 FormExtension 服务卡片、
+F104 `ohos.ability.shortcuts` metadata 和 `shortcuts.json`。`PARTIAL` 或 `BLOCKED` 必须
+保留具体 capability finding，不能写成 Stage 5 PASS。系统宿主行为仍需真机或模拟器证据，
+静态 profile 通过不能替代添加、刷新和点击回路。
+
 创建 `spec/execution/stage5-complete.txt` 作为 **schema-2 JSON marker**。
 在 `spec/migration-report.md` 和
 `spec/execution/ui-state-ownership.json` 最终写入后，按照
