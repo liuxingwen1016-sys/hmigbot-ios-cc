@@ -289,9 +289,29 @@ class PlanCompletionGate:
             with open(findings_path) as f:
                 findings = json.load(f)
 
+            # Both the legacy contract (a top-level list) and the indexed
+            # contract (sections keyed by ledger name) are emitted by the
+            # pipeline.  Normalize them before applying the plan gate so a
+            # newer execute section cannot crash the plan checker.
+            normalized_findings = []
+            if isinstance(findings, list):
+                normalized_findings = [item for item in findings if isinstance(item, dict)]
+            elif isinstance(findings, dict):
+                direct = findings.get('findings')
+                if isinstance(direct, list):
+                    normalized_findings.extend(item for item in direct if isinstance(item, dict))
+                sections = findings.get('sections')
+                if isinstance(sections, dict):
+                    for section in sections.values():
+                        if not isinstance(section, dict):
+                            continue
+                        items = section.get('findings')
+                        if isinstance(items, list):
+                            normalized_findings.extend(item for item in items if isinstance(item, dict))
+
             # 筛选 blocking + 属于 plan 阶段的 findings
             plan_blocking = [
-                f for f in findings
+                f for f in normalized_findings
                 if f.get('severity') == 'blocking'
                 and f.get('owner_stage') in ['plan', 'spec']
                 and not f.get('decision_ref')
@@ -301,7 +321,7 @@ class PlanCompletionGate:
                 self.checks.append(GateCheck(
                     name="✅ 无 blocking findings",
                     passed=True,
-                    message=f"总 findings: {len(findings)}，无阻断级别"
+                    message=f"总 findings: {len(normalized_findings)}，无阻断级别"
                 ))
             else:
                 self.checks.append(GateCheck(
