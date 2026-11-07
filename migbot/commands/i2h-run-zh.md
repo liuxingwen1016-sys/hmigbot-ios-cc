@@ -21,11 +21,11 @@ description: 运行完整的 iOS → HarmonyOS 迁移流水线（spec → plan �
 
 | # | 阶段 | 标记 |
 |---|------|------|
-| 1 | `i2h-spec` | `spec/baseline/ui-manifest.md` 和 `spec/baseline/feature-index.md` |
-| 2 | `i2h-plan` | `spec/baseline/plans/ui-plan.json` 和 `spec/baseline/plans/feature-plan.json` |
-| 3 | `i2h-execute` | `spec/migration-report.md` |
+| 1 | `i2h-spec` | `spec/baseline/spec-complete.txt` |
+| 2 | `i2h-plan` | `spec/baseline/plans/complete.txt` |
+| 3 | `i2h-execute` | `spec/execution/stage5-complete.txt` 和 `spec/migration-report.md` |
 | 4 | `i2h-verify` | `spec/verify-report.md` |
-| 5 | `i2h-retrospect` | `docs/retrospect-report-*.md` |
+| 5 | `i2h-retrospect` | `spec/retrospect-complete.txt` |
 
 从第一个未完成的阶段恢复。
 

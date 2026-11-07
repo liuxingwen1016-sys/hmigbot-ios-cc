@@ -21,11 +21,11 @@ Check stage completion:
 
 | # | Stage | Markers |
 |---|-------|---------|
-| 1 | `i2h-spec` | `spec/baseline/ui-manifest.md` AND `spec/baseline/feature-index.md` |
-| 2 | `i2h-plan` | `spec/baseline/plans/ui-plan.json` AND `spec/baseline/plans/feature-plan.json` |
-| 3 | `i2h-execute` | `spec/migration-report.md` |
+| 1 | `i2h-spec` | `spec/baseline/spec-complete.txt` |
+| 2 | `i2h-plan` | `spec/baseline/plans/complete.txt` |
+| 3 | `i2h-execute` | `spec/execution/stage5-complete.txt` and `spec/migration-report.md` |
 | 4 | `i2h-verify` | `spec/verify-report.md` |
-| 5 | `i2h-retrospect` | `docs/retrospect-report-*.md` |
+| 5 | `i2h-retrospect` | `spec/retrospect-complete.txt` |
 
 Resume from first incomplete stage.
 

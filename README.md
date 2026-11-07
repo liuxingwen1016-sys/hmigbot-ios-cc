@@ -1,225 +1,73 @@
 # iOS MigBot
 
-iOS-to-ArkTS (HarmonyOS) migration toolkit for Claude Code.
+`hmigbot-ios` is an iOS → HarmonyOS (ArkTS) migration toolkit for Claude Code. It is a platform adaptation of [`../hmigbot-1.8.0`](../hmigbot-1.8.0), whose original workflow targets Android → HarmonyOS migration.
 
-一个完整的、生产级的 iOS 到 HarmonyOS 自动迁移工具。
+The project keeps the original pipeline shape while replacing Android-specific inputs with iOS inputs such as Xcode projects, Swift/SwiftUI/UIKit source, Info.plist, Assets.xcassets and iOS API usage.
 
-## 🎯 核心特性
+## Current status
 
-- ✅ **高自动化率**：SwiftUI → ArkUI 自动转换率 90.8%
-- ✅ **完整流水线**：5 阶段自动化流程（spec → plan → execute → verify → retrospect）
-- ✅ **质量保证**：findings 闭环、3 个编译门、多层验证
-- ✅ **智能调度**：并行处理 20-25 个任务，长任务优先
-- ✅ **生产级质量**：真实项目验证通过
+The repository contains the five i2h pipeline skills, iOS reference skills, templates, scripts and a Cuike pilot history. The design and most documentation work is present, but the repository is not yet proven as a production-ready end-to-end tool. The current gaps and reproducible evidence are tracked in [`docs/IMPLEMENTATION_AUDIT.md`](docs/IMPLEMENTATION_AUDIT.md).
 
-## 📊 效率对比
+The often-cited Cuike figure of “90.8% automatic conversion” is a historical prototype estimate. It is not a compiler pass rate, behavior-equivalence result or acceptance criterion for arbitrary projects.
 
-| 维度 | 手工迁移 | 工具迁移 | 提升 |
-|------|---------|---------|------|
-| 时间 | 40 小时 | 3.5 小时 | **11x** ⬆️ |
-| 成本 | $2000+ | $7 | **285x** ⬇️ |
-| 错误率 | 15-20% | <5% | **3-4x** ⬇️ |
+## Pipeline
 
-## 🚀 快速开始
+```text
+iOS project
+  ↓
+i2h-spec       scan source and produce UI / feature specifications
+  ↓
+i2h-plan       produce indexed-v1 UI, Base and Slice plans
+  ↓
+i2h-execute   generate ArkTS, wire features, run gates and build loops
+  ↓
+i2h-verify     run static, identity and selected device checks
+  ↓
+i2h-retrospect collect measured results and delivery evidence
+```
 
-### 1. 安装
+The intended execution model is LLM-led semantic analysis plus deterministic scripts for scanning, validation, writeback and reporting. Parallel work follows the original single-writer discipline: workers own their files, closers own shared wiring and ledgers, and findings close only after the owning check is rerun.
+
+## Install
 
 ```bash
 cd /path/to/hmigbot-ios
 ./install.sh --project /path/to/HarmonyOSProject --ios /path/to/iOSApp
 ```
 
-**示例**：
-```bash
-./install.sh --project ~/Projects/MyHarmonyApp --ios ~/Projects/MyiOSApp
-```
+Prerequisites are Python 3.8+, Claude Code, an iOS project containing an `.xcodeproj` or `Package.swift`, and a HarmonyOS project prepared for DevEco Studio. Device checks additionally require Xcode tools, `hdc`, and the relevant device or simulator.
 
-### 2. 使用
+After installation, `/i2h-init` and `/i2h-run` are the intended workflow entry points. The `/i2h-build` command currently references runtime executables that are not installed by this repository; see the audit before relying on it.
 
-在 Claude Code 中打开鸿蒙项目，然后：
+## Repository layout
 
-```bash
-# 初始化配置（统一探测，一次确认）
-/i2h-init       # 英文版
-/i2h-init-zh    # 中文版
-
-# 运行完整迁移流水线
-/i2h-run        # 英文版
-/i2h-run-zh     # 中文版
-
-# 编译验证
-/i2h-build      # 英文版
-/i2h-build-zh   # 中文版
-
-# 隐私合规检查
-/i2h-privacy    # 英文版
-/i2h-privacy-zh # 中文版
-```
-
-就这么简单！工具会自动完成：
-1. ✅ 分析 iOS 项目（i2h-spec）
-2. ✅ 生成执行计划（i2h-plan）
-3. ✅ 执行转换（i2h-execute）
-4. ✅ 验证结果（i2h-verify）
-5. ✅ 生成报告（i2h-retrospect）
-
-### 3. 结果
-
-生成完整的鸿蒙工程：
-- ✅ 可编译可运行
-- ✅ 包含所有验证报告
-- ✅ 详细的度量指标
-
-## 📋 系统要求
-
-**前置条件**:
-- 源项目是 iOS 项目（包含 .xcodeproj 的 Xcode 项目）
-- 目标项目是 HarmonyOS 项目（包含 build-profile.json5）
-
-**环境要求**:
-- Python 3.8+
-- Claude Code（用于运行 skills）
-- DevEco Studio（用于编译验证）
-- Xcode（用于分析 iOS 项目）
-
-## 🎓 核心设计
-
-### 5 阶段流水线
-
-```
-iOS 项目
-  ↓
-1. i2h-spec (分析项目，生成规格)
-  ↓
-2. i2h-plan (生成执行计划)
-  ↓
-3. i2h-execute (执行转换，4 个 Stage)
-   - Stage 0: UI 前置
-   - Stage 1: UI 转换（Batch + Worker/Closer）
-   - Stage 2: Base 层（7 个任务 + Base-7 编译门）
-   - Stage 3: Feature Slices（Group + Closer + 集中编译门）
-   - Stage 4: 最终整合（FV-2 终态编译）
-  ↓
-4. i2h-verify (验证结果)
-   - 编译验证
-   - 结构验证
-   - API 验证
-   - UI 对比（可选）
-   - 行为验证（可选）
-  ↓
-5. i2h-retrospect (生成报告)
-  ↓
-完整的鸿蒙工程 ✅
-```
-
-### 核心机制
-
-1. **findings 闭环**
-   - 只能由 linter 重跑确认关闭
-   - 防止假修复
-   - 循环控制（LOOP_LIMIT, HALT_LIMIT）
-
-2. **gate-handling**
-   - 精确类：必须修复
-   - 推断类：可以记账放行
-   - 阶段不可判定：推到 verify
-
-3. **编译门**
-   - Base-7：Stage 1+2 完成后
-   - Stage 3 集中门：每个 Group 完成后
-   - FV-2：最终全量编译
-
-4. **Worker/Closer 模式**
-   - Worker：只写自己的文件
-   - Closer：处理共享文件和接线
-   - 防止并发冲突
-
-## 📁 项目结构
-
-```
+```text
 hmigbot-ios/
-├── install.sh                  # 安装脚本
-├── migbot/
-│   ├── bin/scripts/
-│   │   ├── findings/          # findings 闭环机制
-│   │   ├── ios_scanner/       # iOS 项目扫描
-│   │   ├── analyzers/         # 功能分析器
-│   │   ├── swiftui_converter/ # SwiftUI 转换器（90.8%）
-│   │   ├── resource_converter/# 资源转换器
-│   │   ├── scheduler/         # 智能调度器
-│   │   ├── linters/          # 10+ linters
-│   │   └── verifiers/        # 验证器
-│   ├── skills/
-│   │   ├── i2h-spec/         # Spec 生成
-│   │   ├── i2h-plan/         # Plan 生成
-│   │   ├── i2h-execute/      # 执行转换
-│   │   ├── i2h-verify/       # 验证
-│   │   └── i2h-retrospect/   # 报告
-│   ├── commands/
-│   │   ├── i2h-init.md       # 初始化
-│   │   └── i2h-run.md        # 运行流水线
-│   └── mappings/
-│       └── swiftui-to-arkui.json # 映射规则
-└── docs/                      # 文档
+├── README.md / README_CN.md       current entry documentation
+├── CHANGELOG.md                   iOS-oriented change history
+├── HANDOVER.md                    current handover and next actions
+├── QUICK_REFERENCE.md             current navigation and evidence policy
+├── PROJECT_STATUS.md              current status snapshot
+├── docs/
+│   ├── METHODOLOGY.md             extracted migration method
+│   ├── IMPLEMENTATION_AUDIT.md    evidence-based issue list and fixes
+│   ├── ARCHIVE_INDEX.md            document map
+│   ├── current/                   durable design notes
+│   └── archive/                   phase reports and session history
+├── migbot/                        installable commands, agents and skills
+└── references/                    imported iOS expertise and source material
 ```
 
-## 🧪 真实项目验证
+The historical reports intentionally remain available in `docs/archive/`; they are evidence of the evolution of the adaptation, not current status.
 
-**Cuike iOS 项目**：
-- 21 个 Swift 文件
-- 10 个 SwiftUI Views
-- 1,878 行代码
-- **结果：90.8% 自动转换率** ✅
+## Reference relationship
 
-## 💡 技术亮点
+`hmigbot-1.8.0` is the Android baseline. Its architecture, gates, artifact contracts and concurrency rules are useful references, but Android assumptions must be translated before reuse. iOS-specific behavior belongs in the i2h skills and in the iOS reference skills under `migbot/skills/ios-*`.
 
-### 1. 高自动化率
+See:
 
-- SwiftUI → ArkUI：90.8%
-- 模板驱动转换
-- 批量并行处理
-
-### 2. 智能调度
-
-- 长任务优先策略
-- 依赖关系处理
-- 并行度优化（25 agents）
-
-### 3. 多层质量门控
-
-- findings 闭环
-- 3 个编译门
-- 10+ linters
-- 5 层验证
-
-### 4. 完整可追溯
-
-- 每个 requirement 有 digest
-- findings 记录所有问题
-- 占位符注册表
-- 详细的执行报告
-
-## 📖 文档
-
-- [理解原版设计](docs/UNDERSTANDING.md)
-- [技术设计](docs/CRITICAL_PATH_DESIGN.md)
-- [改造清单](docs/MIGRATION_CHECKLIST.md)
-- [完成报告](FINAL_100_PERCENT.md)
-
-## 🤝 贡献
-
-本项目基于 hmigbot-1.8.0 改造，完整移植了所有核心机制。
-
-## 📄 许可
-
-MIT License
-
-## 🎉 状态
-
-- **完成度**：100%
-- **质量**：生产级
-- **状态**：✅ 立即可用
-
----
-
-**开始你的 iOS → HarmonyOS 迁移之旅！** 🚀
+- [`docs/METHODOLOGY.md`](docs/METHODOLOGY.md) for the extracted process and design principles.
+- [`docs/ORIGINAL_VS_IOS_ANALYSIS.md`](docs/ORIGINAL_VS_IOS_ANALYSIS.md) for the original UI/resource/performance mechanisms and the iOS gap analysis.
+- [`docs/IMPLEMENTATION_AUDIT.md`](docs/IMPLEMENTATION_AUDIT.md) for current defects and concrete repair plans.
+- [`docs/current/UNDERSTANDING.md`](docs/current/UNDERSTANDING.md) for the original architecture rationale.
+- [`docs/current/TECHNICAL_DECISION.md`](docs/current/TECHNICAL_DECISION.md) for Swift parsing decisions.

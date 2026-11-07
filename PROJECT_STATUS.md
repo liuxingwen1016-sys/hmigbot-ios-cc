@@ -1,175 +1,34 @@
-# 📊 项目状态报告 - 2024-11-01
+# Project Status
 
-## ✅ 今日完成（40%）
+**更新日期**: 2026-11-06  
+**基线**: `hmigbot-1.8.0`（Android → HarmonyOS）  
+**目标**: iOS → HarmonyOS（ArkTS）
 
-### 1. 完整的设计阶段
-- 12份核心文档，64,250字
-- 深度分析、完整方案、详细设计
+## 当前结论
 
-### 2. SwiftUI 模板转换器（可工作）
-- simple_parser.py
-- template_mapper.py  
-- code_generator.py
-- batch_converter.py
-- swiftui-to-arkui.json
+仓库已经完成主要 i2h Skill 的文档和骨架改造，具备继续工程化的基础。当前结论是“可审计的开发基线”，不是“已通过端到端验收的生产工具”。
 
-### 3. 真实项目验证
-- Cuike iOS 转换测试
-- **90.8% 自动转换率**
-- 证明了技术可行性
+## 阶段状态
 
-### 4. 深度理解原版设计 ⭐⭐⭐
-- findings 闭环机制
-- Stage/Slice/Batch 分层
-- 编译门设计
-- 占位规范
-- 共享文件单写者纪律
+| 阶段 | 当前状态 | 证据 | 主要限制 |
+|---|---|---|---|
+| i2h-spec | 文档与模板已形成 | `migbot/skills/i2h-spec/` | 依赖若干未落地的 helper/ledger 脚本，需补存在性门禁 |
+| i2h-plan | indexed-v1 计划规范和 linter 已有 | `migbot/skills/i2h-plan/` | `/i2h-run` 仍检查旧 JSON 标记，需统一产物契约 |
+| i2h-execute | 编排规范、资源/writeback 工具和二进制包装器已在仓库 | `migbot/skills/i2h-execute/` | Python 测试不能直接导入包装器，部分依赖模块缺失 |
+| i2h-verify | 静态分析、身份解析、截图对比工具可运行 | `migbot/skills/i2h-verify/` | CHECK-5 明确 deferred；真实设备端到端验证尚未形成 CI |
+| i2h-retrospect | 报告模板和指标流程已有 | `migbot/skills/i2h-retrospect/` | 模板仍含 Cuike 示例硬编码，必须改成运行时数据 |
 
----
+## 已验证事实
 
-## ⏳ 待完成（60%）
+- `./install.sh` 可以把命令、Skill、脚本和 `spec/` 骨架复制到临时 HarmonyOS 工程。
+- 安装结果没有生成 `.migbot/bin/i2h` 或 `.migbot/bin/i2h-tool`，因此依赖它们的命令当前不能视为可用。
+- `i2h-verify/scripts/ios_static_analyzer.py` 和 `ios_config_parser.py` 能在本地样例上运行并输出 JSON。
+- `i2h-execute/scripts/tests/` 当前无法通过标准 unittest 入口运行：测试导入二进制 launcher，且部分被导入模块不存在。
 
-### 核心机制（需完整实现）
+## 近期优先级
 
-1. **findings 闭环**
-   - open-findings.json 机制
-   - gate-handling 规则
-   - linter 集成
-
-2. **5个完整 skills**
-   - 每个包含：SKILL.md + references/ + scripts/
-   - 预计每个 1周工作量
-
-3. **编译闭环**
-   - Base-7 编译门
-   - Stage 3 集中门
-   - FV-2 终态门
-
-4. **scripts 实现**
-   - 25+ Python 脚本
-   - 门控逻辑
-   - 数据处理
-
----
-
-## 💡 核心认识
-
-**原版不是过度设计，是生产级系统的必要复杂度**
-
-处理规模：
-- 10万+行代码
-- 100+页面
-- 20-30 agents 并行
-- 2-3小时执行
-
-必须机制：
-- findings 闭环 → 质量保证
-- Batch/Slice → 并发控制
-- 编译门 → 错误隔离
-- 占位规范 → 可追溯性
-
----
-
-## 📋 下次继续路线
-
-### Phase 1: findings 机制（1周）
-```
-1. 实现 open-findings.json 格式
-2. 实现 gate-handling 规则
-3. 实现 linter 框架
-4. 测试闭环流程
-```
-
-### Phase 2: 核心 skills（1-2周）
-```
-1. i2h-spec（完整版）
-2. i2h-plan（完整版）
-3. i2h-execute（完整版）
-4. i2h-verify（完整版）
-5. i2h-retrospect（完整版）
-```
-
-### Phase 3: 测试验证（3-5天）
-```
-1. 单元测试
-2. 集成测试
-3. 端到端测试
-4. 真实项目验证
-```
-
----
-
-## 📁 关键文档
-
-### 理解文档
-- `UNDERSTANDING.md` - 深度理解原版设计
-- `FINAL_SUMMARY_V2.md` - 今日工作总结
-
-### 设计文档  
-- `CRITICAL_PATH_DESIGN.md` (80KB) - 技术设计
-- `MIGRATION_CHECKLIST.md` (25KB) - 改造清单
-
-### 工作代码
-- `migbot/bin/scripts/swiftui_converter/` - 转换器
-- `migbot/mappings/swiftui-to-arkui.json` - 映射规则
-
----
-
-## 🎯 项目定位
-
-**这是一个生产级的迁移系统，不是简单的代码转换工具**
-
-特点：
-- ✅ 支持大规模项目
-- ✅ 并行执行（20-30 agents）
-- ✅ 质量保证（findings 闭环）
-- ✅ 可追溯可恢复
-- ✅ 有严格规范
-
----
-
-## 📊 工作量统计
-
-**已投入**：约 16 小时
-
-**成果**：
-- 设计文档：100%
-- 基础转换器：95%
-- 技术验证：完成
-- 深度理解：完成
-- **总计：40%**
-
-**预计剩余**：2-3 周全职工作
-
----
-
-## ✅ 今日最大价值
-
-**深度理解了原版的设计思想**
-
-从"简化实现"到"完整移植"的认知转变：
-- 明白了为什么这么复杂
-- 明白了每个机制的目的  
-- 明白了不能偷懒简化
-- 明白了生产级系统的要求
-
-**这是最重要的收获** ⭐⭐⭐
-
----
-
-## 🚀 Ready for Next Session
-
-项目基础已建立：
-- ✅ 完整的设计方案
-- ✅ 可工作的原型
-- ✅ 深度的理解文档
-- ✅ 清晰的实施路线
-
-下次继续可以直接开始实现核心机制。
-
----
-
-*状态更新：2024-11-01 23:59*  
-*完成度：40%*  
-*方向：明确*  
-*质量：基础扎实*
+1. 补齐或移除 `i2h` / `i2h-tool` 运行时入口，并让安装脚本做安装后 smoke test。
+2. 统一 i2h-spec、i2h-plan、i2h-execute、i2h-verify 的产物路径和完成标记。
+3. 把编译二进制包装器和可测试 Python 实现分离，恢复 execute 测试。
+4. 补齐 `gate_ledger.py`、`build-dependencies.json` 指向的 helper，或将缺口显式降级为 DEFERRED。
+5. 在 Cuike 和一个最小 UIKit/SwiftUI fixture 上跑完整 spec → plan → execute → verify，记录真实编译与行为证据。
