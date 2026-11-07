@@ -40,7 +40,7 @@ def _feature_id(path: Path, text: str) -> str:
     raise ValueError(f"cannot determine feature id from {path}")
 
 
-def _acceptance_criteria(path: Path, text: str) -> list[dict[str, str]]:
+def _acceptance_criteria(path: Path, text: str, source_file: str | None = None) -> list[dict[str, str]]:
     in_section = False
     result: list[dict[str, str]] = []
     for raw in text.splitlines():
@@ -60,13 +60,13 @@ def _acceptance_criteria(path: Path, text: str) -> list[dict[str, str]]:
         result.append({
             "requirement_id": requirement_id,
             "statement": statement,
-            "source_file": str(path),
+            "source_file": source_file or str(path),
             "digest": _digest(canonical),
         })
     return result
 
 
-def _slice_packet(path: Path, text: str, requirement_digests: dict[str, str]) -> dict[str, Any]:
+def _slice_packet(path: Path, text: str, requirement_digests: dict[str, str], source_file: str | None = None) -> dict[str, Any]:
     match = re.search(r"^##\s+Slice\s+[^:(]+\s*\((F[0-9]{3})\)", text, re.MULTILINE)
     feature_id = match.group(1) if match else None
     if not feature_id:
@@ -97,7 +97,7 @@ def _slice_packet(path: Path, text: str, requirement_digests: dict[str, str]) ->
         "requirement_ids": requirement_ids,
         "requirement_digests": {key: requirement_digests[key] for key in requirement_ids},
         "files": files,
-        "source_file": str(path),
+        "source_file": source_file or str(path),
     }
 
 
@@ -115,7 +115,8 @@ def build(project_root: str | Path) -> tuple[dict[str, Any], dict[str, Any]]:
     for path in sorted(feature_dir.glob("feat_*.md")):
         text = path.read_text(encoding="utf-8")
         feature_id = _feature_id(path, text)
-        criteria = _acceptance_criteria(path, text)
+        relative_path = str(path.relative_to(root))
+        criteria = _acceptance_criteria(path, text, relative_path)
         if not criteria:
             raise ValueError(f"no acceptance criteria found for {feature_id}: {path}")
         by_feature[feature_id] = criteria
@@ -143,7 +144,8 @@ def build(project_root: str | Path) -> tuple[dict[str, Any], dict[str, Any]]:
         if feature_id not in by_feature:
             raise ValueError(f"slice {path.name} has no matching feature spec {feature_id}")
         criteria = by_feature[feature_id]
-        packet = _slice_packet(path, text, {item["requirement_id"]: item["digest"] for item in criteria})
+        relative_path = str(path.relative_to(root))
+        packet = _slice_packet(path, text, {item["requirement_id"]: item["digest"] for item in criteria}, relative_path)
         packets.append(packet)
         packet_features.add(feature_id)
 
