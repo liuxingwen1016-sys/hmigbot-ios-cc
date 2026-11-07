@@ -1,0 +1,10 @@
+{
+  "confirmed": true,
+  "language": "zh",
+  "ios_path": "../ios-app",
+  "harmonyos_path": ".",
+  "app_name": "HMigBot Fixture",
+  "bundle_id": "com.example.hmigbot.fixture",
+  "fixture": true,
+  "mode": "static-only"
+}

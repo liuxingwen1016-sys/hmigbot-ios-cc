@@ -35,7 +35,14 @@ def review(project_root: str | Path, inventory: dict[str, Any]) -> dict[str, Any
                 errors.append({"code": "ARRIVAL_MODE_INVALID", "unit_id": unit_id, "state_id": state_id})
     if inventory.get("scope", "full_ui") == "full_ui" and not inventory.get("verification_states"):
         warnings.append({"code": "VERIFICATION_STATES_EMPTY", "message": "full_ui inventory has no composition verification states yet"})
-    return {"schema_version": 1, "status": "PASS" if not errors else "FAIL", "errors": errors, "warnings": warnings, "owners": owners}
+    # JSON object keys must be strings.  The in-memory lookup keeps tuple keys
+    # so duplicate detection remains unambiguous, while the persisted report
+    # uses a stable delimiter that can be read by shell/Claude consumers.
+    serializable_owners = {
+        f"{state_id}::{responsibility}": owner
+        for (state_id, responsibility), owner in sorted(owners.items())
+    }
+    return {"schema_version": 1, "status": "PASS" if not errors else "FAIL", "errors": errors, "warnings": warnings, "owners": serializable_owners}
 
 
 def main(argv: list[str] | None = None) -> int:

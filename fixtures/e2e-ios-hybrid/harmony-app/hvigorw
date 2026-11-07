@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+# Fixture stub: a real DevEco/Hvigor build is intentionally deferred.
+echo "static-only fixture: hvigor build deferred" >&2
+exit 77

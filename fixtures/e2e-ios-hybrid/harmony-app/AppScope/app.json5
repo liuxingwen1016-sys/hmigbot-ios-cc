@@ -1,0 +1,8 @@
+{
+  "app": {
+    "bundleName": "com.example.hmigbot.fixture",
+    "vendor": "hmigbot",
+    "versionCode": 1,
+    "versionName": "1.0.0"
+  }
+}
