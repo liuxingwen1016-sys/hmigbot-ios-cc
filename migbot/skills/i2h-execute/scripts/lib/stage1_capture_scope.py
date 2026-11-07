@@ -32,6 +32,14 @@ def _receipt_ok(root, value, kind):
     hp=d.get('hap_path'); p=root/hp if isinstance(hp,str) else None
     return p is not None and p.is_file() and d.get('hap_sha256') == digest(p) and (kind!='install' or bool(d.get('device_id')))
 
+def _capture_file(root, case, expected_dir, names):
+    """Accept Harmony accessibility JSON while preserving harmony_xml callers."""
+    for key in names:
+        value = case.get(key)
+        if isinstance(value, str) and value.startswith(expected_dir + '/') and (root / value).is_file():
+            return key, value
+    return None, None
+
 def finalize(root: Path | str, scope_path: Path | str, report: dict) -> dict:
     root=Path(root).resolve(); scope_path=Path(scope_path)
     if report.get('source_sha256') and report['source_sha256'] != source_digest(root):
@@ -44,10 +52,10 @@ def finalize(root: Path | str, scope_path: Path | str, report: dict) -> dict:
     for case in cases:
         if case.get('status') == 'DIFF': any_diff=True
         expected_dir=report.get('capture_dir','')
-        for key in ('harmony_png','harmony_xml'):
-            val=case.get(key)
-            if not isinstance(val,str) or not val.startswith(expected_dir+'/') or not (root/val).is_file():
-                failed=True
+        png_key, png_value = _capture_file(root, case, expected_dir, ('harmony_png', 'target_png', 'harmony_screenshot'))
+        ui_key, ui_value = _capture_file(root, case, expected_dir, ('harmony_ui_json', 'harmony_accessibility_json', 'harmony_xml', 'target_ui_json'))
+        if png_key is None or ui_key is None:
+            failed=True
         if case.get('capture_run_id') != report.get('run_id') or not case.get('device_id'):
             failed=True
         if case.get('observed_page_id') != case.get('page_id') or case.get('observed_state_id') != case.get('state_id'):
@@ -60,8 +68,10 @@ def finalize(root: Path | str, scope_path: Path | str, report: dict) -> dict:
         except Exception:
             failed=True
         if not any_diff and not failed:
-            png=root/case['harmony_png']; xml=root/case['harmony_xml']
-            case['harmony_png_sha256']=digest(png); case['harmony_xml_sha256']=digest(xml); case['visibility']='preview_ready'
+            png=root/png_value; ui=root/ui_value
+            case['harmony_png_sha256']=digest(png)
+            case[f'{ui_key}_sha256']=digest(ui)
+            case['visibility']='preview_ready'
     if any_diff and not failed: report['status']='DIFF'
     elif failed: report['status']='visual_blocked'; report.setdefault('failure_findings',[{'root_cause':'information_gap','detail':'capture evidence does not match current run'}])
     else: report['status']='PASS'
