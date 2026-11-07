@@ -304,8 +304,21 @@ class PlanCoverageLinter:
         for sid, data in complex_slices:
             # 检查 ios_source_anchors_ref
             anchor_ref = data.get('ios_source_anchors_ref', {})
-            count = anchor_ref.get('count', 0)
-            source = anchor_ref.get('source', '')
+            # Older workers emitted a list or a compact string while indexed-v1
+            # emits ``{count, source}``.  Normalize all forms before checking.
+            if isinstance(anchor_ref, dict):
+                count = int(anchor_ref.get('count', 0) or 0)
+                source = str(anchor_ref.get('source', '') or '')
+            elif isinstance(anchor_ref, list):
+                count = len(anchor_ref)
+                source = ''
+            elif isinstance(anchor_ref, str):
+                count_match = re.search(r'count\s*[:=]\s*(\d+)', anchor_ref)
+                source_match = re.search(r'source\s*[:=]\s*([^,}]+)', anchor_ref)
+                count = int(count_match.group(1)) if count_match else 0
+                source = source_match.group(1).strip().strip("'\"") if source_match else ''
+            else:
+                count, source = 0, ''
 
             if count == 0:
                 errors.append(f"Slice {sid}: complexity=complex 但 anchor count=0")
@@ -728,11 +741,14 @@ class PlanCoverageLinter:
 
         pages = {}
         for line in path.read_text().splitlines():
-            # 简单解析，实际可能需要更复杂的逻辑
-            match = re.search(r'\b(page_\d{4})\b', line)
+            # Accept canonical page_0001_ClassName IDs as well as the older
+            # page_0001 shorthand.  The class suffix is part of the identity
+            # in newer i2h-spec outputs and must not produce a parser warning.
+            match = re.search(r'\b(page_\d{4}(?:_[A-Za-z_]\w*)?)\b', line)
             if match:
                 pid = match.group(1)
                 pages[pid] = {}
+                pages.setdefault(pid.split('_', 2)[0], pages[pid])
 
                 # 检查 status
                 if 'skipped' in line.lower():
@@ -748,6 +764,11 @@ class PlanCoverageLinter:
 
         pages = set()
         for line in path.read_text().splitlines():
+            full = re.search(r'\b(page_\d{4}(?:_[A-Za-z_]\w*)?)\b', line)
+            if full:
+                pages.add(full.group(1))
+                pages.add(full.group(1).split('_', 2)[0])
+                continue
             match = re.search(r'\b(\d{4})\b', line)
             if match:
                 # 假设序号对应 page_NNNN
@@ -825,6 +846,7 @@ class PlanCoverageLinter:
             data['complexity'] = self._extract_field(content, 'complexity')
             data['parallel_group'] = int(self._extract_field(content, 'parallel_group') or 0)
             data['depends_on'] = self._extract_list_field(content, 'depends_on')
+            data['ios_source_anchors_ref'] = self._extract_anchor_ref(content)
             data['wires'] = []  # 简化处理
             data['cross_slice_edits'] = []  # 简化处理
 
@@ -841,8 +863,25 @@ class PlanCoverageLinter:
         """从内容中提取列表字段"""
         match = re.search(rf'{field}:\s*\[(.*?)\]', content)
         if match:
-            return [item.strip().strip('"\'') for item in match.group(1).split(',')]
+            return [value for value in (item.strip().strip('"\'') for item in match.group(1).split(',')) if value]
         return []
+
+    def _extract_anchor_ref(self, content: str) -> object:
+        """Parse indexed-v1 anchor refs while accepting legacy spellings."""
+        match = re.search(r'ios_source_anchors_ref:\s*(.*)', content)
+        if not match:
+            return {}
+        raw = match.group(1).strip()
+        if raw.startswith('{'):
+            count = re.search(r'count\s*:\s*(\d+)', raw)
+            source = re.search(r'source\s*:\s*([^,}]+)', raw)
+            return {
+                'count': int(count.group(1)) if count else 0,
+                'source': source.group(1).strip().strip("'\"") if source else '',
+            }
+        if raw.startswith('['):
+            return [item for item in raw.strip('[]').split(',') if item.strip()]
+        return raw
 
     def _parse_ios_source_anchors(self, spec_path: Path) -> List[Dict]:
         """从 feature spec 解析 ios_source_anchors"""
@@ -854,14 +893,21 @@ class PlanCoverageLinter:
         anchors = []
 
         # 查找 ios_source_anchors 段
-        match = re.search(r'ios_source_anchors:\s*\n((?:  - .*\n)*)', content)
+        match = re.search(r'ios_source_anchors:\s*\n((?:(?:\s{2,}|[- ])[^\n]*\n)*)', content)
         if match:
             anchor_lines = match.group(1)
+            current: Dict[str, str] | None = None
             for line in anchor_lines.splitlines():
-                if 'role:' in line:
-                    role_match = re.search(r'role:\s*(\w+)', line)
-                    if role_match:
-                        anchors.append({'role': role_match.group(1), 'path': ''})
+                if re.match(r'\s*-\s+', line):
+                    if current:
+                        anchors.append(current)
+                    current = {}
+                if current is None:
+                    continue
+                for key, value in re.findall(r'\b(path|role|symbol|line):\s*["\']?([^,"\'\s}]+)', line):
+                    current[key] = value
+            if current:
+                anchors.append(current)
 
         return anchors
 

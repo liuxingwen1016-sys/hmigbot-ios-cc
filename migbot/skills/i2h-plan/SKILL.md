@@ -83,6 +83,12 @@ spec/baseline/
 
 派发 prompt 模板见 [references/plan-dispatch.md](./references/plan-dispatch.md) §P1-A/B/C。
 
+P1 使用 `scripts/parallel_dispatch.py` 的依赖组调度，默认最多 4 个 worker。每个
+worker 只写自己的临时目录和 checkpoint，checkpoint 位于
+`spec/.i2h/checkpoints/plan/group-N/`，包含真实 UTC 起止时间、排队时间、retry、cache
+hit 和 usage。DeepSeek 单请求异常只重试失败 worker，并保留其他 worker 的结果。主线程
+按 feature/slice ID 稳定排序后一次性 merge，再执行 lint 和 gate。
+
 **P2: 收拢**（主线程）
 1. 定组（parallel_group 分配，§3b Step 5）
 2. 生成索引（feature-plan.md L1）
@@ -90,7 +96,9 @@ spec/baseline/
 4. grill #2 技术决策（§7.2）
 5. 审批门控（§8）
 
-**降级方案**：Agent 派发不可用时，主线程按序自跑 §3a → §3b 全部步骤，**零行为差异**（产物格式、校验标准完全一致）。
+**降级方案**：Agent 派发不可用时，只允许把失败 worker 重新排入同一 bounded queue。禁止
+因单个 worker 异常把完整 P1 三写降级成单线程，除非记录明确的基础设施 finding 和
+checkpoint。产物格式、校验标准必须保持一致。
 
 ### 3a. UI 转换计划（ui-plan.md）
 

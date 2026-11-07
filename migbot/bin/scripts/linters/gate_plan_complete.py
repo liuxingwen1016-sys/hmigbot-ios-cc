@@ -9,7 +9,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "findings"))
-from i2h_findings import make, replace_section, section_exit_code
+from i2h_findings import iter_findings, load, make, replace_section, section_exit_code
 
 
 def gate_plan_complete(project_root: str) -> list[dict]:
@@ -17,21 +17,40 @@ def gate_plan_complete(project_root: str) -> list[dict]:
     findings = []
 
     # 检查必需产出物
-    required_files = [
-        ("spec/baseline/plans/ui-plan.json", "UI Plan"),
-        ("spec/baseline/plans/feature-plan.json", "Feature Plan"),
-        ("spec/baseline/plans/execution-summary.md", "执行摘要"),
+    required_file_alternatives = [
+        (("spec/baseline/plans/ui-plan.json", "spec/baseline/plans/ui-plan.md"), "UI Plan"),
+        (("spec/baseline/plans/feature-plan.json", "spec/baseline/plans/feature-plan.md"), "Feature Plan"),
+        (("spec/baseline/plans/execution-summary.md", "spec/baseline/plans/gate-output.md"), "执行摘要"),
     ]
 
-    for file_path, desc in required_files:
-        full_path = os.path.join(project_root, file_path)
-        if not os.path.exists(full_path):
+    for candidates, desc in required_file_alternatives:
+        if not any(os.path.exists(os.path.join(project_root, path)) for path in candidates):
             findings.append(make(
                 "GATE.PLAN_INCOMPLETE",
                 "plan",
-                file_path,
+                candidates[0],
                 f"缺少必需产出物: {desc}"
             ))
+
+    # A malformed findings section must never be treated as an empty queue.
+    # Accept both the current list form and the legacy key->finding dict.
+    queue = load(project_root)
+    for section, payload in queue.get("sections", {}).items():
+        if not isinstance(payload, dict):
+            findings.append(make("GATE.FINDINGS_INVALID", "plan", section, "findings section 不是对象"))
+            continue
+        raw = payload.get("findings", [])
+        normalized = iter_findings(raw)
+        if raw and not normalized:
+            findings.append(make("GATE.FINDINGS_INVALID", "plan", section, "findings 必须是列表或 finding 字典"))
+        for item in normalized:
+            if item.get("severity") == "blocking" and not item.get("decision_ref") and section.startswith("plan/"):
+                findings.append(make(
+                    "GATE.PLAN_BLOCKING_FINDING",
+                    "plan",
+                    str(item.get("finding_key") or item.get("subject") or section),
+                    str(item.get("detail") or "存在未释放的 blocking finding"),
+                ))
 
     return findings
 

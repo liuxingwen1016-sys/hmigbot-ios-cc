@@ -27,6 +27,19 @@ STAGES = ("spec", "plan", "execute", "verify")
 SEVERITIES = ("blocking", "warn")
 
 
+def iter_findings(value: Any) -> list[dict[str, Any]]:
+    """Normalize legacy dict/list findings containers for all linters."""
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+    if isinstance(value, dict):
+        # Some early gates stored finding_key -> finding, while others stored
+        # a single finding object directly.
+        if "finding_key" in value:
+            return [value]
+        return [item for item in value.values() if isinstance(item, dict)]
+    return []
+
+
 def finding_key(rule: str, subject: str) -> str:
     """稳定的身份标识：同样的规则 + 同样的主题 → 同样的 key"""
     digest = hashlib.sha256(f"{rule}\x00{subject}".encode("utf-8")).hexdigest()
@@ -146,8 +159,8 @@ def replace_section(
     prior_section = data["sections"].get(section, {})
     prior = {
         item["finding_key"]: item
-        for item in prior_section.get("findings", [])
-        if isinstance(item, dict) and item.get("finding_key")
+        for item in iter_findings(prior_section.get("findings", []))
+        if item.get("finding_key")
     }
 
     carried = []
@@ -218,7 +231,7 @@ def section_exit_code(project_root: str, section: str) -> int:
     """
     data = load(project_root)
     sec = data["sections"].get(section, {})
-    findings = sec.get("findings", [])
+    findings = iter_findings(sec.get("findings", []))
     blocking = [f for f in findings if is_open_blocking(f)]
 
     if not blocking:
@@ -240,7 +253,7 @@ def has_upstream_blockers(project_root: str, stage: str) -> bool:
     for section, sec_data in data["sections"].items():
         sec_stage = _stage_of_section(section)
         if stage_order.get(sec_stage, 999) < current_idx:
-            findings = sec_data.get("findings", [])
+            findings = iter_findings(sec_data.get("findings", []))
             if any(is_open_blocking(f) for f in findings):
                 return True
     return False
@@ -250,7 +263,7 @@ def release(project_root: str, finding_keys: list[str], decision_ref: str) -> No
     """释放指定的 findings（通过决策记录）。"""
     data = load(project_root)
     for section, sec_data in data["sections"].items():
-        findings = sec_data.get("findings", [])
+        findings = iter_findings(sec_data.get("findings", []))
         for item in findings:
             if item.get("finding_key") in finding_keys:
                 item["decision_ref"] = decision_ref

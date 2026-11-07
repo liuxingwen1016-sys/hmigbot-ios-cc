@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -19,8 +20,12 @@ def lint_ui_plan(project_root: str) -> list[dict]:
     findings = []
 
     # 检查 ui-plan.json
-    plan_file = os.path.join(project_root, "spec/baseline/plans/ui-plan.json")
-    if not os.path.exists(plan_file):
+    plan_candidates = [
+        Path(project_root) / "spec/baseline/plans/ui-plan.json",
+        Path(project_root) / "spec/baseline/plans/ui-plan.md",
+    ]
+    plan_file = next((path for path in plan_candidates if path.is_file()), None)
+    if plan_file is None:
         findings.append(make(
             "PLAN.MISSING_FILE",
             "plan",
@@ -30,17 +35,15 @@ def lint_ui_plan(project_root: str) -> list[dict]:
         return findings
 
     # 读取并验证
-    try:
-        with open(plan_file) as f:
-            plan = json.load(f)
-    except json.JSONDecodeError:
-        findings.append(make(
-            "PLAN.INVALID_FORMAT",
-            "plan",
-            "ui-plan.json",
-            "UI Plan 格式无效"
-        ))
-        return findings
+    if plan_file.suffix == ".json":
+        try:
+            with open(plan_file, encoding="utf-8") as f:
+                plan = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            findings.append(make("PLAN.INVALID_FORMAT", "plan", plan_file.name, "UI Plan 格式无效"))
+            return findings
+    else:
+        plan = _parse_markdown_plan(plan_file)
 
     # 验证必需字段
     required_fields = ["version", "total_pages", "total_batches", "batches"]
@@ -99,6 +102,24 @@ def lint_ui_plan(project_root: str) -> list[dict]:
                 ))
 
     return findings
+
+
+def _parse_markdown_plan(path: Path) -> dict:
+    """Accept the indexed Markdown output used by current i2h-plan."""
+    text = path.read_text(encoding="utf-8", errors="replace")
+    pages = []
+    for match in re.finditer(r"\b(page_\d{4}(?:_[A-Za-z_]\w*)?)\b", text):
+        page_id = match.group(1)
+        if page_id not in pages:
+            pages.append(page_id)
+    batches = []
+    for index, chunk in enumerate(re.split(r"(?=^#{1,4}\s*Batch\s+\d+)", text, flags=re.MULTILINE), 1):
+        chunk_pages = re.findall(r"\bpage_\d{4}(?:_[A-Za-z_]\w*)?\b", chunk)
+        if chunk_pages:
+            batches.append({"batch_id": f"batch_{index:02d}", "pages": list(dict.fromkeys(chunk_pages))})
+    if not batches and pages:
+        batches = [{"batch_id": "batch_01", "pages": pages}]
+    return {"version": 1, "total_pages": len(pages), "total_batches": len(batches), "batches": batches}
 
 
 if __name__ == "__main__":

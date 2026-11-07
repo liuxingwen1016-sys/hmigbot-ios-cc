@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -121,6 +122,10 @@ def normalize_hash(value: str | None) -> str | None:
     return str(value).strip().lower().removeprefix("sha256:")
 
 
+def utc_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
 def _resolve_group(root: Path, group: tuple[str, ...]) -> tuple[tuple[Path, ...], tuple[str, ...]]:
     paths = tuple(root / rel for rel in group)
     existing = tuple(path for path in paths if path.is_file())
@@ -158,6 +163,7 @@ def write_marker(
     root: str | Path | None = None,
     producer: str = "i2h-run",
     fixture: bool = False,
+    metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Write a content-addressed schema-2 marker atomically."""
     marker = Path(path)
@@ -181,7 +187,19 @@ def write_marker(
         "inputs_sha256": normalize_hash(inputs_sha256),
         "artifacts": artifacts,
         "content_sha256": canonical_hash(artifacts),
+        # Operational fields are part of the completion contract.  Callers
+        # may replace them with measured values via ``metadata``.
+        "started_at": utc_now(),
+        "ended_at": utc_now(),
+        "queue_time_ms": 0,
+        "retry_count": 0,
+        "cache_hit": False,
+        "usage": {},
     }
+    if metadata:
+        payload.update({key: value for key, value in metadata.items() if key in {
+            "started_at", "ended_at", "queue_time_ms", "retry_count", "cache_hit", "usage"
+        }})
     if fixture:
         payload["fixture"] = True
     marker.parent.mkdir(parents=True, exist_ok=True)
