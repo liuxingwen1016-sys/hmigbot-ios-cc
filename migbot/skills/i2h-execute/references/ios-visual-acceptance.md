@@ -71,3 +71,29 @@ The F101 acceptance record has separate results for permission, camera launch,
 image return, OCR, sample-image fallback, album fallback, and manual entry. A
 physical lens obstruction is an environmental PARTIAL result when the same
 OCR chain succeeds on a sample or album image.
+
+## F102/F103/F104 system-surface closure
+
+System-surface features require host-owned evidence. An in-app preview with a
+matching label does not satisfy the corresponding iOS capability.
+
+- A service card uses `FormExtensionAbility`, a `type: "form"`
+  `extensionAbility`, `ohos.extension.form` metadata, and a valid
+  `resources/base/profile/form_config.json`. Its provider must return binding
+  data and update published form IDs when the shared last-recipe snapshot
+  changes. Verify add-to-host, render, refresh, and click-back to the app.
+- A Live Activity adaptation uses `LiveFormExtensionAbility` with a
+  `type: "liveForm"` extension and a static host-safe page. The extension must
+  not import notification, camera, media, database, or UIAbility-only APIs.
+  NotificationKit remains the explicit fallback for hosts that do not expose
+  LiveForm activation. A successful in-app `BrewLiveActivity` preview is not
+  system-surface evidence.
+- Harmony shortcuts are declared through EntryAbility metadata named
+  `ohos.ability.shortcuts` that points to
+  `resources/base/profile/shortcuts.json`. Do not place a `shortcuts` key at
+  module root on API 26. Each shortcut target carries a valid `Want` parameter
+  and the EntryAbility reads `want.parameters.uri` as well as `want.uri`.
+  Verify system indexing and click-back deeplink separately from static HAP
+  packaging. Siri/AppIntent voice phrases have no automatic Harmony
+  equivalent and remain an explicit capability gap unless a host feature is
+  independently verified.
