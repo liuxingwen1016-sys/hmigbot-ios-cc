@@ -149,12 +149,17 @@ def validate(project_root: str | Path, inventory: dict[str, Any]) -> dict[str, A
         units = []
     seen_ids: set[str] = set()
     seen_outputs: set[str] = set()
-    seen_roles: dict[tuple[str, str], str] = {}
+    # State ids are scoped to the page/component that owns them.  A source
+    # inventory legitimately contains ``default/content`` for every page and
+    # shared component.  Keep the fallback scope for hand-authored units that
+    # omit page_id so duplicate ownership still fails closed there.
+    seen_roles: dict[tuple[str, str, str], str] = {}
     for unit in units:
         if not isinstance(unit, dict):
             errors.append({"code": "UNIT_INVALID", "message": "unit must be an object"})
             continue
         unit_id = unit.get("unit_id")
+        page_scope = str(unit.get("page_id") or "__global__")
         if not unit_id or unit_id in seen_ids:
             errors.append({"code": "UNIT_ID_DUPLICATE", "unit_id": unit_id})
         seen_ids.add(str(unit_id))
@@ -183,7 +188,7 @@ def validate(project_root: str | Path, inventory: dict[str, Any]) -> dict[str, A
                 errors.append({"code": "RESPONSIBILITY_INVALID", "unit_id": unit_id, "state_id": state.get("state_id")})
             if responsibility not in roles:
                 errors.append({"code": "ROLE_UNDECLARED", "unit_id": unit_id, "role": responsibility})
-            key = (str(state.get("state_id")), responsibility)
+            key = (page_scope, str(state.get("state_id")), responsibility)
             previous = seen_roles.get(key)
             if previous and responsibility == "content":
                 errors.append({"code": "DUPLICATE_CONTENT_OWNERSHIP", "state_id": key[0], "owners": [previous, unit_id]})
