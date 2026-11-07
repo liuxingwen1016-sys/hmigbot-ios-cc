@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 from _launcher import dispatch
@@ -21,7 +22,7 @@ def _ios_inventory(argv):
         return False
 
 def main(argv=None):
-    argv = list(argv or [])
+    argv = list(sys.argv[1:] if argv is None else argv)
     if _ios_inventory(argv):
         from lib.ui_delivery_inputs_ios import freeze
         return freeze(argv)
