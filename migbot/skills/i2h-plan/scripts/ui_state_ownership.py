@@ -12,12 +12,19 @@ from typing import Any
 def review(project_root: str | Path, inventory: dict[str, Any]) -> dict[str, Any]:
     errors: list[dict[str, Any]] = []
     warnings: list[dict[str, Any]] = []
-    owners: dict[tuple[str, str], str] = {}
+    # A state id is scoped to the page/component that owns it.  ``default`` is
+    # intentionally common across every page produced by the source-driven
+    # draft, so treating ``(state_id, responsibility)`` as a global key makes
+    # a valid full-ui inventory impossible to approve.  Hand-authored units
+    # without a page id retain the old global scope so malformed/minimal
+    # inventories still fail closed.
+    owners: dict[tuple[str, str, str], str] = {}
     for unit in inventory.get("units", []):
         if not isinstance(unit, dict):
             errors.append({"code": "UNIT_INVALID"})
             continue
         unit_id = unit.get("unit_id")
+        page_scope = str(unit.get("page_id") or "__global__")
         roles = set(unit.get("owned_ui_roles", []))
         for state in unit.get("required_states", []):
             if not isinstance(state, dict):
@@ -26,7 +33,7 @@ def review(project_root: str | Path, inventory: dict[str, Any]) -> dict[str, Any
             responsibility = state.get("responsibility", "content")
             if responsibility not in roles:
                 errors.append({"code": "UNASSIGNED_STATE", "unit_id": unit_id, "state_id": state_id, "responsibility": responsibility})
-            key = (str(state_id), str(responsibility))
+            key = (page_scope, str(state_id), str(responsibility))
             if responsibility == "content" and key in owners and owners[key] != unit_id:
                 errors.append({"code": "DUPLICATE_CONTENT_OWNERSHIP", "state_id": state_id, "owners": [owners[key], unit_id]})
             else:
@@ -39,8 +46,8 @@ def review(project_root: str | Path, inventory: dict[str, Any]) -> dict[str, Any
     # so duplicate detection remains unambiguous, while the persisted report
     # uses a stable delimiter that can be read by shell/Claude consumers.
     serializable_owners = {
-        f"{state_id}::{responsibility}": owner
-        for (state_id, responsibility), owner in sorted(owners.items())
+        f"{page_id}::{state_id}::{responsibility}": owner
+        for (page_id, state_id, responsibility), owner in sorted(owners.items())
     }
     return {"schema_version": 1, "status": "PASS" if not errors else "FAIL", "errors": errors, "warnings": warnings, "owners": serializable_owners}
 

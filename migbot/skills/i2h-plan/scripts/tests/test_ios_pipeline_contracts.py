@@ -85,6 +85,20 @@ class IOSPipelineContractTest(unittest.TestCase):
         self.assertEqual(result["status"], "FAIL")
         self.assertIn("DUPLICATE_CONTENT_OWNERSHIP", {item["code"] for item in result["errors"]})
 
+    def test_default_content_state_is_scoped_per_page(self):
+        inventory = {
+            "schema_version": 2,
+            "scope": "full_ui",
+            "units": [
+                {"unit_id": "home", "page_id": "page_home", "owned_ui_roles": ["content"],
+                 "required_states": [{"state_id": "default", "arrival_mode": "preview", "responsibility": "content"}]},
+                {"unit_id": "settings", "page_id": "page_settings", "owned_ui_roles": ["content"],
+                 "required_states": [{"state_id": "default", "arrival_mode": "preview", "responsibility": "content"}]},
+            ],
+        }
+        result = ui_state_ownership.review(self.root, inventory)
+        self.assertEqual(result["status"], "PASS")
+
 
 if __name__ == "__main__":
     unittest.main()
