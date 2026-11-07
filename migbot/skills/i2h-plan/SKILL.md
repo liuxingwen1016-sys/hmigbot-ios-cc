@@ -568,6 +568,19 @@ Plan 生成完毕后，必须执行覆盖率校验，确保所有功能都被 pl
 
 ## 9. 完成标记
 
+在写入 plan 完成标记前，必须从 feature 验收条件和已生成的 slice
+确定性生成 execute 消费的两个索引。禁止手写空文件或由模型猜测 requirement 映射。
+
+```bash
+python3 .claude/skills/i2h-plan/scripts/generate_execute_coverage.py \
+  --project-root .
+```
+
+脚本会写入 `spec/.i2h/requirements-index.json` 和
+`spec/.i2h/plan-coverage.json`。任一 feature 缺少验收条件或 plan slice 时失败。
+execute coverage lint 只消费这两个索引，并从 packet 的
+`requirement_digests` 回填实现声明。
+
 创建 `spec/baseline/plans/complete.txt` 作为 **schema-2 JSON marker**。按照
 [marker-contract.md](./references/marker-contract.md) 调用
 `marker_contract.write_marker()`，传入 `stage="i2h-plan"`、当前
