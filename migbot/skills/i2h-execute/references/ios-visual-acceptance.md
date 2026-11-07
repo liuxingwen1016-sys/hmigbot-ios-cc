@@ -24,3 +24,24 @@
 Use `stage1_visual_report.py`'s library `summarize` function or the CLI fallback to produce page/state counts, evidence completeness, semantic coverage, geometry error, and blocked reasons. The current macOS bundle may expose an older command surface, so direct Python module invocation is the deterministic compatibility path until the execute bundle is rebuilt.
 
 The report reserves `device_validation.ios_baseline` for the connected iPhone and `device_validation.harmony_target` for the Huawei Mate 80 Pro. The Harmony row records `preferred_device_type=real_device`, `fallback_device_type=emulator`, `selected_device_type`, `serial`, `system_version`, and `evidence_hashes`. A simulator result is recorded as an emulator result and cannot be presented as a Mate 80 Pro result. Their status remains `PENDING_P0_RUNTIME_CAPTURE` until the iOS capture, Harmony install receipt, screenshots, accessibility dump, click path, and functional path evidence are present. Device or credential failures are retained as explicit `blocked_reasons`.
+
+## iOS navigation chrome and floating tab bars
+
+When the iOS source places a toolbar outside a `ScrollView`, the Harmony
+conversion must keep that navigation chrome outside `Scroll` as well. A
+toolbar inside the scroll content is a semantic regression because it
+disappears after the first swipe and makes the same route unreachable.
+
+When the source uses a floating tab capsule, the Harmony implementation may
+use a custom overlay over `Tabs`, but the scrollable content must reserve the
+full overlay height plus its bottom margin. The required bottom inset is the
+capsule height, the bottom margin, and the navigation-indicator safe area.
+Stage-1 smoke must scroll each tab to its end and verify that the last visible
+row or card remains above the capsule. A screenshot that only shows the
+initial page is insufficient for this check.
+
+The converter should preserve source-backed accessibility identifiers and
+labels for every toolbar and tab action. The visual report records both the
+screen comparison and the end-of-scroll reachability result. Occluded final
+content is a `FAIL` finding even when the initial screenshot perceptual score
+does not regress.
