@@ -16,6 +16,7 @@ import plistlib
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -220,9 +221,17 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
     run_command([xcrun, "simctl", "launch", device, app_bundle_id], timeout=args.timeout)
 
     ui_json = output_dir / "ios-accessibility.json"
+    screenshot = output_dir / "ios-runtime.png"
+    screenshot_taken = False
     if args.accessibility_json:
+        ui_json.unlink(missing_ok=True)
         copy_accessibility_json(Path(args.accessibility_json).expanduser().resolve(), ui_json)
     elif args.accessibility_command:
+        # XCTest tears down the app after the test returns.  Capture as soon as
+        # the helper publishes the accessibility tree so the screenshot still
+        # belongs to the target page instead of SpringBoard.
+        ui_json.unlink(missing_ok=True)
+        screenshot.unlink(missing_ok=True)
         command_env = os.environ.copy()
         command_env.update(
             {
@@ -239,14 +248,38 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
                 "TEST_RUNNER_I2H_STATE_ID": args.state_id,
             }
         )
-        subprocess.run(["/bin/zsh", "-lc", args.accessibility_command], check=True, env=command_env, timeout=args.timeout)
+        log_path = output_dir / "accessibility-command.log"
+        with log_path.open("w", encoding="utf-8") as log:
+            process = subprocess.Popen(
+                ["/bin/zsh", "-lc", args.accessibility_command],
+                env=command_env,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            deadline = time.monotonic() + args.timeout
+            try:
+                while process.poll() is None:
+                    if not screenshot_taken and ui_json.is_file():
+                        time.sleep(0.25)
+                        run_command([xcrun, "simctl", "io", device, "screenshot", str(screenshot)], timeout=args.timeout)
+                        screenshot_taken = True
+                    if time.monotonic() > deadline:
+                        process.kill()
+                        raise RuntimeError(f"accessibility command timed out after {args.timeout}s")
+                    time.sleep(0.05)
+            finally:
+                process.wait(timeout=30)
+            if process.returncode != 0:
+                tail = log_path.read_text(encoding="utf-8", errors="replace")[-4000:]
+                raise RuntimeError(f"accessibility command failed with exit {process.returncode}:\n{tail}")
     else:
         raise RuntimeError("accessibility evidence is required. Pass --accessibility-json or --accessibility-command")
     if not ui_json.is_file():
         raise RuntimeError(f"accessibility command did not create {ui_json}")
 
-    screenshot = output_dir / "ios-runtime.png"
-    run_command([xcrun, "simctl", "io", device, "screenshot", str(screenshot)], timeout=args.timeout)
+    if not screenshot_taken:
+        run_command([xcrun, "simctl", "io", device, "screenshot", str(screenshot)], timeout=args.timeout)
 
     ui_payload = json.loads(ui_json.read_text(encoding="utf-8"))
     raw = {
