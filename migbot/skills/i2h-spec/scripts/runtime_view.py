@@ -90,6 +90,8 @@ def normalize(path: Path) -> dict[str, Any]:
         app = {}
     page_id = source.get("page_id")
     state_id = source.get("state_id") or source.get("state")
+    status = source.get("status")
+    blocked_reason = source.get("blocked_reason") or source.get("reason")
     return {
         "schema_version": 2,
         "tool_version": TOOL_VERSION,
@@ -98,6 +100,8 @@ def normalize(path: Path) -> dict[str, Any]:
         "page_id": page_id,
         "state_id": state_id,
         "state": state_id,
+        "status": status,
+        "blocked_reason": blocked_reason,
         "captured_at": source.get("captured_at"),
         "device": source.get("device", {}),
         "app": app,

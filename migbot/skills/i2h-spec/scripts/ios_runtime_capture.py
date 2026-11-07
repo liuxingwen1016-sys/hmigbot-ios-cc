@@ -134,8 +134,9 @@ def update_snapshot_meta(output_dir: Path, page_id: str, state_id: str, normaliz
                 meta = value
         except json.JSONDecodeError:
             meta = {}
+    normalized_status = normalized.get("status")
     state_evidence = {
-        "status": "audited" if not normalized.get("warnings") else "captured",
+        "status": normalized_status if normalized_status in {"blocked", "captured", "audited"} else ("audited" if not normalized.get("warnings") else "captured"),
         "page_id": page_id,
         "state": state_id,
         "state_id": state_id,
@@ -151,6 +152,8 @@ def update_snapshot_meta(output_dir: Path, page_id: str, state_id: str, normaliz
         "ui_json_sha256": normalized.get("ui_json_sha256"),
         "source_platform": "ios",
     }
+    if normalized.get("blocked_reason"):
+        state_evidence["blocked_reason"] = normalized["blocked_reason"]
     by_state = meta.get("runtime_evidence_by_state")
     if not isinstance(by_state, dict):
         by_state = {}
