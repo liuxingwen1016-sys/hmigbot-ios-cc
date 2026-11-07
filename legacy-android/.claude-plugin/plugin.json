@@ -1,0 +1,7 @@
+{
+  "name": "hmigbot-android-reference",
+  "description": "Legacy Android-to-HarmonyOS migration skills and agents kept separate from the iOS plugin.",
+  "version": "1.0.0-legacy",
+  "author": {"name": "iOS Migration Team"},
+  "license": "MIT"
+}

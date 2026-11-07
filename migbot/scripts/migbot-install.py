@@ -30,7 +30,7 @@ INSTALL_SKILLS = {
     'ios2hmos_resources_convert',
 
     # 通用工具 skills
-    'a2h-join', 'app-relationship-tree', 'commit', 'dfr-fmea-general',
+    'app-relationship-tree', 'commit', 'dfr-fmea-general',
     'grill-with-docs', 'hmos_fix_build_errors', 'hmos-env-doctor',
     'harmonyos-ui-test', 'claude-session-stats', 'skill-checker',
     'toolkit-fact-indexer', 'mod-design', 'prd-generator',

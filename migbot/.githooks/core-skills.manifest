@@ -5,26 +5,11 @@
 # 同步会把改动覆盖掉（历史上已发生 3 次：v1.1.2 / v1.2.1 / v1.2.2）。
 #
 # 不在此清单中的 skill 为 migbot 独有，改动无需回推。
+# 历史 Android skill 已移至仓库根目录 legacy-android/skills，不属于 iOS bundle。
 #
 # 重新生成：scripts/gen-core-manifest.sh <ArkTs-Core 路径>
 # 生成于：2026-07-24，对应上游分支 version_730_tools
 
-a2h-execute
-a2h-functional-merge
-a2h-functional-registry
-a2h-incremental-migration
-a2h-plan
-a2h-retrospect
-a2h-spec
-a2h-verify
-android-api-inventory
-android-fact-tree
-android-screenshot-analyzer
-android-ui-graph-builder
-android-ui-graph-query
-android-view-to-arkui
-android2hmos_resources_convert
-app-relationship-tree
 arkts-accessibility
 arkts-ad
 arkts-animation-builder

@@ -17,19 +17,19 @@ claude
 Inside Claude Code:
 
 ```text
-/hmigbot:a2h-init        # auto-detect + confirm paths (first run only)
-/hmigbot:a2h-build       # verify HarmonyOS compiles
-/hmigbot:a2h-run         # spec → plan → execute → verify → retrospect (pauses between stages, auto-resumes)
-/hmigbot:a2h-build       # compile the migrated code
+/hmigbot:i2h-init        # auto-detect + confirm paths (first run only)
+/hmigbot:i2h-build       # verify HarmonyOS compiles
+/hmigbot:i2h-run         # spec → plan → execute → verify → retrospect (pauses between stages, auto-resumes)
+/hmigbot:i2h-build       # compile the migrated code
 ```
 
-Use the `-zh` variant of any command for Chinese output (`/hmigbot:a2h-init-zh`, etc.). The language you pick at `/a2h-init` time is written into `.migbot/config.json:language` and a `CLAUDE.md` marker block, so subsequent runs of the English commands still render output in the chosen language.
+Use the `-zh` variant of any command for Chinese output (`/hmigbot:i2h-init-zh`, etc.). The language you pick at `/i2h-init` time is written into `.migbot/config.json:language` and a `CLAUDE.md` marker block, so subsequent runs of the English commands still render output in the chosen language.
 
-Per-stage skills also trigger via natural language ("generate spec", "a2h-spec <feature>").
+Per-stage skills also trigger via natural language ("generate spec", "i2h-spec <feature>").
 
 ## Troubleshooting
 
 - `hvigorw not executable` → `chmod +x <harmony-root>/hvigorw`.
-- `harmonyos path missing` or `android path missing` → run `/hmigbot:a2h-init` again to fix.
+- `harmonyos path missing` or `iOS path missing` → run `/hmigbot:i2h-init` again to fix.
 
 Full reference: [DEVELOPER](./DEVELOPER.md).

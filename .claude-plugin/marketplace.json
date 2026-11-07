@@ -9,6 +9,11 @@
       "name": "hmigbot-ios",
       "source": "./migbot",
       "description": "iOS-to-ArkTS (HarmonyOS) migration toolkit: i2h-spec → i2h-plan → i2h-execute → i2h-verify → i2h-retrospect, with Claude Code skills, agents and commands."
+    },
+    {
+      "name": "hmigbot-android-reference",
+      "source": "./legacy-android",
+      "description": "Legacy Android-to-HarmonyOS reference skills; opt-in only and separate from the iOS plugin."
     }
   ]
 }
