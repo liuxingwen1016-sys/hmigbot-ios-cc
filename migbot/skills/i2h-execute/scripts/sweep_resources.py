@@ -492,5 +492,49 @@ def main():
         print("⚠️  部分资源转换失败")
         return 0  # 不阻断执行
 
-if __name__ == '__main__':
-    sys.exit(main())
+
+# SVG validation API (kept separate from the legacy resource converter above).
+def svg_problems(path):
+    import re as _re, xml.etree.ElementTree as _ET
+    p=Path(path); text=p.read_text(encoding='utf-8',errors='ignore'); problems=[]
+    try: _ET.fromstring(text)
+    except Exception as exc: return [f'parse_error:{exc}']
+    if _re.search(r'<(?:/?)[A-Za-z_][\w.-]*:',text): problems.append('svg_namespace_prefixed')
+    if _re.search(r'@(?:drawable|dimen|color|string)/',text): problems.append('ios_remnant')
+    return problems
+
+def _fix_svg(path):
+    import re as _re
+    text=Path(path).read_text(encoding='utf-8'); text=_re.sub(r'xmlns:ns0=', 'xmlns=', text); text=text.replace('ns0:',''); Path(path).write_text(text,encoding='utf-8')
+
+def main(argv=None):
+    parser=argparse.ArgumentParser(); parser.add_argument('--project-root',required=True); parser.add_argument('--ios-root'); parser.add_argument('--output-json'); parser.add_argument('--output'); parser.add_argument('--all-svg',action='store_true'); parser.add_argument('--fix-svg',action='store_true')
+    ns=parser.parse_args(argv); root=Path(ns.project_root); media=root/'entry/src/main/resources/base/media'; media.mkdir(parents=True,exist_ok=True)
+    ets='\n'.join(p.read_text(encoding='utf-8',errors='ignore') for p in (root/'entry/src/main/ets').rglob('*.ets')) if (root/'entry/src/main/ets').exists() else ''
+    refs=set(__import__('re').findall(r'app\.media\.([A-Za-z0-9_]+)',ets)); invalid=[]; warnings=[]
+    for p in sorted(media.glob('*.svg')):
+        probs=svg_problems(p); referenced=p.stem in refs
+        if ns.fix_svg and any(x.startswith('svg_namespace_prefixed') for x in probs): _fix_svg(p); probs=svg_problems(p)
+        if probs:
+            row={'file':p.relative_to(root).as_posix(),'problems':probs}
+            if referenced:
+                invalid.append(row)
+            elif ns.all_svg:
+                # A renderer-level namespace/parse failure is unsafe even when
+                # no current page references the asset; unresolved source
+                # resource remnants are recorded as an unreferenced warning.
+                if any(x.startswith(('svg_namespace_prefixed', 'parse_error')) for x in probs):
+                    invalid.append(row)
+                else:
+                    warnings.append(row)
+    report={'invalid_svg':invalid,'svg_warnings_unreferenced':warnings,'status':'FAIL' if invalid else 'PASS'}
+    out=ns.output_json or ns.output
+    if out:
+        out_path = Path(out)
+        if not out_path.is_absolute():
+            out_path = root / out_path
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
+    return 1 if invalid else 0
+
+if __name__ == '__main__': sys.exit(main())
