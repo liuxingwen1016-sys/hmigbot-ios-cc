@@ -19,6 +19,9 @@
 - 安装器现在提供可移植 `.migbot/bin/i2h`、`i2h-tool`、`i2h-bootstrap`，并保留用户自定义 `.claude/skills`。
 - i2h-spec/plan 已有可执行的 UI/资源证据、`res-index`、schema-2 delivery、源码布局和所有权门禁；资源 worker 支持变体、主题、PDF/SVG、重复文件名和多语言记录。
 - 调度器已支持依赖就绪派发、宿主并发上限和失败重取；尚未接入主 pipeline。
+- `i2h-execute/scripts/` 已完成 launcher 与可导入 Python 实现拆分；标准 `unittest discover` 现为 93/93 通过，打包二进制仍由薄 launcher 优先调用。
+- 历史 Android `a2h-*` / `android-*` Skill、旧增量命令、Android 代理和 `a2h` runtime 已移到独立 `legacy-android` 插件；主 `migbot` 目录不再暴露这些入口。
+- 新增 `fixtures/e2e-ios-hybrid` 与 `tests/test_e2e_i2h_fixture.py`，覆盖 SwiftUI/UIKit 混合输入、资源哈希、delivery 所有权、五阶段 marker 恢复和 static-only/DEFERRED 边界。
 
 ## 工程结构理解
 
@@ -38,7 +41,7 @@ hmigbot-ios
 
 1. 旧安装结果缺少 `.migbot/bin/i2h` 和 `.migbot/bin/i2h-tool`；当前已由安装器补齐，需保留 smoke test 防回归。
 2. `i2h-run` 的旧 JSON 完成标记已在本轮改为读取 indexed-v1 计划的 `complete.txt`，仍需补端到端 marker 测试。
-3. execute 测试导入 launcher 会触发二进制替换；测试依赖的 `stage1_contract`、`stage1_wiring_checks` 等源码模块未随仓库提供。
+3. execute 测试导入 launcher 的问题已解决；`scripts/lib/` 提供源码实现，`stage1_contract`、`stage1_wiring_checks` 等兼容导入模块已纳入仓库。
 4. execute 的 `build-dependencies.json` 依赖已补齐，但完整 Stage-1 仍需要真实 HarmonyOS 工程验证。
 5. verify 现在可以读取最小 iOS `gate_ledger.py`；完整 detector registry 和真实证据校验仍待扩展。
 6. retrospect 和多个根目录历史文档硬编码 Cuike 示例数据，把估算值写成了通用结果。
@@ -47,10 +50,10 @@ hmigbot-ios
 
 ## 推荐下一步
 
-### P0：恢复可测试执行链
+### P0：统一产物契约
 
-- 把 execute 的业务实现从打包 launcher 拆到可导入的 `lib/`，保留 launcher 作为薄 CLI。
-- 安装后自动执行三个入口的存在性、help、最小 fixture smoke test。
+- 以 i2h-plan 的 indexed-v1 Markdown 为唯一计划格式，并把 execute/retrospect 的旧路径解析改为兼容读取。
+- 安装后继续执行三个入口的存在性、help、最小 fixture smoke test。
 
 ### P0：统一产物契约
 
@@ -58,11 +61,10 @@ hmigbot-ios
 - 更新 `i2h-run` 的恢复标记，并让每个阶段只使用一个完成标记。
 - 对不存在的 helper 使用明确的 DEFERRED 状态，禁止静默跳过。
 
-### P1：恢复可测试性
+### P1：扩大可测试性
 
-- 把 launcher 变成薄 CLI，把业务实现放在可导入模块。
-- 补齐或删除测试依赖的缺失模块。
-- 在 macOS ARM64 和 Windows x64 上分别跑同一套 fixture。
+- 在 macOS ARM64 和 Windows x64 上分别跑同一套 execute/fixture。
+- 将 static-only fixture 接入 CI，并把真实设备、DevEco 编译和截图作为显式 DEFERRED/实机验收边界。
 
 ### P1：真实项目验收
 

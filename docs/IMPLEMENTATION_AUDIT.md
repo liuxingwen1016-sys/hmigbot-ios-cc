@@ -13,8 +13,8 @@
 | 问题 | 证据 | 影响 | 修复方案 |
 |---|---|---|---|
 | 运行时入口缺失（已修复） | 旧版安装结果只有 `.migbot/bin/scripts/`；本轮已新增可移植 `migbot/bin/i2h`、`i2h-tool`、`i2h-bootstrap` 并由安装器复制/校验 | 旧问题会导致 `/i2h-build`、各阶段 `mark-stage`、`count-lines` 无法执行；当前已有本地事实和阶段 marker | 保留 Python 入口作为 Claude Code 兼容真源；安装 smoke test 必须继续覆盖三个入口 |
-| 流水线完成标记曾经不一致，已完成文档修正 | 本轮已将 `migbot/commands/i2h-run*.md` 改为读取 `spec/baseline/plans/complete.txt`；仍缺端到端 marker 测试 | 修正前会重复执行 plan 或误判阶段未完成；当前风险转为“没有回归测试保护” | 保留 indexed-v1 Markdown 为唯一格式，给五个阶段各写最小 completion-marker fixture，并在 CI 验证恢复逻辑 |
-| execute 测试不可导入 | `migbot/skills/i2h-execute/scripts/*.py` 多数是导向 `_entry.bin` 的 launcher；测试直接 `import build_writeback`、`stage1_*`，会触发进程替换；`stage1_contract`、`stage1_wiring_checks` 等模块不在源码目录 | 标准 unittest 无法启动，无法证明门禁脚本行为 | 把业务实现放入 `lib/` 或 `impl/` 可导入模块，launcher 只负责 CLI；把测试依赖模块纳入源码；CI 同时测源码模式和打包模式 |
+| 流水线完成标记曾经不一致，已完成文档修正 | `migbot/commands/i2h-run*.md` 使用 indexed-v1 marker；`tests/test_e2e_i2h_fixture.py` 已覆盖五阶段 marker、前置依赖和恢复顺序 | 当前本地恢复语义有回归保护；完整 Claude 编排仍需 CI/真实工程验证 | 保留 indexed-v1 Markdown 为唯一格式，将 fixture 接入 CI，并为旧路径提供显式兼容解析 |
+| execute 测试不可导入（已修复） | `i2h-execute/scripts/lib/` 现提供可导入实现，顶层脚本变为 import-safe launcher shim；`stage1_contract`、`stage1_wiring_checks` 等兼容模块已纳入源码 | 标准 unittest 已可启动并验证门禁行为；真实打包二进制仍需跨平台运行 | 保留 launcher 的 bundled-binary 优先策略；CI 在 macOS ARM64/Windows x64 复跑同一套源码测试和最小 smoke |
 
 ## P1：完成主链前必须处理
 
@@ -35,9 +35,9 @@
 | README_CN 引用不存在命令 | 旧版列出 `/i2h-privacy` 和 `/i2h-privacy-zh`，仓库没有对应 command | 新用户会执行失败 | 已从当前 README_CN 移除；若需要隐私检查，新增独立 Skill 后再加入入口 |
 | retrospect 模板含 Cuike 硬编码 | `migbot/skills/i2h-retrospect/SKILL.md` 的代码规模、页面数、自动转换率和时间是固定示例 | 任意项目都会生成虚假报告 | 全部改为从 manifest、git diff、编译日志和 verify 报告读取；无数据时输出 `UNKNOWN/DEFERRED` |
 | 历史报告把估算写成事实 | `CUIKE_*`、`FINAL_*`、`docs/i2h-*-production-ready.md` 中大量使用“100%”“生产级”“预计达成” | 评估结果失真 | 用“历史原型估算”“设计目标”“已验证”三种标签；禁止无证据的通用指标 |
-| 缺少跨平台 CI 和最小 fixture | 当前没有看到覆盖 install → spec → plan → execute → verify 的可重复 CI | 回归只能靠人工和模型记忆 | 增加最小 SwiftUI、UIKit 混合、资源和失败门禁 fixture；在 macOS ARM64/Windows x64 运行同一套命令 |
-| 安装白名单仍混入 Android 命名 | `migbot-install.py` 仍安装 `a2h-join` 等旧命名工具 | 语义混乱，后续维护者难以知道是否平台相关 | 将真正通用的工具改成中性命名；保留兼容别名时在 manifest 中标注来源和适用范围 |
-| 直接 plugin-dir 会发现旧 Android skills | Claude Code 会扫描 `migbot/skills/` 下所有 `SKILL.md`；安装器白名单已主要限制为 i2h/iOS/ArkTS，但插件目录仍包含 `a2h-*`/`android-*` 历史 skill | iOS 迁移自然语言触发时可能被旧 Android skill 抢路由 | 后续拆分 `hmigbot-ios` 与 Android 参考包，或使用 Claude Code 支持的显式组件清单；当前保留目录是为了不破坏旧 references |
+| 缺少跨平台 CI（最小 fixture 已补） | `tests/test_e2e_i2h_fixture.py` 覆盖 SwiftUI/UIKit 混合输入、资源哈希、delivery ownership、五阶段 marker 恢复和 static-only/DEFERRED 边界；尚未接入 CI | 本地可回归静态契约，真实设备和 DevEco 行为仍需实机 | 将 fixture 接入 CI，并在 macOS ARM64/Windows x64 运行同一套命令；设备/编译缺失只能记录 DEFERRED |
+| 安装白名单仍混入 Android 命名（已修复） | 安装器已移除 `a2h-join`；主插件只复制 i2h/iOS/ArkTS 入口，旧 a2h runtime 随 legacy plugin 保存 | 新安装不再把历史 Android 工具带入 iOS 项目 | 继续对通用 ArkTS 能力中的 Android 语境做逐项中性化，避免 description 抢路由 |
+| 直接 plugin-dir 会发现旧 Android skills（已修复） | 17 个 `a2h-*`/`android-*` Skill、旧增量命令、Android agents 与 `a2h` runtime 已移至根目录 `legacy-android` sibling plugin；主 `migbot/skills` 不再包含这些目录 | iOS 自然语言路由不会加载历史 Android pipeline；需要旧链时必须显式加载兼容插件 | 主插件与 legacy 插件分别执行 `claude plugin validate --profile directory --strict`；ArkTS 通用能力中仍有少量 Android 语境参考，后续按 iOS 证据模型逐项中性化 |
 
 ## 已执行的验证
 
@@ -46,7 +46,7 @@
 - `python3 -m unittest discover -s migbot/skills/i2h-spec/scripts/tests`：2 个 gate-ledger 契约测试通过；`i2h-plan` 契约测试 5 个通过；资源转换测试 2 个通过；调度器测试 3 个通过。
 - `ios_static_analyzer.py` 在 `CuikeHarmony` 上运行成功，得到 0 ERROR、3 WARN；这证明脚本能运行，不证明迁移结果完整。
 - `ios_config_parser.py` 在 Cuike iOS 项目上运行成功，能读取 Info.plist 和 AppIcon；Bundle ID/版本仍是构建变量，不能直接当作最终身份通过。
-- execute 测试入口仍未修复：`unittest discover` 会被 `build_writeback.py` 等打包 launcher 的参数解析接管；这仍是下一轮必须拆分 `lib/` 实现与 CLI launcher 的 P0。
+- execute 测试入口已修复：`python3 -m unittest discover -s migbot/skills/i2h-execute/scripts/tests -p 'test_*.py'` 当前 93/93 通过；离线 E2E fixture 也已通过。
 
 ## 修复验收顺序
 
