@@ -31,13 +31,27 @@ def build_scope_from_inventory(root: Path | str, value: str | None) -> dict[str,
     for unit in inventory.get("units", []):
         pages = []
         for state in unit.get("required_states", []):
+            state_id = state.get("state_id")
             page = {
                 "page_id": unit.get("page_id"),
-                "state_id": state.get("state_id"),
+                "state_id": state_id,
                 "output_file": (unit.get("output") or {}).get("file"),
             }
+            evidence_state_id = state.get("evidence_state_id") or state_id
+            if evidence_state_id == state_id and state_id == "default":
+                meta_path = root / "spec" / "baseline" / "ui-snapshots" / str(page["page_id"]) / "meta.json"
+                try:
+                    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                    by_state = meta.get("runtime_evidence_by_state")
+                    if isinstance(by_state, dict) and "normal" in by_state and "default" not in by_state:
+                        evidence_state_id = "normal"
+                except (OSError, json.JSONDecodeError):
+                    pass
+            page["evidence_state_id"] = evidence_state_id
             try:
-                page["baseline"] = baseline(root, page)
+                evidence_page = dict(page)
+                evidence_page["state_id"] = evidence_state_id
+                page["baseline"] = baseline(root, evidence_page)
             except (OSError, ValueError, json.JSONDecodeError) as exc:
                 page["baseline"] = {"status": "BLOCKED", "reason": str(exc)}
                 failures.append({"unit_id": unit.get("unit_id"), "page_id": page.get("page_id"), "state_id": page.get("state_id"), "reason": str(exc)})
