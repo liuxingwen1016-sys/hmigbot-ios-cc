@@ -718,15 +718,14 @@ done
 
 ## 8. 完成标记
 
-创建 `spec/baseline/spec-complete.txt`：
-
-```
-i2h-spec completed at {ISO 8601 时间戳}
-UI pages: {数量}
-Features: {数量}
-Findings: {blocking 数量} blocking, {warning 数量} warnings, {deferred 数量} deferred
-Next: Run /i2h-plan to generate execution plan
-```
+创建 `spec/baseline/spec-complete.txt` 作为 **schema-2 JSON marker**。必须
+调用 [marker-contract.md](../i2h-plan/references/marker-contract.md) 中的
+`marker_contract.write_marker()`，传入 `stage="i2h-spec"`、当前
+`target_input_sha256` 和实际生成的 spec 产物（至少
+`spec/.i2h/resources-inventory.json`、`spec/baseline/ui-manifest.md`、
+`spec/baseline/feature-index.md` 中存在的文件）。调用必须在所有产物写完
+之后执行；不要再写 `i2h-spec completed at ...` 纯文本，也不要把 marker
+自身放入 `artifact_paths`。
 
 ---
 

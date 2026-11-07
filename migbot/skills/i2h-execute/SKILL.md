@@ -1157,7 +1157,16 @@ ${componentFiles.map(f => `- ${f}`).join('\n')}
 
 ### Stage 5 完成标记
 
-创建 `spec/execution/stage5-complete.txt`
+创建 `spec/execution/stage5-complete.txt` 作为 **schema-2 JSON marker**。
+在 `spec/migration-report.md` 和
+`spec/execution/ui-state-ownership.json` 最终写入后，按照
+[i2h-plan 的 marker-contract.md](../i2h-plan/references/marker-contract.md)
+调用 `marker_contract.write_marker()`，传入 `stage="i2h-execute"`、当前
+`target_input_sha256` 和上述报告/receipt 的实际路径。必须保留
+`mode="static-only"` 及报告中的 `DEFERRED` 证据（如果没有真实构建/设备），
+不要创建纯文本完成标记，也不要把 marker 自身作为 artifact。Stage 0–4
+的内部记录可以继续使用各自的执行日志；`/i2h-run` 只消费 Stage 5 的
+canonical marker 加 migration report。
 
 ---
 

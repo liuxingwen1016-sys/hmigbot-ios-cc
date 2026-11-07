@@ -51,7 +51,7 @@ cd /path/to/hmigbot-ios
 
 需要 Python 3.8+、Claude Code、带 `.xcodeproj` 或 `Package.swift` 的 iOS 项目，以及可供 DevEco Studio 使用的 HarmonyOS 工程。设备验证还需要 Xcode 工具、`hdc` 和实际设备或模拟器。
 
-安装后使用 `/i2h-init` 和 `/i2h-run` 作为主要入口。`/i2h-build` 当前仍引用仓库没有安装的运行时可执行文件，使用前请先看实现审计。
+安装后使用 `/i2h-init` 和 `/i2h-run` 作为主要入口。`/i2h-build` 使用已安装的 `i2h-tool` 辅助程序；设备和 DevEco 检查仍需要真实运行环境。
 
 ## 目录
 
@@ -85,3 +85,7 @@ hmigbot-ios/
 - [`docs/IMPLEMENTATION_AUDIT.md`](docs/IMPLEMENTATION_AUDIT.md)：当前问题、证据和修复顺序。
 - [`docs/current/UNDERSTANDING.md`](docs/current/UNDERSTANDING.md)：原版架构理解。
 - [`docs/current/TECHNICAL_DECISION.md`](docs/current/TECHNICAL_DECISION.md)：Swift 解析技术决策。
+
+## CI 契约检查
+
+GitHub Actions 会在 Ubuntu、macOS 和 Windows 上运行离线 SwiftUI/UIKit fixture、i2h-execute 测试、spec/plan 契约测试和 Python 编译检查。fixture 将设备与 DevEco 检查记录为 `DEFERRED`，不会伪造运行时证据。

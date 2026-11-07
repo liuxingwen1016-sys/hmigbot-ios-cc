@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -44,6 +45,26 @@ class InstallRuntimeTests(unittest.TestCase):
             custom.write_text("---\nname: my-custom-skill\n---\n")
             subprocess.run([str(INSTALLER), "--project", str(project)], check=True, cwd=ROOT, capture_output=True)
             self.assertTrue(custom.is_file())
+
+    def test_installed_pipeline_resume_imports_shared_marker_contract(self):
+        """The installed skill must resolve helpers from the project .migbot tree."""
+        with tempfile.TemporaryDirectory() as temp:
+            project = Path(temp) / "harmony"
+            project.mkdir()
+            subprocess.run([str(INSTALLER), "--project", str(project)], check=True, cwd=ROOT, capture_output=True)
+            resume = project / ".claude/skills/i2h-plan/scripts/pipeline_resume.py"
+            self.assertTrue(resume.is_file())
+            completed = subprocess.run(
+                [sys.executable, str(resume), "--project-root", str(project)],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            # An empty project is incomplete, but a missing marker_contract
+            # import would fail before emitting the deterministic JSON status.
+            self.assertEqual(completed.returncode, 1, completed.stderr)
+            status = json.loads(completed.stdout.strip().splitlines()[-1])
+            self.assertEqual(status["resume_stage"], "i2h-spec")
 
 
 if __name__ == "__main__":

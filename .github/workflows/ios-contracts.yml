@@ -1,0 +1,96 @@
+name: iOS migration contracts
+
+on:
+  push:
+    paths:
+      - 'migbot/**'
+      - 'fixtures/**'
+      - 'tests/**'
+      - '.github/workflows/ios-contracts.yml'
+  pull_request:
+    paths:
+      - 'migbot/**'
+      - 'fixtures/**'
+      - 'tests/**'
+      - '.github/workflows/ios-contracts.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static-contracts:
+    name: static contracts (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14, windows-latest]
+        python: ['3.11']
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Run offline iOS E2E fixture
+        run: python tests/test_e2e_i2h_fixture.py -v
+
+      - name: Run marker schema and hash tests
+        run: python -m unittest tests/test_marker_contract.py -v
+
+      - name: Run install and pipeline import smoke tests
+        run: python -m unittest migbot.scripts.test_install_runtime -v
+
+      - name: Run i2h-execute contract tests
+        run: python -m unittest discover -s migbot/skills/i2h-execute/scripts/tests -p "test_*.py" -v
+
+      - name: Run spec and plan contract tests
+        run: |
+          python -m unittest discover -s migbot/skills/i2h-spec/scripts/tests -p "test_*.py" -v
+          python -m unittest discover -s migbot/skills/i2h-plan/scripts/tests -p "test_*.py" -v
+
+      - name: Compile Python sources
+        shell: bash
+        run: |
+          for dir in \
+            migbot/skills/i2h-spec/scripts \
+            migbot/skills/i2h-plan/scripts \
+            migbot/skills/i2h-execute/scripts \
+            migbot/skills/i2h-verify/scripts \
+            migbot/skills/i2h-retrospect/scripts; do
+            if [ -d "$dir" ]; then python -m compileall -q "$dir"; fi
+          done
+
+  plugin-manifests:
+    name: Claude plugin manifests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Validate JSON manifests
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          for path in [
+              Path('.claude-plugin/marketplace.json'),
+              Path('migbot/.claude-plugin/plugin.json'),
+              Path('legacy-android/.claude-plugin/plugin.json'),
+          ]:
+              json.loads(path.read_text(encoding='utf-8'))
+              print(f'validated {path}')
+          PY
+      - name: Verify plugin CLI when available
+        shell: bash
+        run: |
+          if command -v claude >/dev/null 2>&1; then
+            claude plugin validate migbot --profile directory --strict
+            claude plugin validate legacy-android --profile directory --strict
+            claude plugin validate .
+          else
+            echo 'Claude Code CLI is not installed on this runner; JSON and fixture checks remain authoritative.'
+          fi

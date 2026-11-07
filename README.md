@@ -54,7 +54,7 @@ cd /path/to/hmigbot-ios
 
 Prerequisites are Python 3.8+, Claude Code, an iOS project containing an `.xcodeproj` or `Package.swift`, and a HarmonyOS project prepared for DevEco Studio. Device checks additionally require Xcode tools, `hdc`, and the relevant device or simulator.
 
-After installation, `/i2h-init` and `/i2h-run` are the intended workflow entry points. The `/i2h-build` command currently references runtime executables that are not installed by this repository; see the audit before relying on it.
+After installation, `/i2h-init` and `/i2h-run` are the intended workflow entry points. `/i2h-build` uses the installed `i2h-tool` helper; device and DevEco checks remain explicit runtime prerequisites.
 
 ## Repository layout
 
@@ -88,3 +88,7 @@ See:
 - [`docs/IMPLEMENTATION_AUDIT.md`](docs/IMPLEMENTATION_AUDIT.md) for current defects and concrete repair plans.
 - [`docs/current/UNDERSTANDING.md`](docs/current/UNDERSTANDING.md) for the original architecture rationale.
 - [`docs/current/TECHNICAL_DECISION.md`](docs/current/TECHNICAL_DECISION.md) for Swift parsing decisions.
+
+## CI contract checks
+
+GitHub Actions runs the offline SwiftUI/UIKit fixture, i2h-execute tests, spec/plan contract tests and Python compilation on Ubuntu, macOS and Windows. The fixture records device and DevEco checks as `DEFERRED` and never fabricates runtime evidence.

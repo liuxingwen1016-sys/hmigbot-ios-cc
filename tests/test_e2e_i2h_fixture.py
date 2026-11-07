@@ -29,6 +29,9 @@ import ui_delivery  # noqa: E402
 import ui_evidence  # noqa: E402
 import ui_state_ownership  # noqa: E402
 import source_layout  # noqa: E402
+sys.path.insert(0, str(REPO / "migbot/bin/scripts/pipeline"))
+import marker_contract  # noqa: E402
+import pipeline_resume  # noqa: E402
 
 
 STAGES = (
@@ -52,69 +55,34 @@ def _write(path: Path, value: str | dict) -> None:
         path.write_text(value, encoding="utf-8")
 
 
-def _marker(path: Path, stage: str, target_hash: str) -> None:
-    _write(path, {
-        "schema_version": 1,
-        "stage": stage,
-        "status": "PASS",
-        "mode": "static-only",
-        "fixture": True,
-        "inputs_sha256": target_hash,
-    })
-
-
-def _marker_valid(root: Path, path: Path, expected_stage: str, target_hash: str) -> bool:
-    full = root / path
-    if not full.is_file():
-        return False
-    try:
-        payload = json.loads(full.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return False
-    return (
-        payload.get("schema_version") == 1
-        and payload.get("stage") == expected_stage
-        and payload.get("status") == "PASS"
-        and payload.get("mode") == "static-only"
-        and payload.get("fixture") is True
-        and payload.get("inputs_sha256") == target_hash
+def _marker(root: Path, path: Path, stage: str, target_hash: str, artifacts=()) -> None:
+    marker_contract.write_marker(
+        path,
+        stage,
+        artifacts,
+        target_hash,
+        root=root,
+        fixture=True,
     )
 
 
-def next_stage(root: Path, target_hash: str) -> str:
-    """Return the first incomplete stage using the same order as /i2h-run."""
-    checks = (
-        ("i2h-spec", (STAGES[0][1],)),
-        ("i2h-plan", (STAGES[1][1],)),
-        ("i2h-execute", (STAGES[2][1], STAGES[2][2])),
-        ("i2h-verify", (STAGES[3][1],)),
-        ("i2h-retrospect", (STAGES[4][1],)),
-    )
-    for stage, paths in checks:
-        marker_ok = _marker_valid(root, paths[0], stage, target_hash)
-        # Execute and verify reports are content prerequisites, not JSON stage
-        # markers. They must explicitly state the static-only boundary.
-        report_ok = True
-        if stage == "i2h-execute":
-            report = root / paths[1]
-            text = report.read_text(encoding="utf-8") if report.is_file() else ""
-            report_ok = "static-only" in text and "DEFERRED" in text
-        elif stage == "i2h-verify":
-            report = root / paths[0]
-            text = report.read_text(encoding="utf-8") if report.is_file() else ""
-            marker_ok = report.is_file()
-            report_ok = "static-only" in text and "CHECK-1" in text
-        if not marker_ok or not report_ok:
-            return stage
-    return "complete"
+def next_stage(root: Path, target_hash: str | None = None) -> str:
+    """Return the first incomplete stage using the real /i2h-run checker."""
+    return pipeline_resume.pipeline_status(root)["resume_stage"]
 
 
 def _make_reports(harmony: Path, target_hash: str) -> None:
     """Write truthful static-only execute/verify/retrospect artifacts."""
     for index in range(6):
-        _marker(harmony / f"spec/execution/stage{index}-complete.txt", f"i2h-execute-stage{index}", target_hash)
-    # The stage5 marker consumed by /i2h-run has a distinct producer value.
-    _marker(harmony / "spec/execution/stage5-complete.txt", "i2h-execute", target_hash)
+        brief = harmony / f"spec/execution/briefs/stage{index}-fixture.md"
+        _write(brief, f"# Stage {index} fixture brief\n\nmode: static-only\n")
+        _marker(
+            harmony,
+            harmony / f"spec/execution/stage{index}-complete.txt",
+            f"i2h-execute-stage{index}",
+            target_hash,
+            [brief],
+        )
     _write(harmony / "spec/execution/briefs/stage1-spec-understanding.md",
            "# Stage 1 fixture brief\n\nmode: static-only\n")
     _write(harmony / "spec/execution/briefs/stage2-feature-design.md", "# Stage 2 fixture brief\n")
@@ -145,7 +113,27 @@ mode: `static-only`
 The static source/resource contracts passed. Runtime and DevEco build checks
 remain `DEFERRED`; this report does not claim a device or compiler result.
 """)
-    _marker(harmony / "spec/retrospect-complete.txt", "i2h-retrospect", target_hash)
+    # The stage5 marker is written after all artifacts so its content hashes
+    # bind the report and generated ArkTS pages to this execution.
+    _marker(
+        harmony,
+        harmony / "spec/execution/stage5-complete.txt",
+        "i2h-execute",
+        target_hash,
+        [
+            "spec/migration-report.md",
+            "spec/execution/ui-state-ownership.json",
+            "entry/src/main/ets/pages/HomeView.ets",
+            "entry/src/main/ets/pages/DetailViewController.ets",
+        ],
+    )
+    _marker(
+        harmony,
+        harmony / "spec/retrospect-complete.txt",
+        "i2h-retrospect",
+        target_hash,
+        ["docs/retrospect-report-fixture.md"],
+    )
 
 
 def run_fixture() -> dict:
@@ -195,8 +183,20 @@ def run_fixture() -> dict:
         assert ownership["status"] == "PASS", ownership
         _write(harmony / "spec/execution/ui-state-ownership.json", ownership)
 
-        _marker(harmony / "spec/baseline/spec-complete.txt", "i2h-spec", target_hash)
-        _marker(harmony / "spec/baseline/plans/complete.txt", "i2h-plan", target_hash)
+        _marker(
+            harmony,
+            harmony / "spec/baseline/spec-complete.txt",
+            "i2h-spec",
+            target_hash,
+            ["spec/.i2h/resources-inventory.json"],
+        )
+        _marker(
+            harmony,
+            harmony / "spec/baseline/plans/complete.txt",
+            "i2h-plan",
+            target_hash,
+            ["spec/baseline/ui-delivery-approved.json"],
+        )
         assert next_stage(harmony, target_hash) == "i2h-execute"
         _make_reports(harmony, target_hash)
         assert next_stage(harmony, target_hash) == "complete"
@@ -208,6 +208,18 @@ def run_fixture() -> dict:
         (harmony / "spec/migration-report.md").unlink()
         assert next_stage(harmony, target_hash) == "i2h-execute"
         _write(harmony / "spec/migration-report.md", "# restored\nmode: static-only\nbuild: DEFERRED\n")
+        _marker(
+            harmony,
+            harmony / "spec/execution/stage5-complete.txt",
+            "i2h-execute",
+            target_hash,
+            [
+                "spec/migration-report.md",
+                "spec/execution/ui-state-ownership.json",
+                "entry/src/main/ets/pages/HomeView.ets",
+                "entry/src/main/ets/pages/DetailViewController.ets",
+            ],
+        )
         assert next_stage(harmony, target_hash) == "complete"
         return {"target_input_sha256": target_hash, "views": len(evidence["views"]), "root": fixture}
     finally:

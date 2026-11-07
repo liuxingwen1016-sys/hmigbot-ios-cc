@@ -560,14 +560,12 @@ Plan 生成完毕后，必须执行覆盖率校验，确保所有功能都被 pl
 
 ## 9. 完成标记
 
-创建 `spec/baseline/plans/complete.txt`:
-
-```
-i2h-plan completed at {ISO 8601}
-UI batches: {M}
-Feature groups: {N}
-Estimated time: {minutes}
-```
+创建 `spec/baseline/plans/complete.txt` 作为 **schema-2 JSON marker**。按照
+[marker-contract.md](./references/marker-contract.md) 调用
+`marker_contract.write_marker()`，传入 `stage="i2h-plan"`、当前
+`target_input_sha256`，以及最终 plan 和已审批的 schema-2 UI delivery JSON
+（文件必须已落盘）。不要再写 `i2h-plan completed at ...` 纯文本；marker
+本身不能作为 artifact。
 
 ---
 

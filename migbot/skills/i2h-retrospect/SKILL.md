@@ -338,7 +338,12 @@ hos_files=$(find "$HOS_PATH/entry/src/main/ets" -name "*.ets" | wc -l)
 
 ## 5. 完成标记
 
-创建 `spec/retrospect-complete.txt`
+创建 `spec/retrospect-complete.txt` 作为 **schema-2 JSON marker**。在最终
+`docs/retrospect-report*.md` 写完后，按照
+[marker-contract.md](../i2h-plan/references/marker-contract.md) 调用
+`marker_contract.write_marker()`，传入 `stage="i2h-retrospect"`、当前
+`target_input_sha256` 和最终回顾报告路径。不要再写纯文本
+`i2h-retrospect completed`，也不要把 marker 自身作为 artifact。
 
 ## 6. 最终输出
 

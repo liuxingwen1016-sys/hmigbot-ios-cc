@@ -174,13 +174,12 @@ spec/
 
 ### spec-complete.txt 格式
 
-```
-i2h-spec completed at 2024-11-03T15:30:00Z
-UI pages: 11
-Features: 5
-Findings: 0 blocking, 2 deferred
-Next: Run /i2h-plan to generate execution plan
-```
+`spec-complete.txt` 使用 schema-2 JSON，而不是历史的纯文本 sentinel。完成
+所有 spec 产物后，按 [marker-contract.md](../../i2h-plan/references/marker-contract.md)
+调用 `marker_contract.write_marker()`，写入 `stage="i2h-spec"`、
+`target_input_sha256`、实际 artifact 的 SHA-256 和 `content_sha256`。历史
+工程中出现的 `i2h-spec completed at ...` 只作为兼容诊断，不能作为新运行的
+完成证据。
 
 ## 5. 产物验证
 
