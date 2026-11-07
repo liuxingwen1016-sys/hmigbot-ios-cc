@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# i2h-tool — portable build/path helper for the iOS migration plugin.
+# It intentionally has no Android or emulator prerequisite.  Claude Code can
+# run `validate` before migration and `build` after generation.
+set -uo pipefail
+
+CFG=".migbot/config.json"
+
+read_field() {
+  python3 - "$CFG" "$1" <<'PY'
+import json, sys
+try:
+    data = json.load(open(sys.argv[1], encoding="utf-8"))
+    value = data.get(sys.argv[2], "")
+    print(value if isinstance(value, str) else "")
+except (OSError, ValueError, TypeError):
+    print("")
+PY
+}
+
+resolve_path() {
+  python3 - "$1" <<'PY'
+import os, pathlib, sys
+p = pathlib.Path(os.path.expanduser(sys.argv[1]))
+print(p if p.is_absolute() else pathlib.Path.cwd() / p)
+PY
+}
+
+cmd_validate() {
+  if [[ ! -f "$CFG" ]]; then
+    echo '{"ok":false,"failures":[".migbot/config.json missing"]}'
+    return 1
+  fi
+  local ios harmonyos hvigorw ios_root harmony_root hvigorw_path
+  ios="$(read_field ios)"
+  harmonyos="$(read_field harmonyos)"
+  hvigorw="$(read_field hvigorw)"
+  local failures=()
+  if [[ -z "$ios" ]]; then
+    failures+=("iOS path unset")
+  else
+    ios_root="$(resolve_path "$ios")"
+    [[ -d "$ios_root" ]] || failures+=("iOS path missing: $ios_root")
+  fi
+  if [[ -z "$harmonyos" ]]; then
+    failures+=("HarmonyOS path unset")
+  else
+    harmony_root="$(resolve_path "$harmonyos")"
+    [[ -d "$harmony_root" ]] || failures+=("HarmonyOS path missing: $harmony_root")
+    if [[ -n "$harmony_root" && -z "$hvigorw" ]]; then
+      if [[ -x "$harmony_root/hvigorw" ]]; then
+        :
+      elif [[ -f "$harmony_root/hvigorw.bat" ]]; then
+        :
+      else
+        failures+=("hvigorw missing or not executable in: $harmony_root")
+      fi
+    elif [[ -n "$hvigorw" ]]; then
+      hvigorw_path="$(resolve_path "$hvigorw")"
+      [[ -f "$hvigorw_path" ]] || failures+=("hvigorw missing: $hvigorw_path")
+    fi
+  fi
+  if (( ${#failures[@]} == 0 )); then
+    echo '{"ok":true}'
+    return 0
+  fi
+  python3 - "${failures[@]}" <<'PY'
+import json, sys
+print(json.dumps({"ok": False, "failures": sys.argv[1:]}, ensure_ascii=False))
+PY
+  return 1
+}
+
+cmd_build() {
+  if [[ ! -f "$CFG" ]]; then
+    echo "i2h config missing: $CFG" >&2
+    return 1
+  fi
+  local harmonyos hvigorw root tool
+  harmonyos="$(read_field harmonyos)"
+  hvigorw="$(read_field hvigorw)"
+  root="$(resolve_path "${harmonyos:-.}")"
+  [[ -d "$root" ]] || { echo "HarmonyOS path missing: $root" >&2; return 1; }
+  if [[ -n "$hvigorw" ]]; then
+    tool="$(resolve_path "$hvigorw")"
+  elif [[ -x "$root/hvigorw" ]]; then
+    tool="$root/hvigorw"
+  elif [[ -f "$root/hvigorw.bat" ]]; then
+    tool="$root/hvigorw.bat"
+  else
+    echo "hvigorw missing in: $root" >&2
+    return 1
+  fi
+  if [[ "$tool" == *.bat ]]; then
+    (cd "$root" && cmd.exe //c "$tool" assembleHap)
+  else
+    (cd "$root" && "$tool" assembleHap)
+  fi
+}
+
+case "${1:-}" in
+  validate) cmd_validate ;;
+  build) cmd_build ;;
+  --help|-h|help|"") echo "Usage: i2h-tool <validate|build>" ;;
+  *) echo "Usage: i2h-tool <validate|build>" >&2; exit 64 ;;
+esac

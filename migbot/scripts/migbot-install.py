@@ -64,7 +64,7 @@ def should_install_skill(skill_name: str) -> bool:
     return False
 
 
-def install_migbot(project_path: str, ios_path: str = None, repo_root: str = None):
+def install_migbot(project_path: str, ios_path: str = None, repo_root: str = None, language: str = None):
     """安装 migbot 到项目"""
     project_root = Path(project_path).resolve()
 
@@ -75,9 +75,16 @@ def install_migbot(project_path: str, ios_path: str = None, repo_root: str = Non
     if repo_root is None:
         # 脚本所在的 hmigbot-ios 目录
         repo_root = Path(__file__).parent.parent.parent
+    else:
+        repo_root = Path(repo_root).expanduser().resolve()
 
     # 检测是否是升级安装
     is_upgrade = (project_root / ".migbot" / "config.json").exists()
+    skills_src = repo_root / "migbot" / "skills"
+    owned_skill_names = {
+        path.name for path in skills_src.iterdir()
+        if path.is_dir() and should_install_skill(path.name)
+    } if skills_src.is_dir() else set()
 
     if is_upgrade:
         print(f"🔄 升级 migbot: {project_root}")
@@ -105,11 +112,13 @@ def install_migbot(project_path: str, ios_path: str = None, repo_root: str = Non
             for cmd in commands_dir.glob("migbot-*.md"):
                 cmd.unlink()
 
-        # 清理 skills 中的非 i2h skills
+        # 只清理本插件以前安装的 skills；保留用户自己放入 .claude/skills
+        # 的目录。旧版没有清单时，再兼容清理明确的 Android 前缀。
         skills_dir = claude_dir / "skills"
         if skills_dir.exists():
             for skill in skills_dir.iterdir():
-                if skill.is_dir() and not skill.name.startswith("i2h-"):
+                if skill.is_dir() and (skill.name in owned_skill_names
+                                       or skill.name.startswith(("a2h-", "android-"))):
                     shutil.rmtree(skill)
 
         print("   ✅ 已清理旧文件")
@@ -136,7 +145,6 @@ def install_migbot(project_path: str, ios_path: str = None, repo_root: str = Non
             print(f"   复制了 {copied_count} 个 i2h 命令")
 
     # ============ 2. 复制 skills 到 .claude/skills/ ============
-    skills_src = repo_root / "migbot" / "skills"
     skills_dst = claude_dir / "skills"
     skills_dst.mkdir(exist_ok=True)
 
@@ -182,6 +190,19 @@ def install_migbot(project_path: str, ios_path: str = None, repo_root: str = Non
             print("📋 复制脚本...")
         shutil.copytree(scripts_src, bin_dir / "scripts", dirs_exist_ok=True)
 
+    # Claude Code commands call these stable project-local entry points. Keep
+    # them as ordinary executable files (rather than relying on a shell alias
+    # or CLAUDE_PLUGIN_ROOT), so both plugin installs and install.sh installs
+    # behave identically. i2h is the local fact/stage runtime; i2h-tool is the
+    # iOS-specific path/build helper.
+    runtime_src = repo_root / "migbot" / "bin"
+    for runtime_name in ("i2h", "i2h-tool", "i2h-bootstrap"):
+        source = runtime_src / runtime_name
+        target = bin_dir / runtime_name
+        if source.is_file():
+            shutil.copy2(source, target)
+            target.chmod(target.stat().st_mode | 0o111)
+
     # 复制映射文件
     mappings_src = repo_root / "migbot" / "mappings"
     if mappings_src.exists():
@@ -209,7 +230,7 @@ def install_migbot(project_path: str, ios_path: str = None, repo_root: str = Non
         # 首次安装，创建新配置
         config = {
             "version": "1.0.0",
-            "language": "zh",
+            "language": language if language in {"zh", "en"} else "zh",
             "ios": ios_path or "../ios-app",
             "harmonyos": ".",
             "xcode": "",
@@ -252,6 +273,9 @@ def install_migbot(project_path: str, ios_path: str = None, repo_root: str = Non
     print(f"      - ArkTS 通用: {len(arkts_skills)} 个")
     print(f"      - 其他工具: {len(all_skills) - len(i2h_skills) - len(ios_skills) - len(arkts_skills)} 个")
     print(f"   .migbot/bin/scripts/: {len(list((bin_dir / 'scripts').rglob('*.py')))} 个脚本")
+    runtime_status = all((bin_dir / name).is_file() and os.access(bin_dir / name, os.X_OK)
+                         for name in ("i2h", "i2h-tool", "i2h-bootstrap"))
+    print(f"   .migbot/bin/i2h + i2h-tool + i2h-bootstrap: {'就绪' if runtime_status else '缺失'}")
 
     if is_upgrade:
         print(f"""
@@ -302,7 +326,8 @@ if __name__ == "__main__":
     parser.add_argument("--project", required=True, help="HarmonyOS project path")
     parser.add_argument("--ios", help="iOS project path (optional)")
     parser.add_argument("--repo-root", help="Repository root (auto-detected)")
+    parser.add_argument("--lang", choices=("zh", "en"), help="Initial output language")
 
     args = parser.parse_args()
 
-    install_migbot(args.project, args.ios, args.repo_root)
+    install_migbot(args.project, args.ios, args.repo_root, args.lang)

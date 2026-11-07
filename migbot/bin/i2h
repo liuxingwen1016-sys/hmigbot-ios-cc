@@ -1,0 +1,173 @@
+#!/usr/bin/env python3
+"""Small, deterministic iOS-to-HarmonyOS runtime used by Claude Code.
+
+The original Android plugin ships a compiled ``a2h`` multicall binary.  The
+iOS repository deliberately keeps its local runtime portable: Claude Code can
+invoke this file after ``install.sh`` without a platform-specific download or
+an environment variable.  The runtime only writes local, inspectable facts;
+it does not silently claim that a remote telemetry upload succeeded.
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from pathlib import Path
+from typing import Iterable
+
+
+ROOT = Path.cwd()
+CONFIG = ROOT / ".migbot" / "config.json"
+METRICS = ROOT / ".migbot" / "metrics" / ROOT.name
+
+# Count the same source/UI families that the i2h-verify contract describes.
+# Keep configuration and dependency lockfiles out of the migration completion
+# signal. This mirrors the i2h-verify contract: code/UI sources are counted,
+# while project metadata (JSON/Plist/YAML) is not.
+SOURCE_SUFFIXES = {
+    ".swift", ".m", ".mm", ".h", ".storyboard", ".xib",
+    ".ets", ".ts", ".tsx", ".js", ".jsx", ".xml", ".proto",
+}
+EXCLUDED_DIRS = {
+    ".git", ".build", "DerivedData", "Pods", "Carthage", "node_modules",
+    "build", "dist", "out", "hvigorfile", ".gradle", ".idea", ".migbot",
+}
+
+
+def load_config() -> dict:
+    if not CONFIG.is_file():
+        return {}
+    try:
+        data = json.loads(CONFIG.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def resolve_path(value: str | None, default: Path | None = None) -> Path | None:
+    if not value:
+        return default
+    path = Path(os.path.expanduser(value))
+    return path if path.is_absolute() else (ROOT / path).resolve()
+
+
+def app_name(path: Path | None) -> str:
+    return path.name if path else ""
+
+
+def count_files(path: Path | None) -> tuple[dict[str, int], int]:
+    by_type: dict[str, int] = {}
+    total = 0
+    if path is None or not path.is_dir():
+        return by_type, total
+    for candidate in path.rglob("*"):
+        if not candidate.is_file() or candidate.suffix.lower() not in SOURCE_SUFFIXES:
+            continue
+        if any(part in EXCLUDED_DIRS for part in candidate.parts):
+            continue
+        try:
+            text = candidate.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        lines = len(text.splitlines())
+        key = candidate.suffix.lower().lstrip(".") or "unknown"
+        by_type[key] = by_type.get(key, 0) + lines
+        total += lines
+    return dict(sorted(by_type.items())), total
+
+
+def write_json(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(path)
+
+
+def cmd_count_lines() -> int:
+    config = load_config()
+    ios_root = resolve_path(config.get("ios"))
+    harmony_root = resolve_path(config.get("harmonyos"), ROOT)
+    ios_types, ios_total = count_files(ios_root)
+    harmony_types, harmony_total = count_files(harmony_root)
+    payload = {
+        "schema": "i2h.line-count.v1",
+        "timestamp": int(time.time()),
+        "ios_app_name": app_name(ios_root),
+        "harmonyos_app_name": app_name(harmony_root),
+        "ios_root": str(ios_root) if ios_root else "",
+        "harmonyos_root": str(harmony_root) if harmony_root else "",
+        "code_lines": {
+            "ios": {"by_type": ios_types, "total": ios_total},
+            "harmonyos": {"by_type": harmony_types, "total": harmony_total},
+        },
+    }
+    output = METRICS / "line-count.json"
+    write_json(output, payload)
+    print(json.dumps({"ok": True, "output": str(output), **payload}, ensure_ascii=False))
+    return 0
+
+
+def cmd_mark_stage(stage: str) -> int:
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,96}", stage):
+        print(json.dumps({"ok": False, "error": "invalid stage name"}), file=sys.stderr)
+        return 64
+    now = int(time.time())
+    entry = {
+        "schema": "i2h.stage-mark.v1",
+        "stage": stage,
+        "timestamp": now,
+        "cwd": str(ROOT),
+        "pid": os.getpid(),
+    }
+    METRICS.mkdir(parents=True, exist_ok=True)
+    marks = METRICS / "stage-marks.jsonl"
+    with marks.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    # Keep the completion marker compatible with the i2h-run command contract.
+    clean_stage = stage.removeprefix("i2h-")
+    (METRICS / f"{clean_stage}.done").write_text(json.dumps(entry, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(json.dumps({"ok": True, "output": str(marks), **entry}, ensure_ascii=False))
+    return 0
+
+
+def run_tool(args: list[str]) -> int:
+    tool = ROOT / ".migbot" / "bin" / "i2h-tool"
+    if not tool.is_file():
+        print(json.dumps({"ok": False, "error": f"missing runtime: {tool}"}), file=sys.stderr)
+        return 127
+    try:
+        completed = subprocess.run([str(tool), *args], check=False)
+    except OSError as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}), file=sys.stderr)
+        return 127
+    return completed.returncode
+
+
+def usage() -> None:
+    print("Usage: i2h <count-lines|count-loc|mark-stage STAGE|validate|build|--help>")
+
+
+def main(argv: list[str]) -> int:
+    if not argv or argv[0] in {"-h", "--help", "help"}:
+        usage()
+        return 0
+    command = argv[0]
+    if command in {"count-lines", "count-loc"}:
+        return cmd_count_lines()
+    if command == "mark-stage":
+        if len(argv) != 2:
+            print("Usage: i2h mark-stage STAGE", file=sys.stderr)
+            return 64
+        return cmd_mark_stage(argv[1])
+    if command in {"validate", "build"}:
+        return run_tool(argv)
+    print(f"Unknown command: {command}", file=sys.stderr)
+    usage()
+    return 64
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

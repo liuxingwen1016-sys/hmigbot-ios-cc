@@ -40,7 +40,7 @@ Read: spec/baseline/features/F-002-DataLoading.md
 # 检查是否需要新页面
 if (spec.requires_new_page) {
   # 调用 converter
-  调用 a2h-activity-converter
+  调用 i2h-view-converter
 } else {
   # 使用现有页面
   使用 Stage 1 已生成的页面

@@ -19,7 +19,7 @@
 
 Batch 级批量执行；同一 Batch 内多个页面缺 view.xml 时可并行调用脚本合成。enrich 模式确保 `menu_sources` / `fragment_tags` / `recycler_item_layouts` 等字段完整，避免 LLM 遗漏。
 
-**Dialog 预检（同一 page 派发前）**：解析 `spec/.a2h/spec-run/dialog-index.json`，按
+**Dialog 预检（同一 page 派发前）**：解析 `spec/.i2h/spec-run/dialog-index.json`，按
 `body_spec_location` 的文件部分机械选出当前页拥有的 rows，去重得到 `owned_dialog_snapshots`。
 必须调用下列查询，禁止由 dispatching agent 手工过滤 JSON：
 
@@ -27,7 +27,7 @@ Batch 级批量执行；同一 Batch 内多个页面缺 view.xml 时可并行调
 python3 $SKILLS_ROOT/i2h-spec/scripts/dialog_index.py \
   --project-root "$PROJECT_ROOT" \
   --owned-by "spec/baseline/ui/page_NNNN_Xxx.md" \
-  --output "spec/.a2h/spec-run/owned-dialogs-page_NNNN.json"
+  --output "spec/.i2h/spec-run/owned-dialogs-page_NNNN.json"
 ```
 
 对每个非 `none` snapshot_ref 调用 `i2h-spec/scripts/prepare_dialog_artifacts.py --check`；缺失时以
@@ -68,4 +68,4 @@ python3 $SKILLS_ROOT/ios-ui-graph-builder/scripts/synthesize_meta_json.py \
   reason: <缺 view.xml / meta 无 layout_sources 等一句话>
 ```
 
-Batch 级一条即可（列全页面），不逐页开条。此记录是上游 `spec_change_request`（a2h-pipeline/v2 §12）的 legacy 等价物：将来 `contract_mode=v2` 时，本路径改为写 `spec/.a2h/change-requests/SCR-*.json` 并阻断受影响单元，等待新 Release；当前 legacy 模式下补写照常放行，仅强制留痕。
+Batch 级一条即可（列全页面），不逐页开条。此记录是上游 `spec_change_request`（i2h-pipeline/v2 §12）的兼容等价物：将来 `contract_mode=v2` 时，本路径改为写 `spec/.i2h/change-requests/SCR-*.json` 并阻断受影响单元，等待新 Release；当前模式下补写照常放行，仅强制留痕。

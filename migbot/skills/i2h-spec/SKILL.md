@@ -87,13 +87,15 @@ Phase A 负责扫描 iOS 项目，提取页面清单和基础元数据。
 
 #### 确定性提取（脚本优先）
 
-**如果存在 `ios-project-scanner` skill**，调用它生成骨架：
+使用本 skill 随附的确定性证据脚本生成骨架和资源索引：
 
 ```bash
 # 理想调用（如果 skill 存在）
-python3 .claude/skills/ios-project-scanner/scripts/scan_project.py \
+python3 "${CLAUDE_PLUGIN_ROOT:-.claude}/skills/i2h-spec/scripts/ui_evidence.py" \
   "$IOS_PATH" \
-  --output spec/.i2h/project-skeleton.json
+  --output spec/.i2h/resources-inventory.json \
+  --skeleton-output spec/.i2h/project-skeleton.json \
+  --res-index spec/baseline/res-index
 ```
 
 **脚本应输出**（骨架）：
@@ -139,14 +141,9 @@ python3 .claude/skills/ios-project-scanner/scripts/scan_project.py \
 
 #### Step A2a: 确定性骨架生成（脚本优先）
 
-**如果存在 `ios-view-analyzer` skill**，对每个 View 调用：
-
-```bash
-python3 .claude/skills/ios-view-analyzer/scripts/extract_view_meta.py \
-  "$IOS_PATH/Cuike/Views/HomeView.swift" \
-  --output spec/baseline/ui-snapshots/page_0001_HomeView/meta.json \
-  --mode scaffold
-```
+页面的确定性骨架来自上一步 `ui_evidence.py` 的 `views[]`；对每个 View
+仍必须完整读取源码，并由 LLM 补充用途、复杂度、依赖和导航语义。不存在
+可执行的 `ios-view-analyzer` 脚本时，不得引用悬空路径或把推断字段伪装成脚本事实。
 
 **脚本应提取**（确定性）：
 - 属性列表（`@State`, `@Binding`, `@ObservedObject` 等）
@@ -301,6 +298,27 @@ Phase B: 生成 UI 清单
 - [ ] 至少识别出 1 个页面
 - [ ] 所有源文件路径已验证存在
 - [ ] 无 blocking findings（或已记账）
+
+#### Step A1b: 生成静态 UI/资源事实（确定性脚本）
+
+在完成项目骨架扫描后，必须运行随本 skill 安装的静态证据脚本。它是 iOS
+版本对 Android `view.xml`/资源索引的对应物，记录源代码锚点、SwiftUI/UIKit
+页面、Assets.xcassets 变体、本地化条目和代码到资源的引用；它不会猜测运行时值。
+
+```bash
+python3 .claude/skills/i2h-spec/scripts/ui_evidence.py \
+  "$IOS_PATH" \
+  --output spec/.i2h/resources-inventory.json \
+  --res-index spec/baseline/res-index
+```
+
+必须验证以下产物存在且 `target_input_sha256` 一致：
+
+- `spec/.i2h/resources-inventory.json`
+- `spec/baseline/res-index/{values,drawables,usage,design-tokens,handoff}.json`
+
+资源代码引用中无法在源资源目录解析的名称必须保留在 `usage.json` 的
+`disposition=unresolved` 中，交由 Gate B 记账，不得静默删除或生成默认值。
 
 **失败处理**：按 [references/gate-handling.md](./references/gate-handling.md) 处理
 

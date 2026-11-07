@@ -24,14 +24,33 @@ iOS 项目根目录
 
 ### Python 脚本职责（确定性提取）
 
-如果存在 `ios-project-scanner` skill，调用它生成骨架：
+使用 i2h-spec 随附的确定性证据脚本生成骨架：
 
 ```bash
 # 理想调用方式（如果 skill 存在）
-python3 .claude/skills/ios-project-scanner/scripts/scan_project.py \
+python3 "${CLAUDE_PLUGIN_ROOT:-.claude}/skills/i2h-spec/scripts/ui_evidence.py" \
   "$IOS_PATH" \
-  --output spec/.i2h/project-skeleton.json
+  --output spec/.i2h/resources-inventory.json \
+  --skeleton-output spec/.i2h/project-skeleton.json \
+  --res-index spec/baseline/res-index
 ```
+
+完成骨架扫描后，必须运行 i2h-spec 自带的静态 UI/资源证据脚本。iOS 没有
+Android UIAutomator 的统一 `view.xml`，因此该脚本负责生成可追溯的源代码和
+资源事实，供 Phase B 和 i2h-execute 消费：
+
+```bash
+python3 .claude/skills/i2h-spec/scripts/ui_evidence.py \
+  "$IOS_PATH" \
+  --output spec/.i2h/resources-inventory.json \
+  --res-index spec/baseline/res-index
+```
+
+脚本会同时生成 `values.json`、`drawables.json`、`usage.json`、
+`design-tokens.json` 和 `handoff.json`。所有文件带有相同的
+`target_input_sha256`；代码引用无法解析时必须保留为 `unresolved`，不能填入
+推测值。若需要真机/模拟器补充事实，使用 `runtime_view.py` 读取 JSON sidecar，
+不得把缺少运行时捕获当作静态事实。
 
 **脚本应提取**（确定性）：
 - Swift 文件路径列表

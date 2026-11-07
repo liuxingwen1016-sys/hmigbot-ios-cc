@@ -2,7 +2,7 @@
 <!-- topics: converter 输入, 并发槽位, 空信封, 停滞回收 -->
 # Stage 1 converter 派发与回收
 
-每页使用 a2h-activity-converter；派发前加载 references/agent-prompts/1-converter.md + references/agent-prompts/_common.md。输入包含 iOS 源码、页面 meta/view、存在时的截图路径、资源映射和对应 UI Spec；source_only/progressive 合成兜底不提供虚构截图，按源码转换并保留低 confidence；优先使用已审计运行时证据。既有同源页面产物可复用，不能以空 sidecar 缺失为由重复生成或阻断。
+每页使用 i2h-view-converter；派发前加载 references/agent-prompts/1-converter.md + references/agent-prompts/_common.md。输入包含 iOS 源码、页面 meta/view、存在时的截图路径、资源映射和对应 UI Spec；source_only/progressive 合成兜底不提供虚构截图，按源码转换并保留低 confidence；优先使用已审计运行时证据。既有同源页面产物可复用，不能以空 sidecar 缺失为由重复生成或阻断。
 
 **批内并行与槽位协调**：批内页面默认全并行派发（页面依赖不约束分批——导航 / 嵌入目标未建由 FWD-REF 兜底；批内单写者保证互不阻塞）；每批所有 Agent 全部完成后执行该批收尾结算（§3b-bis，无编译）。并发上限 = i2h-plan Step 2 宿主表的 HOST_MAX（Claude Code 20 / Codex 8 / DevEco Code 10），converter、worker、closer、hmos-builder、env-prewarm 全部占槽，主线程按七条规则调度：
 

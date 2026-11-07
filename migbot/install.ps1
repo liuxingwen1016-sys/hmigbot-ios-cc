@@ -2,6 +2,7 @@
 # Native Windows entry point for the packaged CC installer (also used by OTA).
 param(
     [Alias('Project')][string]$Target = (Get-Location).Path,
+    [Alias('Ios', 'IosPath')][string]$Ios = '',
     [ValidateSet('native','arch','1to1')][string]$MigrationHost = 'native',
     [ValidateSet('project','user')][string]$Scope = 'project',
     [string]$Lang = ''
@@ -16,8 +17,10 @@ $python = $null
     }
   }
   if (-not $python) { throw 'Python 3.9 or newer is required to install this package' }
+$repoRoot = Split-Path -Parent $PSScriptRoot
 $installArgs = @('-u', '-X', 'utf8', (Join-Path $PSScriptRoot 'scripts/migbot-install.py'),
-    '--repo-root', $PSScriptRoot, '--project', $Target, '--host', $MigrationHost, '--scope', $Scope, '--yes')
+    '--repo-root', $repoRoot, '--project', $Target)
+if ($Ios) { $installArgs += @('--ios', $Ios) }
 if ($Lang) { $installArgs += @('--lang', $Lang) }
 & $python @installArgs
 exit $LASTEXITCODE

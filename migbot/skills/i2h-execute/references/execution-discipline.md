@@ -13,7 +13,7 @@
 
 1. **`Read PROJECT_INSTRUCTIONS_FILE`**（按上述宿主别名解析，若存在）
    - 拉入闸 3 内容：决策段（C0–C17 类目 + "查表 / 未命中按默认裁定、不追问" 规则 + 门禁处置指针）+ 通用行为准则
-   - 验证含 marker `<!-- a2h-decision-snippet:start -->` / `<!-- a2h-decision-snippet:end -->`
+   - 验证含 marker `<!-- i2h-decision-snippet:start -->` / `<!-- i2h-decision-snippet:end -->`
    - 文件缺失 / marker 缺失 → WARN 写入 `spec/migration-report.md`「启动检查」段（提示 i2h-spec Step C4.8b 未跑或被删），**不阻断**
 
 2. **`Read spec/decision-ledger.md` 顶部「决策索引」段 + D0**（若存在；**按需读，不整份吞**）

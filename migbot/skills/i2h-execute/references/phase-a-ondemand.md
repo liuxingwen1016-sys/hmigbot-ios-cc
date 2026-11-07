@@ -28,7 +28,7 @@ Step 3a 检查到数据缺失
   ├─ 增量更新 ui-manifest.md（新增页面条目 + confidence 标记）
   └─ 增量生成 spec/baseline/ui/page_NNNN.md
   ▼
-数据准备完成 → 继续调用 a2h-activity-converter 转换该页面 → 继续 Slice 执行，无需中断整个 Pipeline
+数据准备完成 → 继续调用 i2h-view-converter 转换该页面 → 继续 Slice 执行，无需中断整个 Pipeline
 ```
 
 Dialog 分支逐项调用 `prepare_dialog_artifacts.py --only <snapshot-id>`；完成后只向迁移报告记录

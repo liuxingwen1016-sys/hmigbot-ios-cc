@@ -593,4 +593,4 @@ export class BeanStoreMock {
 2. **结构完整性**：各主要段落必须有实质内容（非空行 ≥ 3）
 3. **ios_source_anchors**：复杂功能（high/very_complex）必须填写完整的 YAML
 4. **代码示例**：必须提供可运行的 HarmonyOS 实现示例
-5. **下游强约束**：此 spec 是 a2h-plan 和 a2h-execute 的输入，缺失关键字段会导致下游失败
+5. **下游强约束**：此 spec 是 i2h-plan 和 i2h-execute 的输入，缺失关键字段会导致下游失败

@@ -1,0 +1,20 @@
+{
+  "name": "hmigbot-ios",
+  "description": "iOS-to-ArkTS (HarmonyOS) migration toolkit for Claude Code. Ships i2h pipeline skills, iOS analysis skills, agents and /i2h-init + /i2h-build + /i2h-run commands (English + Chinese variants).",
+  "version": "1.0.0-alpha",
+  "author": {
+    "name": "iOS Migration Team"
+  },
+  "homepage": "https://github.com/liuxingwen1016-sys/hmigbot-ios-cc",
+  "repository": "https://github.com/liuxingwen1016-sys/hmigbot-ios-cc",
+  "license": "MIT",
+  "keywords": [
+    "ios",
+    "swiftui",
+    "uikit",
+    "harmonyos",
+    "arkts",
+    "migration"
+  ],
+  "icon": ".claude-plugin/icon.png"
+}

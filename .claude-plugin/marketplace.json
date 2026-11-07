@@ -1,13 +1,14 @@
 {
-  "name": "hmigbot",
+  "name": "hmigbot-ios",
+  "description": "Claude Code plugins for iOS → HarmonyOS migration and ArkTS implementation.",
   "owner": {
-    "name": "fuxi-artifacts"
+    "name": "liuxingwen1016-sys"
   },
   "plugins": [
     {
-      "name": "hmigbot",
-      "source": "./",
-      "description": "Android-to-ArkTS (HarmonyOS) migration toolkit: ~50 skills, 5 sub-agents, /a2h-init + /a2h-build + /a2h-run + /a2h-privacy."
+      "name": "hmigbot-ios",
+      "source": "./migbot",
+      "description": "iOS-to-ArkTS (HarmonyOS) migration toolkit: i2h-spec → i2h-plan → i2h-execute → i2h-verify → i2h-retrospect, with Claude Code skills, agents and commands."
     }
   ]
 }

@@ -10,7 +10,7 @@
 ## Canonical inputs and outputs
 
 ```text
-spec/.a2h/target-input.json
+spec/.i2h/target-input.json
 spec/baseline/res-index/values.json
 spec/baseline/res-index/drawables.json
 spec/baseline/res-index/usage.json
@@ -28,7 +28,7 @@ Every derived file must carry `schema_version`, `tool_version`, `target_input_sh
 
 ## Gate B handoff
 
-`spec/.a2h/open-findings.json` must have no unresolved blocking resource-facts finding for the selected pages. Every initially visible obligation must have one disposition:
+`spec/.i2h/open-findings.json` must have no unresolved blocking resource-facts finding for the selected pages. Every initially visible obligation must have one disposition:
 
 ```text
 resolved | preview_policy | deferred | not_applicable

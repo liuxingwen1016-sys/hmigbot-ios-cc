@@ -66,13 +66,13 @@ Stage 1 按 `BATCH_MAX` 派发页面，Batch closer 负责共享文件和 writeb
 | Spec 阶段真实双端采集 | 没有等价的 simctl/真机 runtime facts 闭环 | 缺少 Spec-owned screenshot、XML、状态和 provenance |
 | 三源 UI facts | 有 meta/页面 Spec 设计，缺少完整生成器和统一 schema | 不能证明页面结构、样式和语义都来自同一份事实 |
 | Dialog/导航/源码 coverage | 有覆盖率文档和模板 | 缺少原版级别的运行时枚举、dialog artifact 和机械审计链 |
-| iOS 资源闭包 | `ios2hmos_resources_convert/skill.md` 有设计说明 | 其引用的 `scripts/scan_ios_resources.py` 等不存在，只有零散扫描脚本 |
+| iOS 资源闭包 | `ios2hmos_resources_convert/SKILL.md` 有设计说明 | 其引用的 `scripts/scan_ios_resources.py` 等不存在，只有零散扫描脚本 |
 | `resources-inventory` 与 `res-index` | i2h-spec references 要求 `spec/.i2h/resources-inventory.json`，execute 要求 `spec/baseline/res-index/*.json` | 两套契约没有生成器或 schema 转换，Stage 0 无法稳定消费 |
 | CHECK-3 视觉验证 | i2h-verify 有独立简化截图对比 | 没有复用 Spec 阶段的 UI facts，也没有原版的按页面树增量复验闭环 |
 | CHECK-5 行为验证 | 明确 deferred | 行为层尚未形成 iOS oracle |
 | Spec 并行 | i2h-plan 文档有 P0/P1/P2、Batch、Group 设计 | i2h-spec 没有可运行的 batch planner 和后台采集轨 |
 | Execute 并行 | i2h-execute 文档有 Worker/Closer、HOST_MAX、动态依赖描述 | 实际 dispatcher runtime、helper 依赖和测试链不完整 |
-| 智能调度器 | `migbot/bin/scripts/scheduler/intelligent_scheduler.py` 是简单原型，默认 25 workers，且未被 i2h pipeline 调用 | 不能证明真实流水线获得并行性能提升 |
+| 智能调度器 | `migbot/bin/scripts/scheduler/intelligent_scheduler.py` 已支持依赖就绪派发、全局/宿主并发上限、未知依赖/环检测和失败后重取；仍未被 i2h pipeline 主入口调用 | 调度算法已具备原版关键约束，但必须接入 Spec/Execute dispatcher 并用真实项目基准验证性能 |
 | 编译闭环 | 文档写有 Base-7、Stage 3 gate、FV-2 | 运行时入口、依赖 manifest 和 execute 测试仍有断裂 |
 
 ## 判断

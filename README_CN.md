@@ -28,6 +28,22 @@ i2h-retrospect 汇总真实指标和交付证据
 
 ## 安装
 
+Claude Code 插件模式应直接加载 `migbot/` 目录。该目录包含插件清单以及
+`commands/`、`agents/`、`skills/` 和 `hooks/`：
+
+```bash
+claude --plugin-dir /path/to/hmigbot-ios/migbot
+```
+
+命令会出现在 `hmigbot-ios` 命名空间下，例如 `/hmigbot-ios:i2h-init` 和
+`/hmigbot-ios:i2h-run`。
+
+也可以直接安装 marketplace 版本：
+
+```text
+/plugin install hmigbot-ios --marketplace liuxingwen1016-sys/hmigbot-ios-cc
+```
+
 ```bash
 cd /path/to/hmigbot-ios
 ./install.sh --project /path/to/HarmonyOSProject --ios /path/to/iOSApp

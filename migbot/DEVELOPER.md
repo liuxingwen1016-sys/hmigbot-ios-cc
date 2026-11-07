@@ -9,18 +9,18 @@ For users who want to customize the plugin (skill selection, permissions, manual
 ### As a Claude Code plugin (recommended)
 
 ```text
-/plugin marketplace add fuxi-artifacts/hmigbot
-/plugin install hmigbot@hmigbot
+/plugin marketplace add liuxingwen1016-sys/hmigbot-ios-cc
+/plugin install hmigbot-ios@hmigbot-ios
 ```
 
-Then launch Claude Code from inside your HarmonyOS project root and run `/hmigbot:a2h-init`. On first run, the command invokes `a2h-bootstrap` (one of the executables shipped in the plugin's `bin/`) to auto-detect Android source path, DevEco install, hvigorw, adb, hdc, and locale. It writes a skeleton `.migbot/config.json` next to your `oh-package.json5`, then walks you through confirming each path.
+Then launch Claude Code from inside your HarmonyOS project root and run `/hmigbot-ios:i2h-init`. On first run, the command invokes `i2h-bootstrap` (one of the executables shipped in the plugin's `bin/`) to auto-detect iOS source path, DevEco install, hvigorw, xcrun, simctl, hdc, and locale. It writes a skeleton `.migbot/config.json` next to your `oh-package.json5`, then walks you through confirming each path.
 
 ### Local development
 
 ```bash
-git clone https://github.com/fuxi-artifacts/hmigbot /path/to/migbot
+git clone https://github.com/liuxingwen1016-sys/hmigbot-ios-cc /path/to/hmigbot-ios
 cd /path/to/your-harmony-app
-claude --plugin-dir /path/to/migbot
+claude --plugin-dir /path/to/hmigbot-ios/migbot
 ```
 
 Repeat `--plugin-dir` to load multiple plugins. After editing the plugin, run `/reload-plugins` from inside Claude Code to pick up changes.
@@ -49,11 +49,14 @@ Only one file: `.migbot/config.json`. Everything else is in-plugin and lives ins
 
 ```json
 {
-  "android": "../android-app",
+  "ios": "../ios-app",
   "harmonyos": ".",
   "hvigorw": "",
+  "xcode": "",
+  "xcrun": "",
+  "simctl": "",
   "deveco": "/Applications/DevEco-Studio.app",
-  "adb": "",
+  "hvigorw": "",
   "hdc": "",
   "language": "en",
   "confirmed": false
@@ -62,25 +65,25 @@ Only one file: `.migbot/config.json`. Everything else is in-plugin and lives ins
 
 | Field | Notes |
 |---|---|
-| `android` | Path to the source Android project. Auto-detected by `a2h-bootstrap`; confirmed by `/a2h-init`. |
-| `harmonyos` | Path to the HarmonyOS project; defaults to `.` because `/a2h-init` runs inside that root. |
+| `ios` | Path to the source iOS project. Auto-detected by `i2h-bootstrap`; confirmed by `/i2h-init`. |
+| `harmonyos` | Path to the HarmonyOS project; defaults to `.` because `/i2h-init` runs inside that root. |
 | `hvigorw` | Optional override for the `hvigorw` executable. Empty (default) → `<harmonyos>/hvigorw`. Set this when your wrapper lives outside the project root or under a different name. |
-| `deveco` | DevEco Studio install directory. Auto-detected at first run via `$PATH` + platform-specific scan (Windows: C/D/E/F drives; macOS: `/Applications`; Linux: `/opt`, `/usr/local`). May be empty (`/a2h-init` accepts `skip`). |
-| `adb` / `hdc` | Optional explicit paths to the SDK CLIs. Empty means "rely on `$PATH`". `/a2h-init` auto-detects common locations. |
-| `language` | `zh` or `en`. Set on first run by `a2h-bootstrap` from `$LANG`. Drives `a2h-tool` runtime messages and the `CLAUDE.md` marker block. To switch later, edit this field and re-run `/a2h-init`. |
-| `confirmed` | Set to `true` by `/a2h-init` once the user has confirmed paths. `/a2h-run` redirects to `/a2h-init` when this is `false` or missing. |
+| `deveco` | DevEco Studio install directory. Auto-detected at first run via `$PATH` + platform-specific scan (Windows: C/D/E/F drives; macOS: `/Applications`; Linux: `/opt`, `/usr/local`). May be empty (`/i2h-init` accepts `skip`). |
+| `xcode`, `xcrun`, `simctl`, `hdc` | Optional explicit paths to Xcode, simulator and HarmonyOS SDK CLIs. Empty means "rely on `$PATH`". `/i2h-init` auto-detects common locations. |
+| `language` | `zh` or `en`. Set on first run by `i2h-bootstrap` from `$LANG`. Drives `i2h-tool` runtime messages and the `CLAUDE.md` marker block. To switch later, edit this field and re-run `/i2h-init`. |
+| `confirmed` | Set to `true` by `/i2h-init` once the user has confirmed paths. `/i2h-run` redirects to `/i2h-init` when this is `false` or missing. |
 
-`android` / `harmonyos` must exist; relative paths resolve against the install dir.
+`ios` / `harmonyos` must exist; relative paths resolve against the install dir.
 
 ## Slash commands
 
 Every command is available in English and Chinese (`-zh` suffix). Pick whichever you prefer — both write to the same `.migbot/config.json` and respect the `language` field for runtime output.
 
-- **`/hmigbot:a2h-init`** (or `-zh`) — auto-detect on first run; then confirm `android` / `harmonyos` / `hvigorw` / `deveco` / `adb` / `hdc` paths in plain language. Sets `confirmed: true` on success. Also refreshes the `CLAUDE.md` marker block.
-- **`/hmigbot:a2h-build`** (or `-zh`) — validates `.migbot/config.json` paths and runs `hvigorw assembleHap`. Self-heals a misplaced `hvigorw`.
-- **`/hmigbot:a2h-run`** (or `-zh`) — runs the full migration pipeline (`a2h-spec → a2h-plan → a2h-execute → a2h-verify → a2h-retrospect`) with per-stage confirmation and auto-resume on re-entry. Redirects to `/a2h-init` if config is unconfirmed.
+- **`/hmigbot-ios:i2h-init`** (or `-zh`) — auto-detect on first run; then confirm `ios` / `harmonyos` / `xcode` / `xcrun` / `simctl` / `deveco` / `hvigorw` / `hdc` paths in plain language. Sets `confirmed: true` on success. Also refreshes the `CLAUDE.md` marker block.
+- **`/hmigbot-ios:i2h-build`** (or `-zh`) — validates `.migbot/config.json` paths and runs `hvigorw assembleHap`. Self-heals a misplaced `hvigorw`.
+- **`/hmigbot-ios:i2h-run`** (or `-zh`) — runs the full migration pipeline (`i2h-spec → i2h-plan → i2h-execute → i2h-verify → i2h-retrospect`) with per-stage confirmation and auto-resume on re-entry. Redirects to `/i2h-init` if config is unconfirmed.
 
-Per-stage skills also trigger via natural language ("生成 spec", "a2h-spec <feature>").
+Per-stage skills also trigger via natural language ("生成 spec", "i2h-spec <feature>").
 
 ## Customizing skills
 
@@ -88,35 +91,35 @@ The 40 skills live under `skills/<id>/SKILL.md` inside the plugin. Because plugi
 
 ## Permissions
 
-Each command declares its own `allowed-tools` in its frontmatter, so the plugin's runtime permissions are scoped per-command. To allow the plugin's `a2h-tool` invocations project-wide (so you don't see per-call permission prompts), add this to your project's `.claude/settings.json`:
+Each command declares its own `allowed-tools` in its frontmatter, so the plugin's runtime permissions are scoped per-command. To allow the plugin's `i2h-tool` invocations project-wide (so you don't see per-call permission prompts), add this to your project's `.claude/settings.json`:
 
 ```json
 {
   "permissions": {
-    "allow": ["Bash(a2h-tool *)", "Bash(a2h-bootstrap *)"]
+    "allow": ["Bash(i2h-tool *)", "Bash(i2h-bootstrap *)"]
   }
 }
 ```
 
 ## How language switching works
 
-1. **Bootstrap time.** `a2h-bootstrap` reads `$LANG` and writes the matching `language` value into `.migbot/config.json` on first run.
-2. **CLAUDE.md marker block.** `/a2h-init` step 8 renders a language-specific marker-guarded block into `CLAUDE.md`. The block is overwritten on every re-run of `/a2h-init`, so it always reflects the current `language` field.
+1. **Bootstrap time.** `i2h-bootstrap` reads `$LANG` and writes the matching `language` value into `.migbot/config.json` on first run.
+2. **CLAUDE.md marker block.** `/i2h-init` step 8 renders a language-specific marker-guarded block into `CLAUDE.md`. The block is overwritten on every re-run of `/i2h-init`, so it always reflects the current `language` field.
 3. **Skill / agent frontmatter.** Every skill and agent under `skills/` and `agents/` carries `output_language: from-config` in its frontmatter. Combined with the CLAUDE.md directive, this ensures Claude consistently produces output in the chosen language regardless of which language the skill body itself is written in.
 
-To switch language post-install: edit `.migbot/config.json:language`, then re-run `/a2h-init` to refresh the marker block.
+To switch language post-install: edit `.migbot/config.json:language`, then re-run `/i2h-init` to refresh the marker block.
 
 ## Troubleshooting
 
 - **`hvigorw not executable`.** `chmod +x <harmony-root>/hvigorw`, or set `hvigorw` in `.migbot/config.json` to point at a wrapper outside the project root.
-- **`harmonyos path missing` / `android path missing`.** Run `/a2h-init` again, or set absolute paths in `.migbot/config.json`.
-- **`/a2h-run` always sends me to `/a2h-init`.** The config still has `confirmed: false`. Complete the `/a2h-init` flow and confirm at the end.
-- **`adb` / `hdc` not found.** Either install the corresponding SDK and add it to `$PATH`, or set explicit absolute paths in `.migbot/config.json` and re-run `/a2h-init`.
+- **`harmonyos path missing` / `ios path missing`.** Run `/i2h-init` again, or set absolute paths in `.migbot/config.json`.
+- **`/i2h-run` always sends me to `/i2h-init`.** The config still has `confirmed: false`. Complete the `/i2h-init` flow and confirm at the end.
+- **`xcrun` / `hdc` not found.** Either install the corresponding SDK and add it to `$PATH`, or set explicit absolute paths in `.migbot/config.json` and re-run `/i2h-init`.
 
 ## Tests
 
 ```bash
-A2H_SKIP_EMU_CHECK=1 bash tests/a2h-tool.test.sh
+I2H_SKIP_DEVICE_CHECK=1 bash tests/i2h-tool.test.sh
 ```
 
-The skip flag disables emulator/adb/hdc runtime checks so tests can run without a real Android SDK or running emulator.
+The skip flag disables iOS simulator/device runtime checks so tests can run without an iOS simulator or connected device.

@@ -10,12 +10,24 @@
 - 新增文档归档索引、改造方法论和实现审计，区分历史报告、当前实现和已验证事实。
 - 修正根目录状态文档中把 Android 版本能力、历史估算和原型结果当成 iOS 生产能力的问题。
 
-### 已确认的实现风险
+### Claude Code 兼容与运行时
 
-- 安装脚本没有安装 `i2h` / `i2h-tool` 运行时入口，但命令和 Skill 仍会调用它们。
+- 新增符合 Claude Code 插件布局的 `migbot/.claude-plugin/plugin.json`，根 marketplace 改为指向 `./migbot`；7 个 iOS Skill 统一为大写 `SKILL.md`。
+- 安装器现在复制并校验 `.migbot/bin/i2h`、`i2h-tool`、`i2h-bootstrap`，并保留用户自定义 `.claude/skills`。
+- `migbot/install.sh` 接受 `--ios`/`--ios-path` 和 `--lang`，兼容旧自动化参数。
 - 修正 `i2h-run` 的 plan 完成标记，使其读取当前 indexed-v1 Markdown 计划阶段的 `complete.txt`。
-- `i2h-execute` 的部分脚本是导向编译二进制的包装器，测试直接导入这些文件会触发进程替换；部分测试依赖的 Python 模块也未随源码提供。
-- `i2h-verify` 依赖的 `gate_ledger.py` 和 `i2h-execute` 的若干依赖清单路径目前不存在。
+
+### Spec、资源与并行调度
+
+- 新增 `i2h-spec` 静态 UI/资源证据脚本，生成项目骨架、`resources-inventory`、统一哈希的 `res-index` 和可选 runtime JSON sidecar。
+- 新增 schema-2 `ui_delivery.py`、源码布局提取和 UI 状态所有权门禁，补齐 execute 依赖清单中的悬空路径。
+- 资源 worker 支持声明的图片变体、PDF/SVG、暗黑色彩、重复文件名和多语言记录。
+- 调度器支持依赖就绪派发、宿主并发上限、未知依赖/环检测和失败后重取；尚未接入完整 i2h 主流水线。
+
+### 仍未闭合的问题
+
+- `i2h-execute` 的打包 launcher 仍与可导入 Python 实现耦合，标准 unittest 会触发进程替换。
+- gate ledger 已有最小 iOS 版本；真实 iOS simulator 状态采集、CHECK-5 行为验证和完整五阶段 fixture 仍待实现。
 
 ## [0.4.0] - 2024-11-04
 

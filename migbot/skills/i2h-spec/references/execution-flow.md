@@ -49,11 +49,9 @@ Gate C（可选确认）
 **执行逻辑**:
 
 ```
-1. 检查是否存在 ios-project-scanner skill
-   ├─ 存在 → 调用 Python 脚本
-   │   ├─ 成功 → 读取 project-skeleton.json 骨架
-   │   └─ 失败 → 降级到 LLM 扫描
-   └─ 不存在 → LLM 直接扫描
+1. 调用 i2h-spec 随附的 ui_evidence.py
+   ├─ 成功 → 读取 project-skeleton.json 与 resources-inventory.json
+   └─ 失败 → 按失败原因记账，再由 LLM 执行等价扫描，不伪造脚本事实
 
 2. LLM 扫描（降级或主流程）
    ├─ 扫描目录，识别 .xcodeproj
@@ -95,13 +93,8 @@ Gate C（可选确认）
 1. 为页面分配 page_id（page_0001, page_0002, ...）
 
 2. 确定性提取（脚本优先）
-   ├─ 检查是否存在 ios-view-analyzer skill
-   ├─ 存在 → 调用脚本提取骨架
-   │   ├─ 属性列表（@State, @Binding, ...）
-   │   ├─ 属性类型和默认值
-   │   ├─ body 源码
-   │   └─ 依赖的自定义组件
-   └─ 不存在/失败 → 降级到 LLM
+   ├─ 读取 ui_evidence.py 产出的 views[] 与源码锚点
+   └─ 由 LLM 完整读取源码，补充状态、依赖和语义字段
 
 3. LLM 阅读源码（必做）
    ├─ Read 完整源文件（不能只看摘要）

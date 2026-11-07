@@ -30,6 +30,23 @@ The intended execution model is LLM-led semantic analysis plus deterministic scr
 
 ## Install
 
+For Claude Code plugin mode (the supported integration), load the `migbot/`
+directory, which contains the plugin manifest and the installable
+`commands/`, `agents/`, `skills/` and `hooks/` trees:
+
+```bash
+claude --plugin-dir /path/to/hmigbot-ios/migbot
+```
+
+The commands then appear under the `hmigbot-ios` namespace, for example
+`/hmigbot-ios:i2h-init` and `/hmigbot-ios:i2h-run`.
+
+To install the published marketplace entry instead:
+
+```text
+/plugin install hmigbot-ios --marketplace liuxingwen1016-sys/hmigbot-ios-cc
+```
+
 ```bash
 cd /path/to/hmigbot-ios
 ./install.sh --project /path/to/HarmonyOSProject --ios /path/to/iOSApp

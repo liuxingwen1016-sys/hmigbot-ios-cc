@@ -4,7 +4,7 @@
 
 在本次会话中发现了一个关键问题：
 
-**修改位置**: `/Users/liuxingwen/DevecoStudioProjects/Cuike01/.claude/skills/i2h-verify/skill.md`  
+**修改位置**: `/Users/liuxingwen/DevecoStudioProjects/Cuike01/.claude/skills/i2h-verify/SKILL.md`
 **源码位置**: `/Users/liuxingwen/Codes/ios2harmony/hmigbot-ios/migbot/skills/i2h-verify/SKILL.md`
 
 修改只在运行时目录，没有自动同步回源码仓库！
@@ -32,16 +32,16 @@
 /Users/liuxingwen/DevecoStudioProjects/Cuike01/
 └── .claude/
     └── skills/
-        ├── i2h-spec/skill.md
-        ├── i2h-plan/skill.md
-        ├── i2h-execute/skill.md
-        ├── i2h-verify/skill.md      ← 运行时副本（本次修改在这里）
-        └── i2h-retrospect/skill.md
+        ├── i2h-spec/SKILL.md
+        ├── i2h-plan/SKILL.md
+        ├── i2h-execute/SKILL.md
+        ├── i2h-verify/SKILL.md      ← 运行时副本（本次修改在这里）
+        └── i2h-retrospect/SKILL.md
 ```
 
-**注意文件名差异**:
-- 源码: `SKILL.md`（大写）
-- 运行时: `skill.md`（小写）
+**文件名约定**:
+- 源码和 Claude Code 运行时统一使用 `SKILL.md`（大小写敏感）
+- 旧的 Cuike01 副本若仍是 `skill.md`，应在重新安装时由安装脚本替换
 
 ---
 
@@ -51,7 +51,7 @@
 
 ```bash
 1. 读取 hmigbot-ios/migbot/skills/*/SKILL.md
-2. 复制到 project/.claude/skills/*/skill.md
+2. 复制到 project/.claude/skills/*/SKILL.md
 3. 创建 .migbot/config.json
 ```
 
@@ -65,7 +65,7 @@
 
 #### ❌ 错误做法
 ```
-1. 修改 Cuike01/.claude/skills/i2h-verify/skill.md
+1. 修改 Cuike01/.claude/skills/i2h-verify/SKILL.md
 2. 测试通过
 3. 忘记同步回源码
 4. 下次安装到其他项目时，还是旧版本！
@@ -85,10 +85,10 @@
 
 **方案 2: 修改后同步回源码**（本次采用）
 ```bash
-1. 修改 Cuike01/.claude/skills/i2h-verify/skill.md
+1. 修改 Cuike01/.claude/skills/i2h-verify/SKILL.md
 2. 测试通过
 3. 同步回源码:
-   cp Cuike01/.claude/skills/i2h-verify/skill.md \
+   cp Cuike01/.claude/skills/i2h-verify/SKILL.md \
       hmigbot-ios/migbot/skills/i2h-verify/SKILL.md
 4. 提交 Git
 ```
@@ -108,7 +108,7 @@ ln -s /path/to/hmigbot-ios/migbot/skills/i2h-verify \
 
 ```bash
 # 同步命令
-cp /Users/liuxingwen/DevecoStudioProjects/Cuike01/.claude/skills/i2h-verify/skill.md \
+cp /Users/liuxingwen/DevecoStudioProjects/Cuike01/.claude/skills/i2h-verify/SKILL.md \
    /Users/liuxingwen/Codes/ios2harmony/hmigbot-ios/migbot/skills/i2h-verify/SKILL.md
 
 # Git 提交
@@ -120,7 +120,7 @@ git commit -m "feat: 同步 i2h-verify 的完整修改到源码仓库"
 
 ```bash
 # 文件大小对比
-Cuike01/.claude/skills/i2h-verify/skill.md:  22,480 字节
+Cuike01/.claude/skills/i2h-verify/SKILL.md:  22,480 字节
 hmigbot-ios/migbot/skills/i2h-verify/SKILL.md: 22,480 字节
 ✅ 已同步
 ```
@@ -141,7 +141,7 @@ hmigbot-ios/migbot/skills/i2h-verify/SKILL.md: 22,480 字节
 
 3. **验证一致性**:
    ```bash
-   diff -q Cuike01/.claude/skills/xxx/skill.md \
+   diff -q Cuike01/.claude/skills/xxx/SKILL.md \
            hmigbot-ios/migbot/skills/xxx/SKILL.md
    ```
 

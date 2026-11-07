@@ -9,7 +9,7 @@
 契约的 `required_mounts` 是 owner_file/owner_symbol → component_file/component_symbol 的必需渲染边；`required_actions` 是已绑定 UI handler 必须能到达的 `effect_call`；`runtime_cases` 冻结实际点击、内容 landmark、选中 Tab 和返回。范围由 spec/iOS 确定，不能按当前已接上的子集重新生成。核对 ledger 记录的契约 SHA256；禁止删用例、修改 landmark、缩小分母或修改检测器迁就产物。
 
 1. **第 0 轮静态检查**：运行 `python3 .claude/skills/i2h-execute/scripts/ui_stage1_gate.py --project-root . --output-json spec/execution/wiring-experiment/preflight.json`。契约存在时自动检查必需挂载/handler 调用链；import、注释、字符串、未从 build 到达的孤立 builder 都不能替代挂载。结果为 STATIC_ONLY_RUNTIME_REQUIRED，不能据此声称接线验收 PASS。解析不支持的写法保留未核实，不能猜成通过。
-2. **修复责任和轮次**：FAIL/BLOCKED 先运行根因处置脚本，质量缺陷派修复，信息/环境/工具缺口做有界恢复。每轮保存实际操作日志供统一计数；初检不消耗预算；最多 `max_repair_rounds`（缺省为 2）轮源码修复。按报告派 `a2h-migration-worker` 做 S1-W 跨文件接线，合并本轮缺口一次修复；随后重跑静态检查。只改 UI 挂载、UI 本地事件、参数/最小展示数据接入及由此暴露的 ArkTS 编译错误。保留 spec/ledger 允许的业务占位；不得通过跳过正式入口、假登录成功、清应用数据或更改 App 身份来通过。
+2. **修复责任和轮次**：FAIL/BLOCKED 先运行根因处置脚本，质量缺陷派修复，信息/环境/工具缺口做有界恢复。每轮保存实际操作日志供统一计数；初检不消耗预算；最多 `max_repair_rounds`（缺省为 2）轮源码修复。按报告派 `i2h-migration-worker` 做 S1-W 跨文件接线，合并本轮缺口一次修复；随后重跑静态检查。只改 UI 挂载、UI 本地事件、参数/最小展示数据接入及由此暴露的 ArkTS 编译错误。保留 spec/ledger 允许的业务占位；不得通过跳过正式入口、假登录成功、清应用数据或更改 App 身份来通过。
 3. **单次集中编译**：静态通过后派 `hmos-builder`，完整参数沿 agent 契约传递，`CALLER=i2h-execute, STAGE_HINT=stage-1-ui-delivery, MAX_ITER=1`。该已有例外仅构建一次，不在 builder 内另开 20 轮修复。编译错误返回第 2 步；不能删除组件或断开 import 修编译。编译通过后真实安装该 HAP，再按本文件「包回执」格式写 build/install JSON，`unit_id` 使用严格契约的值，记录当前 source/HAP SHA256 和真实 device_id。
 4. **实际设备冒烟**：安装当前包后运行下方脚本。它复用 `hdc/uitest`，从真实入口启动，只执行冻结的操作，不需要 iOS baseline、不调用 visual-fixer、不修改源码。它抓取本次 app UI dump 和 PNG，检查可见内容节点、Tab 选中态及二级页面覆盖/返回，保存每个 case 的证据与哈希；只有底栏/标题不算内容显示。设备/包问题保留 BLOCKED 并查根因；确认设备/捕获环境问题可有界恢复，错包/陈旧证据须重建，实际 UI 缺口返回第 2 步。
 

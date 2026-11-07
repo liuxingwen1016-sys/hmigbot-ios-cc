@@ -68,7 +68,7 @@ scope 由调用方参数 `--scope stage|slice|all` 决定。
 ESCAPE_HATCH_PHRASES = [
     "由 fixer",
     "后续接通",
-    "a2h-fixer 完成",
+    "i2h-fixer 完成",
     "后续 fixer",
     "已知不完整",
     "verify 阶段补齐",

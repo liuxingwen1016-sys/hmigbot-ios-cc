@@ -13,7 +13,7 @@ body 只留四句：派发 Agent `hmos-builder`（最多 20 轮）→ agent 返�
   ├─ agent 返回结构化报告（BUILD_STATUS / ITERATIONS / FILES_CHANGED / [PASS]HAP_OUTPUT / [FAIL]REMAINING_ERRORS+DIAGNOSIS）
   │
   ├─ [可选] 本轮 ERRORS_FIXED_TOTAL >= 5 时:
-  │   ├─ 主线程调用 a2h-retrospect --incremental
+  │   ├─ 主线程调用 i2h-retrospect --incremental
   │   ├─ 分析本轮错误模式
   │   ├─ 新模式写入 skill references
   │   └─ 后续 task 立即受益
