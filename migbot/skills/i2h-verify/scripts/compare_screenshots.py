@@ -21,18 +21,40 @@ except ImportError:
 class ScreenshotComparator:
     """截图对比器"""
 
-    def __init__(self, ios_dir: str, harmonyos_dir: str, hash_size: int = 16):
+    def __init__(
+        self,
+        ios_dir: str,
+        harmonyos_dir: str,
+        hash_size: int = 16,
+        content_region: bool = False,
+        crop_top: float = 0.05,
+        crop_bottom: float = 0.05,
+    ):
         self.ios_dir = Path(ios_dir)
         self.harmonyos_dir = Path(harmonyos_dir)
         self.hash_size = hash_size
         self.max_distance = hash_size * hash_size  # 最大汉明距离
+        self.content_region = content_region
+        self.crop_top = crop_top
+        self.crop_bottom = crop_bottom
+
+    def _prepare_image(self, image: Image.Image) -> Image.Image:
+        if not self.content_region:
+            return image
+
+        width, height = image.size
+        top = int(height * self.crop_top)
+        bottom = int(height * (1.0 - self.crop_bottom))
+        if top >= bottom:
+            raise ValueError("content crop removes the entire image")
+        return image.crop((0, top, width, bottom)).resize((1000, 2000))
 
     def calculate_similarity(self, img1_path: Path, img2_path: Path) -> Dict:
         """计算两张图片的相似度"""
         try:
             # 打开图片
-            img1 = Image.open(img1_path)
-            img2 = Image.open(img2_path)
+            img1 = self._prepare_image(Image.open(img1_path))
+            img2 = self._prepare_image(Image.open(img2_path))
 
             # 计算感知哈希
             hash1 = imagehash.phash(img1, hash_size=self.hash_size)
@@ -73,6 +95,7 @@ class ScreenshotComparator:
         results = {
             "ios_dir": str(self.ios_dir),
             "harmonyos_dir": str(self.harmonyos_dir),
+            "comparison_mode": "content_region" if self.content_region else "full_screen",
             "comparisons": [],
             "summary": {
                 "total": 0,
@@ -237,6 +260,12 @@ def main():
     parser.add_argument('--output', '-o', help='输出文件路径')
     parser.add_argument('--hash-size', type=int, default=16,
                        help='感知哈希大小 (默认: 16)')
+    parser.add_argument('--content-region', action='store_true',
+                       help='裁剪两端顶部和底部系统区域并统一为 1000x2000 后比较')
+    parser.add_argument('--crop-top', type=float, default=0.05,
+                       help='content-region 顶部裁剪比例 (默认: 0.05)')
+    parser.add_argument('--crop-bottom', type=float, default=0.05,
+                       help='content-region 底部裁剪比例 (默认: 0.05)')
 
     args = parser.parse_args()
 
@@ -244,7 +273,10 @@ def main():
     comparator = ScreenshotComparator(
         args.ios_dir,
         args.harmonyos_dir,
-        args.hash_size
+        args.hash_size,
+        args.content_region,
+        args.crop_top,
+        args.crop_bottom,
     )
     results = comparator.compare_all()
 
