@@ -299,6 +299,15 @@ async loadData(): Promise<void> {
 | `@2x` | 无需考虑（自动适配） |
 | `@3x` | 无需考虑（自动适配） |
 
+**跨设备密度归一化**:
+
+- `points → vp` 只定义单位，不保证两端固定几何在目标屏幕上拥有相同的像素比例。
+- 如果 runtime/source frame 提供了 iOS 参考宽度，且目标设备能提供逻辑宽度（`vp`），先计算
+  `layout_scale = target_logical_width_vp / source_reference_width_pt`，再把同一设计宽度下的固定几何量（卡片 inset、固定图形宽高、胶囊宽度和固定间距）乘以该比例。
+- 只对有明确共同设计宽度、且由 source/runtime frame 证明为固定几何的数值应用该比例。字体字号、动态控件、可滚动内容高度、系统安全区和百分比布局保留语义映射，由目标布局自行测量。
+- 记录每个页面或屏幕类别使用的 `source_reference_width_pt`、`target_logical_width_vp` 和 `layout_scale`。没有这三项证据时，沿用 source 数值并把尺寸归一化列为待验证项，不能凭经验套用全局除数。
+- 完成首轮构建后，用目标设备 Accessibility/layout dump 与 iOS runtime frame 对齐局部几何，再单变量修正偏差。不要把状态栏、导航栏或字体光栅化差异当作应用布局缩放依据。
+
 **布局检查**:
 
 1. **间距保真**:
