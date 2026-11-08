@@ -82,7 +82,7 @@ def parse_ui_obligations(text: str, *, line_offset: int = 0) -> dict[str, Any]:
         ("toggle", r"\bToggle\s*\(\s*(?:[\"']([^\"']+)[\"']|isOn\s*:\s*[^,]+)"),
         ("text_field", r"\b(?:TextField|SecureField)\s*\(\s*[\"']([^\"']+)[\"']"),
         ("date_picker", r"\bDatePicker\s*\(\s*[\"']([^\"']+)[\"']"),
-        ("navigation_link", r"\bNavigationLink\s*\("),
+        ("navigation_link", r"\bNavigationLink\s*(?:\(|\{)"),
     )
     for kind, pattern in patterns:
         for match in re.finditer(pattern, text):
@@ -109,11 +109,37 @@ def parse_ui_obligations(text: str, *, line_offset: int = 0) -> dict[str, Any]:
             "NavigationStack", "TabView", "ZStack", "VStack", "HStack", "overlay",
         ) if re.search(r"\b" + re.escape(name) + r"\b|\." + re.escape(name) + r"\s*\(", text)
     ]
+    primary_ids = [
+        item["value"] for item in identifiers
+        if re.search(r"(?:prepare|start|save|finish|confirm|manual|taste|resume)", item["value"], re.IGNORECASE)
+    ]
+    form_pickers = [
+        item.get("label") for item in controls
+        if item.get("kind") == "picker" and item.get("label")
+    ]
+    has_scroll = any(name in containers for name in ("ScrollView", "List", "LazyVStack", "LazyHStack", "LazyVGrid"))
+    chart = None
+    if re.search(r"\bChart\s*\(", text):
+        y_domain = re.search(r"chartYScale\s*\(\s*domain\s*:\s*([^\)]+)", text)
+        chart_height = re.search(r"chart[^\n]*?\.frame\s*\(\s*height\s*:\s*([0-9.]+)", text)
+        chart = {
+            "y_domain": y_domain.group(1).strip() if y_domain else None,
+            "x_axis_hidden": bool(re.search(r"chartXAxis\s*\(\s*\.hidden", text)),
+            "height": float(chart_height.group(1)) if chart_height else None,
+        }
+    searchable = bool(re.search(r"\.searchable\s*\(", text))
     return {
         "interactive_controls": controls,
         "accessibility_identifiers": identifiers,
         "containers": containers,
         "has_form": "Form" in containers,
-        "has_scroll": any(name in containers for name in ("ScrollView", "List", "LazyVStack", "LazyHStack", "LazyVGrid")),
+        "has_scroll": has_scroll,
         "has_overlay": "overlay" in containers,
+        "primary_action_ids": primary_ids,
+        "fixed_bottom_action_required": bool(has_scroll and primary_ids),
+        "form_picker_labels": form_pickers,
+        "compact_picker_rows_required": bool("Form" in containers and form_pickers),
+        "searchable": searchable,
+        "searchable_placement": "toolbar" if searchable else None,
+        "chart": chart,
     }

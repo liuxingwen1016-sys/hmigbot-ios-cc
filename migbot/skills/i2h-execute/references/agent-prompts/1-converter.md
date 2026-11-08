@@ -70,6 +70,10 @@ Read: <ios_file> 的 imports
 
 6. **展示语义和宿主层级**:
    - 先读取 ui-delivery unit 的 `source_obligations`。其中 `interactive_controls`、`accessibility_identifiers`、`has_form`、`has_scroll` 和 `has_overlay` 是源代码清单，必须逐项在 ArkUI 产物中保留语义。它们不能替代 iOS runtime evidence，但不能被转换过程丢弃。
+   - 当 `fixed_bottom_action_required=true` 时，`primary_action_ids` 中的动作必须放在 `Scroll` 同级的固定底部区域，并在首屏 accessibility dump 中可见。禁止把这些动作只放在 `Scroll` 内容末尾。
+   - 当 `compact_picker_rows_required=true` 时，逐项为 `form_picker_labels` 生成紧凑选择行，保留当前值、chevron 和稳定 id。禁止用 TagPill 或 chip grid 替代 Form Picker。
+   - 当 `searchable=true` 且 `searchable_placement=toolbar` 时，搜索入口应保持工具栏/折叠语义，不能额外插入首屏内联搜索框。
+   - 当 `chart` 非空时，保留 `y_domain`、`x_axis_hidden` 和 `height` 的源几何约束，不能把 Chart 降级成无轴的装饰矩形。
    - 逐项读取页面规格中的 `presentation`、`source_navigation` 和 `harmony_mapping`，先决定页面是根 Tab、NavigationLink/全屏路由，还是宿主拥有的 `.sheet()`/`.fullScreenCover()`。
    - iOS `.sheet()` 必须转换为宿主组件的 `bindSheet($$state, builder, options)`，iOS `.fullScreenCover()` 必须转换为 `bindContentCover` 或规格明确的全屏容器。禁止把这两类页面默认登记为 `NavDestination`。
    - 只有 iOS `NavigationLink`、push、独立全屏流程或规格明确的 routed dialog 才能登记 `NavDestination` 和 `NavPathStack` 路由。`pageMap` 只能登记这些真实路由目标，不能把 sheet 页面批量加入。

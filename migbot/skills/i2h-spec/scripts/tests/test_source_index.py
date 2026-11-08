@@ -107,6 +107,8 @@ class SourceIndexTests(unittest.TestCase):
         self.assertEqual([row["kind"] for row in pages["BeanDetailView"]["ui_obligations"]["interactive_controls"]], ["button"])
         self.assertTrue(pages["BeanEditorView"]["ui_obligations"]["has_form"])
         self.assertEqual([row["kind"] for row in pages["BeanEditorView"]["ui_obligations"]["interactive_controls"]], ["picker", "button"])
+        self.assertTrue(pages["BeanEditorView"]["ui_obligations"]["compact_picker_rows_required"])
+        self.assertEqual(pages["BeanEditorView"]["ui_obligations"]["form_picker_labels"], ["处理法"])
 
         evidence = self.root / "spec/.i2h/resources-inventory.json"
         payload = run(str(self.root), str(evidence), source_index_output=str(self.root / "spec/.i2h/cache/source-index.json"), source_index_force=True)
