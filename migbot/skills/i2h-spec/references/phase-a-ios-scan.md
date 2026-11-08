@@ -52,6 +52,11 @@ python3 .claude/skills/i2h-spec/scripts/ui_evidence.py \
 推测值。若需要真机/模拟器补充事实，使用 `runtime_view.py` 读取 JSON sidecar，
 不得把缺少运行时捕获当作静态事实。
 
+只读 iOS 工程没有现成 XCTest helper 时，使用同目录的
+`../scripts/ios_xctest_accessibility.py`。该脚本在临时副本中追加一次性
+XCUITest probe，保留 `I2H_UI_JSON_OUT` 和 `TEST_RUNNER_I2H_*` 环境变量契约，
+再由 `ios_runtime_capture.py` 配对截图。原始 iOS 工程不能被写入。
+
 **脚本应提取**（确定性）：
 - Swift 文件路径列表
 - SwiftUI View 类名列表（通过 `struct XXX: View` 识别）

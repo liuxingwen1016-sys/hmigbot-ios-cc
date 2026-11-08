@@ -158,6 +158,26 @@ XCTest helper 可以通过环境变量 `I2H_UI_JSON_OUT` 或
 因此每个页面状态仍必须通过真实 Simulator 运行采集 PNG 和无障碍证据，不能把静态
 源码推断写成 runtime JSON。
 
+当只读 iOS 工程没有现成 helper 时，使用随 skill 提供的
+`ios_xctest_accessibility.py`。它只在临时目录复制 Xcode 工程，向已有的 UI test
+源文件追加一次性 probe，并用 `-only-testing:CuikeUITests/I2HAccessibilityCaptureTests/testI2HAccessibilityCapture`
+运行该 probe。原始 iOS 工程保持不变。推荐把下面的命令作为
+`ios-runtime-capture-plan.json` 的 `accessibility_command`，其中
+`I2H_SIMULATOR_UDID` 由采集脚本注入：
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT:-.claude}/skills/i2h-spec/scripts/ios_xctest_accessibility.py" \
+  --project "$IOS_PATH/Cuike.xcodeproj" \
+  --scheme Cuike \
+  --destination "platform=iOS Simulator,id=$I2H_SIMULATOR_UDID" \
+  --derived-data "$PROJECT_ROOT/spec/.i2h/xctest-helper-derived-data" \
+  --log "$PROJECT_ROOT/spec/.i2h/xctest-helper.log"
+```
+
+该 probe 必须根据 `TEST_RUNNER_I2H_PAGE_ID` 执行确定性导航后再写出
+`debug_description`。如果工程的测试 target 或入口不同，保留同样的环境变量契约，
+并在临时副本中使用对应的 test source 路径。
+
 **脚本应输出**（骨架）：
 - Swift 文件路径列表
 - SwiftUI View 类名列表（`struct XXX: View`）
