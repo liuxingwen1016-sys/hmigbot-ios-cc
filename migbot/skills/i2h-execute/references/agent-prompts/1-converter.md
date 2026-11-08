@@ -75,6 +75,7 @@ Read: <ios_file> 的 imports
    - 当 `searchable=true` 且 `searchable_placement=toolbar` 时，搜索入口应保持工具栏/折叠语义，不能额外插入首屏内联搜索框。
    - 当 `chart` 非空时，保留 `y_domain`、`x_axis_hidden` 和 `height` 的源几何约束，不能把 Chart 降级成无轴的装饰矩形。
    - 逐项读取页面规格中的 `presentation`、`source_navigation` 和 `harmony_mapping`，先决定页面是根 Tab、NavigationLink/全屏路由，还是宿主拥有的 `.sheet()`/`.fullScreenCover()`。
+   - `ui-delivery-approved.json` 中 unit 的 `output.file` 与 `output.symbol` 是交付契约，必须按原路径和符号写入。根页面即使由 `EntryAbility` 通过 `pages/Index.ets` 启动，也要把实际根组件写到规格指定的 `pages/RootView.ets`，并让 `Index.ets` 只做兼容入口转发。不得把 `Index.ets` 当作 RootView 的替代产物，也不得仅修改 inventory 来掩盖 output 路径不一致。
    - iOS `.sheet()` 必须转换为宿主组件的 `bindSheet($$state, builder, options)`，iOS `.fullScreenCover()` 必须转换为 `bindContentCover` 或规格明确的全屏容器。禁止把这两类页面默认登记为 `NavDestination`。
    - 只有 iOS `NavigationLink`、push、独立全屏流程或规格明确的 routed dialog 才能登记 `NavDestination` 和 `NavPathStack` 路由。`pageMap` 只能登记这些真实路由目标，不能把 sheet 页面批量加入。
    - sheet builder 必须挂在拥有状态的根宿主节点上，使用 `$$` 双向绑定，关闭时回写 `false`，并保留 iOS 的取消、保存和确认生命周期。不要把 sheet 内容放到 Navigation 内部再用普通 push 伪装模态。
