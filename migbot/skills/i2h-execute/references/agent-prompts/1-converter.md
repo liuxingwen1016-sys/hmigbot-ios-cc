@@ -76,9 +76,10 @@ Read: <ios_file> 的 imports
    - 当 `chart` 非空时，保留 `y_domain`、`x_axis_hidden` 和 `height` 的源几何约束，不能把 Chart 降级成无轴的装饰矩形。
    - 逐项读取页面规格中的 `presentation`、`source_navigation` 和 `harmony_mapping`，先决定页面是根 Tab、NavigationLink/全屏路由，还是宿主拥有的 `.sheet()`/`.fullScreenCover()`。
    - `ui-delivery-approved.json` 中 unit 的 `output.file` 与 `output.symbol` 是交付契约，必须按原路径和符号写入。根页面即使由 `EntryAbility` 通过 `pages/Index.ets` 启动，也要把实际根组件写到规格指定的 `pages/RootView.ets`，并让 `Index.ets` 只做兼容入口转发。不得把 `Index.ets` 当作 RootView 的替代产物，也不得仅修改 inventory 来掩盖 output 路径不一致。
-   - iOS `.sheet()` 必须转换为宿主组件的 `bindSheet($$state, builder, options)`，iOS `.fullScreenCover()` 必须转换为 `bindContentCover` 或规格明确的全屏容器。禁止把这两类页面默认登记为 `NavDestination`。
+   - iOS `.sheet()` 必须转换为宿主拥有的模态层，优先使用 `bindSheet($$state, builder, options)`。在目标 API 26 上必须用真机 smoke 验证打开、取消、保存和程序化关闭都能生效。如果 `bindSheet` 的 `isShow=false` 不关闭、系统关闭 X 无法隐藏，或关闭后留下空白层，改用根宿主的自绘 overlay 作为等价实现，并把 sheet 内容、遮罩、关闭回写和安全区一起放在同一宿主层。iOS `.fullScreenCover()` 必须转换为 `bindContentCover` 或规格明确且可关闭的全屏容器。禁止把这两类页面默认登记为 `NavDestination`，也不能保留已知失效的原生绑定作为唯一实现。
    - 只有 iOS `NavigationLink`、push、独立全屏流程或规格明确的 routed dialog 才能登记 `NavDestination` 和 `NavPathStack` 路由。`pageMap` 只能登记这些真实路由目标，不能把 sheet 页面批量加入。
    - sheet builder 必须挂在拥有状态的根宿主节点上，使用 `$$` 双向绑定，关闭时回写 `false`，并保留 iOS 的取消、保存和确认生命周期。不要把 sheet 内容放到 Navigation 内部再用普通 push 伪装模态。
+   - 任何 `Stepper`/加减控件都必须保留可区分的增加与减少语义。不要用容易被 ArkUI 字体裁剪的单字符 `+`/`-` 作为唯一视觉图标。优先使用明确的自绘横线/竖线组合、系统 Symbol 或带稳定 accessibility id 的图标按钮，并在真机 dump 与点击 smoke 中分别验证增加和减少会改变正确的值。
    - 浮动 Tab、底部胶囊和其他根宿主常驻元素的可见性必须按原始 presentation 决定。sheet 覆盖时保留 iOS 背景上下文和 dim 行为，full-screen 或 pushed 页面显示期间隐藏被覆盖的常驻元素，返回根页后恢复。
    - SwiftUI `Form` 中的 `Picker` 默认映射为紧凑的可访问选择行，保留源标签、当前值、chevron 和稳定 `id`。只有源代码明确使用 segmented control 或 chip group 时才映射为 `TagPill`/多 chip 布局，不能把 Settings 外观或 BeanEditor 处理法、烘焙度、档案颜色自动展开成大块 chip 网格。
    - 逐项对齐 sheet 的源 section 顺序和首屏内容预算。不要在源 Settings/BeanEditor 的 About、保存或主表单之前插入 Harmony-only 的系统表面预览、桥接卡片或额外说明。目标平台特有能力放到源页面明确对应的 section 之后，或单独的设置子页，不能把源 sheet 的关键内容推到首屏以下。

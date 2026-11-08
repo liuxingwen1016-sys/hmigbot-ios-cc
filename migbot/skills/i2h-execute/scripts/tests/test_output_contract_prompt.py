@@ -13,6 +13,14 @@ class OutputContractPromptTests(unittest.TestCase):
         self.assertIn("RootView.ets", prompt)
         self.assertIn("Index.ets", prompt)
 
+    def test_converter_prompt_covers_api26_modal_fallback_and_stepper_glyphs(self):
+        prompt = (ROOT / "references/agent-prompts/1-converter.md").read_text(encoding="utf-8")
+        self.assertIn("API 26", prompt)
+        self.assertIn("自绘 overlay", prompt)
+        self.assertIn("程序化关闭", prompt)
+        self.assertIn("不要用容易被 ArkUI 字体裁剪的单字符 `+`/`-`", prompt)
+        self.assertIn("增加和减少会改变正确的值", prompt)
+
     def test_skill_requires_output_contract_before_build(self):
         skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn("ui-delivery-approved.json", skill)
