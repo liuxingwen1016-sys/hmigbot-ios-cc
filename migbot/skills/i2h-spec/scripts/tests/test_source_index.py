@@ -27,6 +27,11 @@ class SourceIndexTests(unittest.TestCase):
         )
         (self.root / "Core/Domain.swift").parent.mkdir(parents=True)
         (self.root / "Core/Domain.swift").write_text("struct BrewSession { let id: String }\n", encoding="utf-8")
+        (self.root / "Components/Card.swift").parent.mkdir(parents=True)
+        (self.root / "Components/Card.swift").write_text(
+            "import SwiftUI\nstruct Card: View { var body: some View { Text(\"Card\") } }\n",
+            encoding="utf-8",
+        )
 
     def test_index_contains_full_source_surface_and_cache_hit(self):
         output = self.root / "spec/.i2h/cache/source-index.json"
@@ -36,12 +41,14 @@ class SourceIndexTests(unittest.TestCase):
         self.assertTrue(second["cache_hit"])
         self.assertEqual(first["cache_key"], second["cache_key"])
         self.assertTrue(json.loads(output.read_text(encoding="utf-8"))["cache_hit"])
-        self.assertEqual(first["summary"]["swift_file_count"], 2)
+        self.assertEqual(first["summary"]["swift_file_count"], 3)
         home = next(row for row in first["swift_files"] if row["path"].endswith("HomeView.swift"))
         self.assertEqual(home["properties"][0]["wrapper"], "@State")
         self.assertEqual(home["methods"][0]["name"], "refresh")
         self.assertTrue(home["routes"])
         self.assertEqual(len(first["pages"]), 2)
+        self.assertEqual(len(first["components"]), 1)
+        self.assertEqual(first["components"][0]["surface"], "shared_component")
 
     def test_ui_evidence_writes_index_metadata_and_page_slice(self):
         evidence = self.root / "spec/.i2h/resources-inventory.json"

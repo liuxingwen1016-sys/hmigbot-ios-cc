@@ -23,9 +23,9 @@ from pathlib import Path
 from typing import Any, Iterable
 
 try:
-    from source_index import build_index
+    from source_index import build_index, classify_view_surface
 except ImportError:  # pragma: no cover - package/installed-tree fallback
-    from .source_index import build_index  # type: ignore
+    from .source_index import build_index, classify_view_surface  # type: ignore
 
 
 TOOL_VERSION = "i2h-ui-evidence/1.1"
@@ -157,6 +157,7 @@ def detect_views(path: Path, root: Path) -> list[dict[str, Any]]:
                 "depth_estimate": max(0, text.count("{") - text.count("}") // 2),
             },
             "interactions": interactions,
+            "surface": classify_view_surface(class_name, [part.strip() for part in bases.split(",")], relative(path, root), text),
             "confidence": "high",
             "source_sha256": sha256_bytes(text.encode("utf-8")),
         })
@@ -296,7 +297,7 @@ def build_res_index(inventory: dict[str, Any], views: list[dict[str, Any]], targ
     usage: dict[str, Any] = {}
     tokens: list[dict[str, Any]] = []
     refs = inventory.get("code_references", [])
-    page_by_file = {view["file_path"]: "page_%04d_%s" % (index, view["view_name"]) for index, view in enumerate(views, 1)}
+    page_by_file = {view["file_path"]: "page_%04d_%s" % (index, view["view_name"]) for index, view in enumerate(views, 1) if view.get("surface") == "screen"}
     refs_by_name: dict[str, list[dict[str, Any]]] = {}
     for ref in refs:
         refs_by_name.setdefault(ref["name"], []).append(ref)
@@ -335,6 +336,8 @@ def run(
     for swift in sorted(root.rglob("*.swift")):
         if "Tests" not in swift.parts and "Test" not in swift.name:
             views.extend(detect_views(swift, root))
+    pages = [view for view in views if view.get("surface") == "screen"]
+    components = [view for view in views if view.get("surface") != "screen"]
     target_hash = source_digest(root, inputs)
     output_path = Path(output).expanduser().resolve()
     index_path = Path(source_index_output).expanduser().resolve() if source_index_output else output_path.parent / "cache/source-index.json"
@@ -353,8 +356,12 @@ def run(
         "source_tree_sha256": source_index.get("source_tree_sha256"),
     }
     inventory["views"] = views
+    inventory["pages"] = pages
+    inventory["components"] = components
     inventory["summary"]["view_count"] = len(views)
-    payload = {"schema_version": SCHEMA_VERSION, "tool_version": TOOL_VERSION, "target_input_sha256": target_hash, "project_root": str(root), "runtime_required": runtime_required, "views": views, "resources": inventory}
+    inventory["summary"]["page_count"] = len(pages)
+    inventory["summary"]["component_count"] = len(components)
+    payload = {"schema_version": SCHEMA_VERSION, "tool_version": TOOL_VERSION, "target_input_sha256": target_hash, "project_root": str(root), "runtime_required": runtime_required, "views": views, "pages": pages, "components": components, "resources": inventory}
     atomic_json(output_path, payload)
     # Stable handoff consumed by execute/resource-facts.  Keep it separate
     # from the human-facing inventory so downstream scripts can verify the
@@ -367,7 +374,7 @@ def run(
         "inventory": str(output_path),
     })
     if res_index:
-        index = build_res_index(inventory, views, target_hash, runtime_required)
+        index = build_res_index(inventory, pages, target_hash, runtime_required)
         destination = Path(res_index)
         for name, value in index.items():
             atomic_json(destination / (name + ".json"), value)
@@ -376,7 +383,8 @@ def run(
 
 def build_skeleton(payload: dict[str, Any]) -> dict[str, Any]:
     """Project skeleton consumed by the semantic Phase-A steps."""
-    views = payload.get("views", [])
+    views = payload.get("pages") or [view for view in payload.get("views", []) if view.get("surface") == "screen"]
+    components = payload.get("components") or [view for view in payload.get("views", []) if view.get("surface") != "screen"]
     resources = payload.get("resources", {})
     source_files = resources.get("source_files", [])
     swift_files = sorted(
@@ -419,6 +427,14 @@ def build_skeleton(payload: dict[str, Any]) -> dict[str, Any]:
         "target_input_sha256": payload.get("target_input_sha256"),
         "swift_files": swift_files,
         "swiftui_views": swiftui_views,
+        "shared_components": [
+            {
+                "class_name": view["view_name"],
+                "file_path": view["file_path"],
+                "line_count": view.get("line_count", 0),
+            }
+            for view in components
+        ],
         "uikit_viewcontrollers": uikit_viewcontrollers,
         "info_plist": info_plists[0] if info_plists else None,
         "assets": assets,

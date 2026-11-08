@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
-TOOL_VERSION = "i2h-source-index/1.0"
+TOOL_VERSION = "i2h-source-index/1.1"
 SCHEMA_VERSION = 1
 DEFAULT_TEMPLATE_GLOBS = ("templates/**/*.md", "references/**/*.md")
 
@@ -151,6 +151,25 @@ def _resources(text: str) -> list[dict[str, Any]]:
     return result
 
 
+def classify_view_surface(name: str, bases: Iterable[str], relative_path: str, text: str) -> str:
+    """Separate navigable screens from reusable SwiftUI view components."""
+    base_text = " ".join(bases)
+    if any(token in base_text for token in ("UIViewRepresentable", "NSViewRepresentable", "ViewModifier")):
+        return "shared_component"
+    path_parts = {part.lower() for part in Path(relative_path).parts}
+    screen_path = bool(path_parts & {"views", "screens", "pages", "viewcontrollers"})
+    component_path = bool(path_parts & {"components", "design", "services", "widgets"})
+    if name == "RootView":
+        return "screen"
+    if "UIViewController" in base_text or name.endswith("ViewController"):
+        return "screen"
+    if screen_path and not component_path and "View" in base_text:
+        return "screen"
+    if name.endswith("View") and any(token in text for token in ("NavigationStack", "TabView", "navigationDestination")):
+        return "screen"
+    return "shared_component"
+
+
 def _read_swift_files(root: Path) -> list[Path]:
     return [
         path for path in sorted(root.rglob("*.swift"))
@@ -201,6 +220,7 @@ def build_index(
 
     entries: list[dict[str, Any]] = []
     pages: list[dict[str, Any]] = []
+    components: list[dict[str, Any]] = []
     for path in files:
         text = texts.get(path)
         if text is None:
@@ -228,13 +248,21 @@ def build_index(
         entries.append(entry)
         for declaration in declarations:
             if "View" in declaration["bases"] or any("View" in base for base in declaration["bases"]):
-                pages.append({
+                surface = classify_view_surface(declaration["name"], declaration["bases"], rel, text)
+                view = {
                     "page_id": f"page_{len(pages) + 1:04d}_{declaration['name']}",
                     "view_name": declaration["name"],
                     "file_path": rel,
                     "declaration_line": declaration["line"],
                     "dependencies": dependencies,
-                })
+                    "surface": surface,
+                }
+                if surface == "screen":
+                    pages.append(view)
+                else:
+                    view["component_id"] = f"component_{len(components) + 1:04d}_{declaration['name']}"
+                    view.pop("page_id", None)
+                    components.append(view)
 
     index: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
@@ -246,9 +274,11 @@ def build_index(
         "cache_hit": False,
         "swift_files": entries,
         "pages": pages,
+        "components": components,
         "summary": {
             "swift_file_count": len(entries),
             "page_count": len(pages),
+            "component_count": len(components),
             "declaration_count": sum(len(row["declarations"]) for row in entries),
             "method_count": sum(len(row["methods"]) for row in entries),
         },
