@@ -320,6 +320,7 @@ async loadData(): Promise<void> {
 - 如果 runtime/source frame 提供了 iOS 参考宽度，且目标设备能提供逻辑宽度（`vp`），先计算
   `layout_scale = target_logical_width_vp / source_reference_width_pt`，再把同一设计宽度下的固定几何量（卡片 inset、固定图形宽高、胶囊宽度和固定间距）乘以该比例。
 - 只对有明确共同设计宽度、且由 source/runtime frame 证明为固定几何的数值应用该比例。字体字号、动态控件、可滚动内容高度、系统安全区和百分比布局保留语义映射，由目标布局自行测量。
+- 对 `largeTitle`、固定两行标题和其他由 runtime frame 明确给出几何边界的展示字号，先按同一个 `layout_scale` 计算目标字号，再用目标设备 Accessibility/layout dump 复核文字 frame。不要把 SwiftUI 的 point 值未经缩放直接当作 ArkUI `vp`，也不要为了字体 rasterization 反复改变卡片和后续内容的位置。
 - 记录每个页面或屏幕类别使用的 `source_reference_width_pt`、`target_logical_width_vp` 和 `layout_scale`。没有这三项证据时，沿用 source 数值并把尺寸归一化列为待验证项，不能凭经验套用全局除数。
 - 完成首轮构建后，用目标设备 Accessibility/layout dump 与 iOS runtime frame 对齐局部几何，再单变量修正偏差。不要把状态栏、导航栏或字体光栅化差异当作应用布局缩放依据。
 
