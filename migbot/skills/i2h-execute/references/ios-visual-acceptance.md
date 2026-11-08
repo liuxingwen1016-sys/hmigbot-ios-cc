@@ -54,6 +54,13 @@ selected value, and stable identifier. Stage-1 smoke must tap every P0 picker,
 toggle, save action, and primary navigation action by identifier or role. A
 screen that looks close but exposes only non-clickable text is a `FAIL` finding.
 
+Sheet content must be top-aligned inside the selected detent. Do not let a
+short builder column be vertically centered by the sheet or `Scroll` container,
+which creates a large blank region above the title and shifts the iOS content
+downward. Use an explicit top-aligned wrapper or a minimum content height when
+the source sheet fills the viewport. Compare the title, first section, and
+bottom CTA frames against the iOS baseline before accepting the sheet.
+
 ## F101 camera and OCR capability closure
 
 When the iOS source contains camera or VisionKit OCR behavior, the Harmony
