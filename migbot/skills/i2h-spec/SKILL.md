@@ -127,6 +127,20 @@ python3 .claude/skills/i2h-spec/scripts/ios_runtime_capture.py \
   --accessibility-command '<XCTest helper writes $I2H_UI_JSON_OUT>'
 ```
 
+当页面状态计划包含多个页面或多个状态时，必须使用批量包装器，不能靠 LLM 临时串联多次单页命令。包装器会验证 page/state 唯一性，首个状态构建一次，后续状态复用 DerivedData，并为每个状态写独立日志和统一汇总清单。
+
+```bash
+python3 .claude/skills/i2h-spec/scripts/ios_runtime_capture_plan.py \
+  --plan spec/.i2h/ios-runtime-capture-plan.json \
+  --output-root spec/baseline/ui-snapshots \
+  --project-root . \
+  --project ../cuike-ios/Cuike.xcodeproj \
+  --scheme Cuike \
+  --device-id "$CUIKE_SIMULATOR_ID"
+```
+
+计划文件的每个状态必须提供 `page_id`、`state_id`，以及 `accessibility_command` 或已有的 `accessibility_json`。`accessibility_command` 负责在真实 Simulator 中执行确定性导航，并写入环境变量 `I2H_UI_JSON_OUT`。一个状态失败时包装器继续采集其余状态，最终退出码为 2，并在 `capture-plan-manifest.json` 中记录 `blocked_reason`。下游只能把 `status=captured` 的状态作为运行时证据，不能把 partial 汇总伪装成全量通过。
+
 运行时证据使用 PNG + accessibility JSON。Android 的 `view.xml` 只适用于 legacy
 或 Android 输入，不得作为 iOS 的必需格式。
 
