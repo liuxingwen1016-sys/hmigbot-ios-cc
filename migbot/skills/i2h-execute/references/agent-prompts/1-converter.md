@@ -368,6 +368,7 @@ python3 .claude/skills/i2h-execute/scripts/layout_scale.py \
    - 任何悬浮 Tab、底部工具条、全局手势层或 `Stack` 覆盖层都必须为页面最后一个可交互控件预留完整的底部 inset。覆盖层不能遮住主按钮、输入框、滚动列表最后一项或弹窗触发区域。
    - 当悬浮层在 routed 页面上持续显示时，把覆盖层的实际 envelope 加上安全区转换成目标逻辑单位，施加在承载页面的 `Navigation` 或等价根容器上，让可滚动内容的 viewport 在浮层上方结束。不要只给 Scroll 内层追加尾部 padding，内层 padding 只能改变滚动到底后的间距，不能修复 viewport 末端的命中遮挡。
    - 使用目标设备的 Accessibility/layout dump 检查覆盖层和底部操作控件的 bounds。对每个包含底部操作的页面执行一次滚动到末尾后的点击 smoke，记录控件可见、可点击且没有被覆盖层拦截的证据。
+   - 如果 iOS 初始 viewport 已展示主 CTA，Harmony 首屏 dump 必须包含同一个动作节点。对于 sheet 或配方类页面，把主 CTA 放在固定底部区域，或为 Scroll 预留足够高度，不能只在滚动后才生成该节点。首屏检查和滚动到底检查分别记录，不能用后者替代前者。
 
 ### Step 5: 资源处理
 

@@ -54,6 +54,15 @@ selected value, and stable identifier. Stage-1 smoke must tap every P0 picker,
 toggle, save action, and primary navigation action by identifier or role. A
 screen that looks close but exposes only non-clickable text is a `FAIL` finding.
 
+When the iOS baseline presents a primary action in the initial viewport, the
+Harmony page must expose that action in the initial accessibility dump as well.
+Do not move a sheet's primary CTA below a long `Scroll` just because the target
+device has a taller logical canvas. Keep the CTA in a fixed bottom region or
+reserve enough content height for it to remain visible above the safe area.
+Stage-1 smoke records the first-screen action node before any swipe, then runs
+the end-of-scroll check separately. A primary CTA that appears only after a
+swipe is a `FAIL` finding even when the route remains reachable.
+
 Sheet content must be top-aligned inside the selected detent. Do not let a
 short builder column be vertically centered by the sheet or `Scroll` container,
 which creates a large blank region above the title and shifts the iOS content
