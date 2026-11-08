@@ -1207,6 +1207,19 @@ F104 `ohos.ability.shortcuts` metadata 和 `shortcuts.json`。`PARTIAL` 或 `BLO
 保留具体 capability finding，不能写成 Stage 5 PASS。系统宿主行为仍需真机或模拟器证据，
 静态 profile 通过不能替代添加、刷新和点击回路。
 
+如果 `spec/baseline/ui-delivery-approved.json` 中包含 `source_obligations`，在写入
+Stage 5 marker 前还必须运行一次确定性的 UI 事实门禁：
+
+```bash
+python3 .claude/skills/i2h-execute/scripts/ui_obligation_gate.py \
+  --project-root . \
+  --output-json spec/execution/ui-obligation-gate.json
+```
+
+该门禁检查固定底部主动作没有落入 `Scroll`、Form Picker 没有被 chip 替代、toolbar
+search 没有退化成首屏内联输入框，以及 Chart 仍保留折线和数据点结构。失败时必须修复
+产物或保留具体 finding，不能把 prompt 中已声明的 source obligation 当成已实现。
+
 创建 `spec/execution/stage5-complete.txt` 作为 **schema-2 JSON marker**。
 在 `spec/migration-report.md` 和
 `spec/execution/ui-state-ownership.json` 最终写入后，按照
