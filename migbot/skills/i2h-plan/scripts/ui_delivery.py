@@ -132,7 +132,12 @@ def views_from_evidence(root: Path) -> list[dict[str, Any]]:
     path = evidence_path(root)
     if path.is_file():
         payload = read(path)
-        views = payload.get("views", [])
+        # Delivery units represent navigable screens. Shared SwiftUI
+        # declarations are inputs to those screens and must not become page
+        # owners or duplicate content states.
+        views = payload.get("pages")
+        if not isinstance(views, list) or not views:
+            views = [item for item in payload.get("views", []) if isinstance(item, dict) and not _is_shared_component(item)]
         if isinstance(views, list):
             return [item for item in views if isinstance(item, dict) and item.get("view_name") and item.get("file_path")]
     # Fallback for a hand-created baseline: retain Claude Code compatibility
@@ -167,6 +172,8 @@ def evidence_source_root(root: Path) -> Path:
 def draft(project_root: str | Path, out: str | Path) -> dict[str, Any]:
     root = Path(project_root).expanduser().resolve()
     views = views_from_evidence(root)
+    evidence = read(evidence_path(root)) if evidence_path(root).is_file() else {}
+    shared_components = evidence.get("components", []) if isinstance(evidence, dict) else []
     source_root = evidence_source_root(root)
     presentation_hints = _presentation_hints(source_root, views)
     units = []
@@ -206,10 +213,10 @@ def draft(project_root: str | Path, out: str | Path) -> dict[str, Any]:
             "integration": None,
             "input_alternatives": {},
         })
-    evidence = evidence_path(root)
     target_hash = None
-    if evidence.is_file():
-        target_hash = read(evidence).get("target_input_sha256")
+    evidence_file = evidence_path(root)
+    if evidence_file.is_file():
+        target_hash = evidence.get("target_input_sha256")
     result = {
         "schema_version": 2,
         "tool_version": TOOL_VERSION,
@@ -220,7 +227,15 @@ def draft(project_root: str | Path, out: str | Path) -> dict[str, Any]:
         "target_input_sha256": target_hash,
         "units": units,
         "verification_states": [],
-        "component_exclusions": [],
+        "component_exclusions": [
+            {
+                "view_name": item.get("view_name"),
+                "file_path": item.get("file_path"),
+                "reason": "shared_component_embedded_in_screen",
+            }
+            for item in shared_components
+            if isinstance(item, dict) and item.get("view_name")
+        ],
         "presentation": {"source": "pending-review", "runtime_required": True},
         "toolchain": {"sdk_definitions": None, "product": None},
         "warnings": [] if units else ["no static iOS views found; run i2h-spec Phase A"],

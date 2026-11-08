@@ -82,7 +82,11 @@ class IOSPipelineContractTest(unittest.TestCase):
         self.assertEqual(by_name["ios.SettingsView"]["presentation_role"], "hosted_destination")
         self.assertEqual(by_name["ios.SettingsView"]["presentation"]["harmony_mapping"], "bindSheet")
         self.assertEqual(by_name["ios.BrewView"]["presentation"]["harmony_mapping"], "bindContentCover")
-        self.assertEqual(by_name["ios.PrimaryButton"]["presentation_role"], "embedded")
+        self.assertNotIn("ios.PrimaryButton", by_name)
+        self.assertIn(
+            "PrimaryButton",
+            {item["view_name"] for item in inventory["component_exclusions"]},
+        )
 
     def test_delivery_carries_source_ui_obligations(self):
         (self.root / "Views/SettingsView.swift").write_text(
