@@ -69,6 +69,7 @@ Read: <ios_file> 的 imports
    - 其他生命周期方法
 
 6. **展示语义和宿主层级**:
+   - 先读取 ui-delivery unit 的 `source_obligations`。其中 `interactive_controls`、`accessibility_identifiers`、`has_form`、`has_scroll` 和 `has_overlay` 是源代码清单，必须逐项在 ArkUI 产物中保留语义。它们不能替代 iOS runtime evidence，但不能被转换过程丢弃。
    - 逐项读取页面规格中的 `presentation`、`source_navigation` 和 `harmony_mapping`，先决定页面是根 Tab、NavigationLink/全屏路由，还是宿主拥有的 `.sheet()`/`.fullScreenCover()`。
    - iOS `.sheet()` 必须转换为宿主组件的 `bindSheet($$state, builder, options)`，iOS `.fullScreenCover()` 必须转换为 `bindContentCover` 或规格明确的全屏容器。禁止把这两类页面默认登记为 `NavDestination`。
    - 只有 iOS `NavigationLink`、push、独立全屏流程或规格明确的 routed dialog 才能登记 `NavDestination` 和 `NavPathStack` 路由。`pageMap` 只能登记这些真实路由目标，不能把 sheet 页面批量加入。

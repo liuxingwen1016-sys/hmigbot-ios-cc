@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from ui_evidence import build_skeleton, run
+from ui_evidence import build_skeleton, parse_ui_obligations, run
 from runtime_view import normalize
 
 
@@ -50,6 +50,43 @@ class UiEvidenceTests(unittest.TestCase):
         self.assertIsNotNone(normalized['screenshot_sha256'])
         self.assertIsNotNone(normalized['ui_json_sha256'])
         self.assertFalse(normalized['warnings'])
+
+    def test_ui_obligations_capture_controls_and_layout_containers(self):
+        source = '''
+        struct SettingsView: View {
+            var body: some View {
+                Form {
+                    Picker("外观", selection: $appearance) { Text("跟随系统") }
+                    Toggle("通知", isOn: $notifications)
+                    Button("完成") { save() }
+                }
+                .accessibilityIdentifier("settingsDone")
+            }
+        }
+        '''
+        obligations = parse_ui_obligations(source)
+        self.assertEqual([row['kind'] for row in obligations['interactive_controls']], ['picker', 'toggle', 'button'])
+        self.assertEqual(obligations['interactive_controls'][0]['label'], '外观')
+        self.assertEqual(obligations['interactive_controls'][2]['label'], '完成')
+        self.assertEqual(obligations['accessibility_identifiers'][0]['value'], 'settingsDone')
+        self.assertTrue(obligations['has_form'])
+        self.assertFalse(obligations['has_scroll'])
+
+    def test_view_evidence_carries_ui_obligations(self):
+        self.write('Views/RecipeView.swift', '''
+        import SwiftUI
+        struct RecipeView: View {
+            var body: some View {
+                ScrollView { Text("Recipe") }
+                Button("开始冲煮") { startBrew() }
+            }
+        }
+        ''')
+        evidence_path = self.root / 'spec/.i2h/resources-inventory.json'
+        payload = run(str(self.root), str(evidence_path))
+        recipe = next(row for row in payload['views'] if row['view_name'] == 'RecipeView')
+        self.assertTrue(recipe['ui_obligations']['has_scroll'])
+        self.assertEqual(recipe['ui_obligations']['interactive_controls'][-1]['label'], '开始冲煮')
 
 
 if __name__ == '__main__':

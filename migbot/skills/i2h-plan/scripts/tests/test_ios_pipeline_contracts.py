@@ -84,6 +84,22 @@ class IOSPipelineContractTest(unittest.TestCase):
         self.assertEqual(by_name["ios.BrewView"]["presentation"]["harmony_mapping"], "bindContentCover")
         self.assertEqual(by_name["ios.PrimaryButton"]["presentation_role"], "embedded")
 
+    def test_delivery_carries_source_ui_obligations(self):
+        (self.root / "Views/SettingsView.swift").write_text(
+            'import SwiftUI\nstruct SettingsView: View {\n'
+            '  var body: some View { Form { Picker("外观", selection: .constant(0)) { Text("跟随系统") }\n'
+            '    Toggle("通知", isOn: .constant(true))\n'
+            '    Button("完成") {} } }\n}\n',
+            encoding="utf-8",
+        )
+        output = self.root / "spec/.i2h/resources-inventory.json"
+        ui_evidence.run(str(self.root), str(output), str(self.root / "spec/baseline/res-index"))
+        inventory = ui_delivery.draft(self.root, self.root / "draft.json")
+        settings = next(unit for unit in inventory["units"] if unit["component"] == "ios.SettingsView")
+        obligations = settings["source_obligations"]
+        self.assertEqual([row["kind"] for row in obligations["interactive_controls"]], ["picker", "toggle", "button"])
+        self.assertTrue(obligations["has_form"])
+
     def test_delivery_draft_validates_and_ownership_is_explicit(self):
         output = self.root / "spec/.i2h/resources-inventory.json"
         ui_evidence.run(str(self.root), str(output), str(self.root / "spec/baseline/res-index"))

@@ -195,6 +195,10 @@ def draft(project_root: str | Path, out: str | Path) -> dict[str, Any]:
             "required": True,
             "required_states": [{"state_id": "default", "arrival_mode": "preview", "responsibility": "content", "source_refs": [source_ref(source_root, source_file)]}],
             "source_refs": [source_ref(source_root, source_file)],
+            # Static source obligations are a deterministic checklist for the
+            # converter. They never replace runtime evidence for viewport or
+            # geometry decisions.
+            "source_obligations": view.get("ui_obligations", {}),
             "generation_owner": "i2h-view-converter",
             "integration_owner": "closer",
             "owned_ui_roles": ["content", "behavior"],
