@@ -74,6 +74,8 @@ Read: <ios_file> 的 imports
    - 只有 iOS `NavigationLink`、push、独立全屏流程或规格明确的 routed dialog 才能登记 `NavDestination` 和 `NavPathStack` 路由。`pageMap` 只能登记这些真实路由目标，不能把 sheet 页面批量加入。
    - sheet builder 必须挂在拥有状态的根宿主节点上，使用 `$$` 双向绑定，关闭时回写 `false`，并保留 iOS 的取消、保存和确认生命周期。不要把 sheet 内容放到 Navigation 内部再用普通 push 伪装模态。
    - 浮动 Tab、底部胶囊和其他根宿主常驻元素的可见性必须按原始 presentation 决定。sheet 覆盖时保留 iOS 背景上下文和 dim 行为，full-screen 或 pushed 页面显示期间隐藏被覆盖的常驻元素，返回根页后恢复。
+   - SwiftUI `Form` 中的 `Picker` 默认映射为紧凑的可访问选择行，保留源标签、当前值、chevron 和稳定 `id`。只有源代码明确使用 segmented control 或 chip group 时才映射为 `TagPill`/多 chip 布局，不能把 Settings 外观或 BeanEditor 处理法、烘焙度、档案颜色自动展开成大块 chip 网格。
+   - 逐项对齐 sheet 的源 section 顺序和首屏内容预算。不要在源 Settings/BeanEditor 的 About、保存或主表单之前插入 Harmony-only 的系统表面预览、桥接卡片或额外说明。目标平台特有能力放到源页面明确对应的 section 之后，或单独的设置子页，不能把源 sheet 的关键内容推到首屏以下。
 
 7. **状态刷新边界**:
    - 标记由持久化数据、异步任务或计时器驱动的字段，以及页面在写入完成后必须立即反映的派生状态。

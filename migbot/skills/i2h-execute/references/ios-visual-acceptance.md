@@ -63,6 +63,14 @@ Stage-1 smoke records the first-screen action node before any swipe, then runs
 the end-of-scroll check separately. A primary CTA that appears only after a
 swipe is a `FAIL` finding even when the route remains reachable.
 
+For a source `Form` picker, compare the row geometry and selected-value affordance
+before comparing the option list. The Harmony dump must expose a picker or
+button-equivalent role with the source label, selected value, chevron and stable
+identifier. A chip grid is acceptable only when the source itself uses a
+segmented or chip control. Target-only preview cards or explanatory blocks must
+follow the source section order and cannot displace About, save, or primary form
+content from the initial viewport.
+
 Sheet content must be top-aligned inside the selected detent. Do not let a
 short builder column be vertically centered by the sheet or `Scroll` container,
 which creates a large blank region above the title and shifts the iOS content
