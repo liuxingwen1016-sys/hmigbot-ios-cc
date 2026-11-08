@@ -122,6 +122,35 @@ class PipelineResumeTests(unittest.TestCase):
         self.assertIn('schema2_delivery_ownership', result['errors'])
         self.assertEqual(result['ownership']['status'], 'FAIL')
 
+    def test_delivery_allows_default_content_per_page(self):
+        units = [
+            {
+                'unit_id': 'home',
+                'page_id': 'page_home',
+                'owned_ui_roles': ['content'],
+                'required_states': [{'state_id': 'default', 'arrival_mode': 'preview', 'responsibility': 'content'}],
+                'output': {'file': 'entry/src/main/ets/pages/Home.ets'},
+            },
+            {
+                'unit_id': 'settings',
+                'page_id': 'page_settings',
+                'owned_ui_roles': ['content'],
+                'required_states': [{'state_id': 'default', 'arrival_mode': 'preview', 'responsibility': 'content'}],
+                'output': {'file': 'entry/src/main/ets/pages/Settings.ets'},
+            },
+        ]
+        path = self.root / 'spec/baseline/ui-delivery-approved.json'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({
+            'schema_version': 2,
+            'status': 'approved',
+            'target_input_sha256': self.target,
+            'units': units,
+        }), encoding='utf-8')
+        result = pipeline_resume.validate_delivery(self.root, self.target)
+        self.assertNotIn('schema2_delivery_duplicate_content', result['errors'])
+        self.assertNotIn('schema2_delivery_ownership', result['errors'])
+
     def test_plain_legacy_marker_never_counts_as_completion(self):
         path = self.root / 'spec/spec-completed.txt'
         path.parent.mkdir(parents=True, exist_ok=True)

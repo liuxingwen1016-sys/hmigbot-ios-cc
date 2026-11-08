@@ -173,7 +173,11 @@ def validate_delivery(root: Path, input_hash: str | None) -> dict[str, Any]:
         result["errors"].append("schema2_delivery_units")
     else:
         seen_ids: set[str] = set()
-        seen_content: dict[str, str] = {}
+        # `state_id` is local to the page that owns it.  A full-ui inventory
+        # legitimately uses `default/content` for every page.  Keep the
+        # global fallback for hand-authored units that omit page_id so malformed
+        # minimal inventories still fail closed.
+        seen_content: dict[tuple[str, str], str] = {}
         for unit in units:
             if not isinstance(unit, dict):
                 result["errors"].append("schema2_delivery_unit_invalid")
@@ -193,7 +197,7 @@ def validate_delivery(root: Path, input_hash: str | None) -> dict[str, Any]:
                     result["errors"].append("schema2_delivery_state_invalid")
                     continue
                 if state.get("responsibility", "content") == "content":
-                    key = str(state["state_id"])
+                    key = (str(unit.get("page_id") or "__global__"), str(state["state_id"]))
                     previous = seen_content.get(key)
                     if previous and previous != unit_id:
                         result["errors"].append("schema2_delivery_duplicate_content")
