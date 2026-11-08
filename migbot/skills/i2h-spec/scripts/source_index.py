@@ -156,13 +156,17 @@ def classify_view_surface(name: str, bases: Iterable[str], relative_path: str, t
     base_text = " ".join(bases)
     if any(token in base_text for token in ("UIViewRepresentable", "NSViewRepresentable", "ViewModifier")):
         return "shared_component"
+    if name.endswith(("Row", "Cell", "Card", "Button", "Pill", "Badge", "Header", "Footer")):
+        return "shared_component"
     path_parts = {part.lower() for part in Path(relative_path).parts}
     screen_path = bool(path_parts & {"views", "screens", "pages", "viewcontrollers"})
     component_path = bool(path_parts & {"components", "design", "services", "widgets"})
     if name == "RootView":
         return "screen"
-    if "UIViewController" in base_text or name.endswith("ViewController"):
+    if name.endswith("ViewController"):
         return "screen"
+    if "UIViewController" in base_text:
+        return "shared_component"
     if screen_path and not component_path and "View" in base_text:
         return "screen"
     if name.endswith("View") and any(token in text for token in ("NavigationStack", "TabView", "navigationDestination")):

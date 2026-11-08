@@ -22,6 +22,7 @@ class SourceIndexTests(unittest.TestCase):
             "  var body: some View { NavigationLink(destination: DetailView()) { Text(\"Home\") } }\n"
             "  func refresh() { count += 1 }\n"
             "}\n"
+            "struct HistoryRow: View { var body: some View { Text(\"Row\") } }\n"
             "struct DetailView: View { var body: some View { Text(\"Detail\") } }\n",
             encoding="utf-8",
         )
@@ -47,8 +48,8 @@ class SourceIndexTests(unittest.TestCase):
         self.assertEqual(home["methods"][0]["name"], "refresh")
         self.assertTrue(home["routes"])
         self.assertEqual(len(first["pages"]), 2)
-        self.assertEqual(len(first["components"]), 1)
-        self.assertEqual(first["components"][0]["surface"], "shared_component")
+        self.assertEqual(len(first["components"]), 2)
+        self.assertEqual({row["view_name"] for row in first["components"]}, {"Card", "HistoryRow"})
 
     def test_ui_evidence_writes_index_metadata_and_page_slice(self):
         evidence = self.root / "spec/.i2h/resources-inventory.json"
