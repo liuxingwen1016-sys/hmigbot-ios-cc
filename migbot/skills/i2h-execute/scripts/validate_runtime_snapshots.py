@@ -37,14 +37,18 @@ def _contains_ios_evidence(argv: list[str]) -> bool:
         except (OSError, json.JSONDecodeError):
             continue
         evidence = meta.get('runtime_evidence')
-        if isinstance(evidence, dict) and any(
-            evidence.get(key) for key in ('ui_json_path', 'accessibility_json_path', 'accessibility_path')
+        if isinstance(evidence, dict) and (
+            is_ios_evidence(evidence, meta)
+            or any(evidence.get(key) for key in ('ui_json_path', 'accessibility_json_path', 'accessibility_path'))
         ):
             return True
         states = meta.get('runtime_evidence_by_state')
         if isinstance(states, dict) and any(
             isinstance(value, dict)
-            and any(value.get(key) for key in ('ui_json_path', 'accessibility_json_path', 'accessibility_path'))
+            and (
+                is_ios_evidence(value, meta)
+                or any(value.get(key) for key in ('ui_json_path', 'accessibility_json_path', 'accessibility_path'))
+            )
             for value in states.values()
         ):
             return True

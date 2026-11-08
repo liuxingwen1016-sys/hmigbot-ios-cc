@@ -1,12 +1,13 @@
 """Selected capture/facts policies must work together without weakening S1-V."""
 import json
+import hashlib
 from pathlib import Path
 import sys
 import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from validate_runtime_snapshots import check
+from validate_runtime_snapshots import _contains_ios_evidence, check
 from stage1_visual_scope import baseline
 
 
@@ -105,6 +106,64 @@ class InputPolicies(unittest.TestCase):
         result = check(self.root, [self.page], 'runtime')
         self.assertEqual(result['status'], 'fail')
         self.assertTrue(any('accessibility JSON file missing' in error for error in result['errors']))
+
+    def test_ios_xml_only_runtime_evidence_is_rejected(self):
+        evidence = self._ios_evidence()
+        (self.snap / 'ios-accessibility.json').unlink()
+        xml = self.snap / 'view.xml'
+        xml.write_text('<hierarchy/>')
+        evidence.pop('ui_json_path')
+        evidence.pop('ui_json_sha256')
+        evidence.update({
+            'platform': 'ios',
+            'view_xml_path': 'view.xml',
+            'view_xml_sha256': hashlib.sha256(xml.read_bytes()).hexdigest(),
+        })
+        self.meta = {'runtime_evidence': evidence, 'confidence': 'high'}
+        self.save()
+        result = check(self.root, [self.page], 'runtime')
+        self.assertEqual(result['status'], 'fail')
+        self.assertTrue(any('iOS runtime evidence requires accessibility JSON' in error for error in result['errors']))
+        self.assertEqual(result['source_fallbacks'][0]['evidence_kind'], 'ios-xml-only')
+
+    def test_android_xml_runtime_evidence_remains_compatible(self):
+        xml = self.snap / 'view.xml'
+        xml.write_text('<hierarchy/>')
+        png = self.snap / 'runtime.png'
+        png.write_bytes(b'android-png')
+        self.meta = {'runtime_evidence': {
+            'status': 'audited',
+            'state': 'normal',
+            'platform': 'android',
+            'png_path': 'runtime.png',
+            'png_sha256': hashlib.sha256(png.read_bytes()).hexdigest(),
+            'view_xml_path': 'view.xml',
+            'view_xml_sha256': hashlib.sha256(xml.read_bytes()).hexdigest(),
+        }}
+        self.save()
+        result = check(self.root, [self.page], 'runtime')
+        self.assertEqual(result['status'], 'pass')
+        self.assertEqual(result['source_fallbacks'][0]['evidence_kind'], 'android-view-xml')
+
+    def test_top_level_routes_explicit_ios_xml_to_python(self):
+        pages = self.root / 'pages.json'
+        pages.write_text(json.dumps([self.page]))
+        xml = self.snap / 'view.xml'
+        xml.write_text('<hierarchy/>')
+        self.meta = {'runtime_evidence': {
+            'status': 'audited',
+            'state': 'normal',
+            'source_platform': 'ios',
+            'view_xml_path': 'view.xml',
+            'view_xml_sha256': hashlib.sha256(xml.read_bytes()).hexdigest(),
+        }}
+        self.save()
+        argv = ['--project-root', str(self.root), '--pages-file', str(pages), '--policy', 'runtime']
+        self.assertTrue(_contains_ios_evidence(argv))
+
+        self.meta['runtime_evidence']['source_platform'] = 'android'
+        self.save()
+        self.assertFalse(_contains_ios_evidence(argv))
 
     def test_ios_runtime_evidence_state_mismatch_fails(self):
         evidence = self._ios_evidence()

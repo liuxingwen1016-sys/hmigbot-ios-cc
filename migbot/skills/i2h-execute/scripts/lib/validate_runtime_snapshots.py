@@ -21,6 +21,18 @@ def _evidence_for_state(meta: dict, state: str) -> dict:
     return value if isinstance(value, dict) else {}
 
 
+def is_ios_evidence(evidence: dict, meta: dict | None = None) -> bool:
+    """Return whether evidence is explicitly marked as originating from iOS."""
+    for payload in (evidence, meta):
+        if not isinstance(payload, dict):
+            continue
+        for key in ('platform', 'source_platform'):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip().lower() == 'ios':
+                return True
+    return False
+
+
 def _check_file(root: Path, folder: Path, evidence: dict, path_key: str, digest_key: str, label: str, errors: list[str]) -> str | None:
     value = evidence.get(path_key)
     if not value:
@@ -60,6 +72,7 @@ def check(root: Path | str, pages: list[dict], policy='runtime', facts=None) -> 
                     errors.append(f'{page_id}: meta.json invalid')
         synthetic=meta.get('view_xml_synthesized') is True
         evidence = _evidence_for_state(meta, state)
+        ios_marked = is_ios_evidence(evidence, meta)
         runtime_captured = False
         fallback={'page_id':page_id,'state_id':state,'runtime_captured':False}
         if synthetic: fallback['reason']=meta.get('fallback_reason')
@@ -71,20 +84,29 @@ def check(root: Path | str, pages: list[dict], policy='runtime', facts=None) -> 
             if evidence_state and evidence_state != state:
                 errors.append(f'{page_id}/{state}: runtime evidence state mismatch')
             _check_file(root, snap, evidence, 'png_path', 'png_sha256', f'{page_id}/{state} PNG', errors)
-            ui_path_key = 'ui_json_path' if evidence.get('ui_json_path') else 'accessibility_json_path'
-            ui_digest_key = 'ui_json_sha256' if evidence.get('ui_json_path') else 'accessibility_json_sha256'
-            if evidence.get(ui_path_key):
+            ui_path_key = next(
+                (key for key in ('ui_json_path', 'accessibility_json_path', 'accessibility_path') if evidence.get(key)),
+                None,
+            )
+            ui_digest_key = {
+                'ui_json_path': 'ui_json_sha256',
+                'accessibility_json_path': 'accessibility_json_sha256',
+                'accessibility_path': 'accessibility_sha256',
+            }.get(ui_path_key)
+            if ui_path_key and ui_digest_key:
                 _check_file(root, snap, evidence, ui_path_key, ui_digest_key, f'{page_id}/{state} accessibility JSON', errors)
             elif evidence.get('view_xml_path'):
                 _check_file(root, snap, evidence, 'view_xml_path', 'view_xml_sha256', f'{page_id}/{state} view.xml', errors)
+                if ios_marked and policy == 'runtime':
+                    errors.append(f'{page_id}/{state}: iOS runtime evidence requires accessibility JSON')
             else:
                 errors.append(f'{page_id}/{state}: UI tree evidence missing')
             runtime_captured = not any(item.startswith(f'{page_id}/{state}') for item in errors)
             fallback['runtime_captured'] = runtime_captured
             fallback['evidence_kind'] = (
                 'ios-accessibility-json'
-                if any(evidence.get(key) for key in ('ui_json_path', 'accessibility_json_path', 'accessibility_path'))
-                else 'android-view-xml'
+                if ui_path_key
+                else 'ios-xml-only' if ios_marked else 'android-view-xml'
             )
         elif not synthetic and policy == 'source_only':
             fallback['reason'] = 'source_only'
