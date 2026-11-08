@@ -124,6 +124,19 @@ def run_state(
         }
 
 
+def write_manifests(project_root: Path, output_root: Path, manifest: dict[str, Any]) -> dict[str, str]:
+    """Write the capture manifest and a project-local downstream handoff."""
+    output_manifest = output_root / "capture-plan-manifest.json"
+    output_manifest.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    handoff_dir = project_root / "spec/execution/ios-runtime-capture"
+    handoff_manifest = handoff_dir / "capture-plan-manifest.json"
+    handoff_dir.mkdir(parents=True, exist_ok=True)
+    if handoff_manifest.resolve() != output_manifest.resolve():
+        handoff_manifest.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return {"output_manifest": str(output_manifest), "handoff_manifest": str(handoff_manifest)}
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--plan", required=True, help="JSON capture plan")
@@ -181,9 +194,12 @@ def main(argv: list[str] | None = None) -> int:
             "blocked_count": len(blocked),
             "states": results,
         }
-        (output_root / "capture-plan-manifest.json").write_text(
-            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-        )
+        manifest_paths = write_manifests(Path(args.project_root).expanduser().resolve(), output_root, manifest)
+        manifest["handoff_manifest"] = manifest_paths["handoff_manifest"]
+        # Keep both copies self-describing.  The handoff path is consumed by
+        # stage1_visual_scope when the capture output lives outside the project.
+        for path in {Path(manifest_paths["output_manifest"]), Path(manifest_paths["handoff_manifest"])}:
+            path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         print(json.dumps(manifest, ensure_ascii=False, indent=2))
         return 0 if not blocked else 2
     except (OSError, ValueError, json.JSONDecodeError) as exc:

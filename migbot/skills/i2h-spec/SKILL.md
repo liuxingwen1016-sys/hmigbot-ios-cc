@@ -141,6 +141,12 @@ python3 .claude/skills/i2h-spec/scripts/ios_runtime_capture_plan.py \
 
 计划文件的每个状态必须提供 `page_id`、`state_id`，以及 `accessibility_command` 或已有的 `accessibility_json`。`accessibility_command` 负责在真实 Simulator 中执行确定性导航，并写入环境变量 `I2H_UI_JSON_OUT`。一个状态失败时包装器继续采集其余状态，最终退出码为 2，并在 `capture-plan-manifest.json` 中记录 `blocked_reason`。下游只能把 `status=captured` 的状态作为运行时证据，不能把 partial 汇总伪装成全量通过。
 
+批量包装器同时把同一份清单写入目标工程的
+`spec/execution/ios-runtime-capture/capture-plan-manifest.json`。即使
+`--output-root` 指向临时目录，i2h-execute 的 visual scope 也会自动发现该清单，
+把每个已捕获状态的 PNG、accessibility JSON 和 `meta.json` 同步到
+`spec/baseline/ui-snapshots/<page_id>/states/<state_id>`。partial 清单在同步时保持阻断。
+
 运行时证据使用 PNG + accessibility JSON。Android 的 `view.xml` 只适用于 legacy
 或 Android 输入，不得作为 iOS 的必需格式。
 

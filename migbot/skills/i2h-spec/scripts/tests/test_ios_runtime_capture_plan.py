@@ -57,6 +57,23 @@ class CapturePlanTests(unittest.TestCase):
         finally:
             capture_plan.subprocess.run = original_run
 
+    def test_write_manifests_creates_project_local_handoff(self):
+        with __import__("tempfile").TemporaryDirectory() as directory:
+            root = Path(directory)
+            output_root = root / "tmp-capture"
+            output_root.mkdir()
+            manifest = {
+                "schema_version": 1,
+                "status": "captured",
+                "output_root": str(output_root),
+                "states": [],
+            }
+            paths = capture_plan.write_manifests(root, output_root, manifest)
+            self.assertTrue(Path(paths["output_manifest"]).is_file())
+            handoff = Path(paths["handoff_manifest"])
+            self.assertTrue(handoff.is_file())
+            self.assertEqual(json.loads(handoff.read_text())["output_root"], str(output_root))
+
     def _temporary_plan(self, payload):
         import tempfile
 

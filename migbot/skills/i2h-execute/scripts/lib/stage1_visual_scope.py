@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -202,9 +203,116 @@ def _manifest_files(wiring: Path):
     return sorted(wiring.glob('*.json')) if wiring.is_dir() else [wiring]
 
 
-def build_scope(wiring: Path | str, root: Path | str) -> dict:
+def _capture_manifest_candidates(root: Path) -> list[Path]:
+    return [
+        root / 'spec/execution/ios-runtime-capture/capture-plan-manifest.json',
+        root / 'spec/execution/runtime-captures/capture-plan-manifest.json',
+        root / 'spec/baseline/ios-runtime-capture/capture-plan-manifest.json',
+    ]
+
+
+def _safe_part(value: Any, label: str) -> str:
+    if not isinstance(value, str) or not value or Path(value).name != value or value in {'.', '..'}:
+        raise ValueError(f'{label} is invalid')
+    return value
+
+
+def _copy_file(source: Path, destination: Path) -> None:
+    if not source.is_file():
+        raise ValueError(f'runtime capture file is missing: {source}')
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if source.resolve() != destination.resolve():
+        shutil.copy2(source, destination)
+
+
+def sync_runtime_capture(root: Path | str, manifest_path: Path | str) -> dict:
+    """Materialize batch Simulator evidence into the canonical baseline tree.
+
+    ``ios_runtime_capture_plan.py`` can write to a temporary output root to
+    keep the capture run disposable.  The visual gate still needs the PNG,
+    accessibility JSON, and per-state metadata below
+    ``spec/baseline/ui-snapshots``.  This explicit sync keeps the evidence
+    content-addressed and makes a partial capture fail closed.
+    """
+    root = Path(root).resolve()
+    manifest_file = Path(manifest_path).expanduser().resolve()
+    manifest = _load(manifest_file)
+    states = manifest.get('states')
+    if not isinstance(states, list) or not states:
+        raise ValueError('runtime capture manifest has no states')
+    output_root_value = manifest.get('output_root')
+    if not isinstance(output_root_value, str) or not output_root_value:
+        raise ValueError('runtime capture manifest output_root is missing')
+    output_root = Path(output_root_value).expanduser().resolve()
+    if not output_root.is_dir():
+        raise ValueError(f'runtime capture output root is missing: {output_root}')
+
+    blocked = [
+        {
+            'page_id': row.get('page_id'),
+            'state_id': row.get('state_id', 'normal'),
+            'reason': row.get('blocked_reason', 'capture did not complete'),
+        }
+        for row in states
+        if not isinstance(row, dict) or row.get('status') != 'captured'
+    ]
+    if blocked:
+        raise ValueError(f'runtime capture manifest is partial: {json.dumps(blocked, ensure_ascii=False)}')
+
+    synced: list[dict[str, str]] = []
+    baseline_root = root / 'spec/baseline/ui-snapshots'
+    for row in states:
+        if not isinstance(row, dict):
+            raise ValueError('runtime capture state entry is invalid')
+        page_id = _safe_part(row.get('page_id'), 'runtime capture page_id')
+        state_id = _safe_part(row.get('state_id', 'normal'), 'runtime capture state_id')
+        output_value = row.get('output_dir')
+        if not isinstance(output_value, str) or not output_value:
+            raise ValueError(f'runtime capture output_dir is missing for {page_id}/{state_id}')
+        output_dir = Path(output_value).expanduser()
+        if not output_dir.is_absolute():
+            output_dir = output_root / output_dir
+        output_dir = output_dir.resolve()
+        try:
+            output_dir.relative_to(output_root)
+        except ValueError as exc:
+            raise ValueError(f'runtime capture output_dir escapes output_root: {output_dir}') from exc
+        expected_dir = output_root / page_id / 'states' / state_id
+        if output_dir != expected_dir.resolve():
+            raise ValueError(f'runtime capture output_dir does not match page/state: {output_dir}')
+        source_page = output_root / page_id
+        source_meta = source_page / 'meta.json'
+        if not source_meta.is_file():
+            raise ValueError(f'runtime capture metadata is missing: {source_meta}')
+        destination_page = baseline_root / page_id
+        _copy_file(source_meta, destination_page / 'meta.json')
+        files = sorted(path for path in output_dir.iterdir() if path.is_file()) if output_dir.is_dir() else []
+        if not files:
+            raise ValueError(f'runtime capture state directory is empty: {output_dir}')
+        for source in files:
+            _copy_file(source, destination_page / 'states' / state_id / source.name)
+        synced.append({'page_id': page_id, 'state_id': state_id, 'snapshot': str(destination_page.relative_to(root))})
+    return {
+        'manifest': str(manifest_file),
+        'status': 'synced',
+        'state_count': len(synced),
+        'states': synced,
+    }
+
+
+def build_scope(
+    wiring: Path | str,
+    root: Path | str,
+    runtime_capture_manifest: Path | str | None = None,
+) -> dict:
     root = Path(root).resolve()
     wiring = Path(wiring)
+    capture_sync = None
+    manifest = Path(runtime_capture_manifest).expanduser().resolve() if runtime_capture_manifest else None
+    if manifest is None:
+        manifest = next((path for path in _capture_manifest_candidates(root) if path.is_file()), None)
+    if manifest is not None:
+        capture_sync = sync_runtime_capture(root, manifest)
     units = []
     for path in _manifest_files(wiring):
         data = normalize(_load(path))
@@ -228,6 +336,7 @@ def build_scope(wiring: Path | str, root: Path | str) -> dict:
         'status': 'READY',
         'source_sha256': source_digest(root),
         'wiring_dir': str(wiring.relative_to(root) if wiring.is_relative_to(root) else wiring),
+        'runtime_capture': capture_sync,
         'units': units,
     }
 
@@ -239,9 +348,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--project-root', required=True)
     parser.add_argument('--wiring-dir', required=True)
     parser.add_argument('--out', required=True)
+    parser.add_argument('--runtime-capture-manifest')
     args = parser.parse_args(argv)
     try:
-        result = build_scope(args.wiring_dir, args.project_root)
+        result = build_scope(args.wiring_dir, args.project_root, args.runtime_capture_manifest)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         result = {
             'schema_version': 1,

@@ -122,6 +122,6 @@ business_ready     Stage 3 真实 provider、业务事件与正式入口完成
  → PASS / DIFF / visual_blocked
 ```
 
-scope 接受 smoke_wired 及 prepared/buildable/installed/ready 的 Preview，不把安装后的状态作为开始安装的前提。输出 scope 为每个 page/state 绑定审计后的 iOS PNG/XML 路径和哈希：从 snapshots 的 meta.runtime_evidence 或 runtime_evidence_by_state 取，要求 state 相符。不能复用另一个状态的帧，也不拼旧 screenshots/ios 路径。
+scope 接受 smoke_wired 及 prepared/buildable/installed/ready 的 Preview，不把安装后的状态作为开始安装的前提。输出 scope 为每个 page/state 绑定审计后的 iOS PNG/XML 路径和哈希：从 snapshots 的 meta.runtime_evidence 或 runtime_evidence_by_state 取，要求 state 相符。不能复用另一个状态的帧，也不拼旧 screenshots/ios 路径。若 i2h-spec 批量采集生成了 `spec/execution/ios-runtime-capture/capture-plan-manifest.json`，scope 会先把外部 output root 的完整状态证据同步到 canonical snapshots；partial 清单保持 BLOCKED。
 
 视觉 skill 的独立分支详见 `arkts-visual-verify/references/stage1-capture-compare.md`。不启动全量遍历、fixer、round budget 或清数据。只有实测显示的 Preview case 可标 preview_ready，不写页面 verified，不宣称业务通过。DIFF 保留差异供用户决定后续处理；失败按设备、应用、接线、捕获分诊，不能静默漏页。
