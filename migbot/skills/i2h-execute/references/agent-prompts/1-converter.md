@@ -304,6 +304,12 @@ async loadData(): Promise<void> {
 }
 ```
 
+#### 3.6 应用身份与签名配置
+
+- 从 iOS `Info.plist`、`Base.xcconfig` 或已冻结的 spec identity 读取 `CFBundleIdentifier`、`CFBundleShortVersionString`、`CFBundleVersion` 和显示名称。将真实值写入 `AppScope/app.json5` 与对应字符串资源，不能把 `com.example.*`、`example` 或模板版本当作最终产物。
+- 如果目标工程的 debug/release signing profile 仍绑定模板 bundleName，必须同步更新签名配置或明确写入 `identity_signing_pending` 阻断项。不得在报告中把模板身份标为 PASS，也不能用 unsigned HAP 代替真机安装验证。
+- 记录 `source_bundle_id`、`target_bundle_name`、`signing_profile_bundle_name` 和 `identity_status`。身份状态只有在 app.json5、build-profile/signing profile、实际安装包三者一致时才可为 `PASS`。
+
 ### Step 4: 布局保真
 
 **尺寸映射**:
