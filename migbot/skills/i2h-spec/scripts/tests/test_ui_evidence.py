@@ -88,6 +88,34 @@ class UiEvidenceTests(unittest.TestCase):
         self.assertTrue(recipe['ui_obligations']['has_scroll'])
         self.assertEqual(recipe['ui_obligations']['interactive_controls'][-1]['label'], '开始冲煮')
 
+    def test_same_file_views_keep_obligations_scoped_to_declaration(self):
+        self.write('Views/BeanViews.swift', '''
+        import SwiftUI
+        struct BeanLibraryView: View {
+            var body: some View { ScrollView { Button("添加档案") {} } }
+        }
+        struct BeanDetailView: View {
+            var body: some View { Button("编辑") {} }
+        }
+        struct BeanEditorView: View {
+            var body: some View {
+                Form {
+                    Picker("处理法", selection: .constant(0)) { Text("水洗") }
+                    Button("保存档案") {}
+                }
+            }
+        }
+        ''')
+        payload = run(str(self.root), str(self.root / 'spec/.i2h/resources-inventory.json'))
+        views = {row['view_name']: row for row in payload['views'] if row['file_path'] == 'Views/BeanViews.swift'}
+        self.assertTrue(views['BeanLibraryView']['ui_obligations']['has_scroll'])
+        self.assertFalse(views['BeanLibraryView']['ui_obligations']['has_form'])
+        self.assertEqual([row['kind'] for row in views['BeanLibraryView']['ui_obligations']['interactive_controls']], ['button'])
+        self.assertEqual([row['kind'] for row in views['BeanDetailView']['ui_obligations']['interactive_controls']], ['button'])
+        self.assertFalse(views['BeanDetailView']['ui_obligations']['has_form'])
+        self.assertTrue(views['BeanEditorView']['ui_obligations']['has_form'])
+        self.assertEqual([row['kind'] for row in views['BeanEditorView']['ui_obligations']['interactive_controls']], ['picker', 'button'])
+
 
 if __name__ == '__main__':
     unittest.main()

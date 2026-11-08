@@ -27,8 +27,13 @@ try:
 except ImportError:  # pragma: no cover - package/installed-tree fallback
     from .source_index import build_index, classify_view_surface  # type: ignore
 
+try:
+    from ui_obligations import declaration_slice, parse_ui_obligations
+except ImportError:  # pragma: no cover - package/installed-tree fallback
+    from .ui_obligations import declaration_slice, parse_ui_obligations  # type: ignore
 
-TOOL_VERSION = "i2h-ui-evidence/1.1"
+
+TOOL_VERSION = "i2h-ui-evidence/1.2"
 SCHEMA_VERSION = 1
 
 
@@ -80,51 +85,6 @@ def source_digest(root: Path, files: Iterable[Path]) -> str:
 
 def line_number(text: str, offset: int) -> int:
     return text.count("\n", 0, offset) + 1
-
-
-def parse_ui_obligations(text: str) -> dict[str, Any]:
-    """Extract source-backed interactive and layout obligations.
-
-    These facts are deliberately shallow. They give the conversion workers a
-    deterministic checklist without pretending that static Swift can prove
-    viewport order, runtime state, or the final ArkUI geometry.
-    """
-    controls: list[dict[str, Any]] = []
-    patterns = (
-        ("button", r"\bButton\s*\(\s*(?:[\"']([^\"']+)[\"']|role\s*:\s*[^,]+,\s*label\s*:\s*\{?\s*Text\s*\(\s*[\"']([^\"']+)[\"'])"),
-        ("picker", r"\bPicker\s*\(\s*(?:[\"']([^\"']+)[\"']|selection\s*:\s*[^,]+)"),
-        ("toggle", r"\bToggle\s*\(\s*(?:[\"']([^\"']+)[\"']|isOn\s*:\s*[^,]+)"),
-        ("text_field", r"\b(?:TextField|SecureField)\s*\(\s*[\"']([^\"']+)[\"']"),
-        ("date_picker", r"\bDatePicker\s*\(\s*[\"']([^\"']+)[\"']"),
-        ("navigation_link", r"\bNavigationLink\s*\("),
-    )
-    for kind, pattern in patterns:
-        for match in re.finditer(pattern, text):
-            label = next((group for group in match.groups() if group), None)
-            row: dict[str, Any] = {"kind": kind, "line": line_number(text, match.start())}
-            if label:
-                row["label"] = label
-            controls.append(row)
-    controls.sort(key=lambda item: (item["line"], item["kind"], item.get("label", "")))
-
-    identifiers = [
-        {"value": match.group(1), "line": line_number(text, match.start())}
-        for match in re.finditer(r"\.accessibilityIdentifier\s*\(\s*[\"']([^\"']+)[\"']\s*\)", text)
-    ]
-    containers = [
-        name for name in (
-            "Form", "ScrollView", "List", "LazyVStack", "LazyHStack", "LazyVGrid",
-            "NavigationStack", "TabView", "ZStack", "VStack", "HStack", "overlay",
-        ) if re.search(r"\b" + re.escape(name) + r"\b|\." + re.escape(name) + r"\s*\(", text)
-    ]
-    return {
-        "interactive_controls": controls,
-        "accessibility_identifiers": identifiers,
-        "containers": containers,
-        "has_form": "Form" in containers,
-        "has_scroll": any(name in containers for name in ("ScrollView", "List", "LazyVStack", "LazyHStack", "LazyVGrid")),
-        "has_overlay": "overlay" in containers,
-    }
 
 
 def parse_properties(text: str) -> list[dict[str, Any]]:
@@ -185,7 +145,11 @@ def detect_views(path: Path, root: Path) -> list[dict[str, Any]]:
         body_match = re.search(r"\bvar\s+body\s*:\s*some\s+View\s*\{", text)
         body_line = line_number(text, body_match.start()) if body_match else None
         properties = parse_properties(text)
-        ui_obligations = parse_ui_obligations(text)
+        declaration_text = declaration_slice(text, match.start())
+        ui_obligations = parse_ui_obligations(
+            declaration_text,
+            line_offset=line_number(text, match.start()) - 1,
+        )
         result.append({
             "view_name": class_name,
             "type": kind,

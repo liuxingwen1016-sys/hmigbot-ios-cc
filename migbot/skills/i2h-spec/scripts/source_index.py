@@ -15,8 +15,13 @@ import re
 from pathlib import Path
 from typing import Any, Iterable
 
+try:
+    from ui_obligations import declaration_slice, parse_ui_obligations
+except ImportError:  # pragma: no cover - package/installed-tree fallback
+    from .ui_obligations import declaration_slice, parse_ui_obligations  # type: ignore
 
-TOOL_VERSION = "i2h-source-index/1.1"
+
+TOOL_VERSION = "i2h-source-index/1.2"
 SCHEMA_VERSION = 1
 DEFAULT_TEMPLATE_GLOBS = ("templates/**/*.md", "references/**/*.md")
 
@@ -103,6 +108,7 @@ def _declarations(text: str) -> list[dict[str, Any]]:
             "name": match.group("name"),
             "bases": [part.strip() for part in (match.group("bases") or "").split(",") if part.strip()],
             "line": _line(text, match.start()),
+            "start_offset": match.start(),
         }
         for match in pattern.finditer(text)
     ]
@@ -253,6 +259,7 @@ def build_index(
         for declaration in declarations:
             if "View" in declaration["bases"] or any("View" in base for base in declaration["bases"]):
                 surface = classify_view_surface(declaration["name"], declaration["bases"], rel, text)
+                declaration_text = declaration_slice(text, int(declaration["start_offset"]))
                 view = {
                     "page_id": f"page_{len(pages) + 1:04d}_{declaration['name']}",
                     "view_name": declaration["name"],
@@ -260,6 +267,10 @@ def build_index(
                     "declaration_line": declaration["line"],
                     "dependencies": dependencies,
                     "surface": surface,
+                    "ui_obligations": parse_ui_obligations(
+                        declaration_text,
+                        line_offset=int(declaration["line"]) - 1,
+                    ),
                 }
                 if surface == "screen":
                     pages.append(view)
