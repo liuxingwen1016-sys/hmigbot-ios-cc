@@ -23,6 +23,10 @@ full_ui 范围必须解释所有 canonical snapshots；排除需要 source_refs�
 decision_ref。缺截图不能自动排除。只交付 smoke path 时显式使用 selected_smoke。
 生成单元包含 unit_id、page_id、component、presentation_role、required_states、
 output={file,symbol,builder}、source_refs、generation_owner、integration_owner=closer。
+draft 会从源码 modifier 生成可审查的 `presentation` 提示。`.sheet()` 使用
+`presentation_role=hosted_destination` 和 `harmony_mapping=bindSheet`，
+`.fullScreenCover()` 使用 `bindContentCover`，共享声明使用
+`presentation_role=embedded`。主线程仍需依据完整源码确认宿主和正式路由。
 嵌入单元增加 integration={host_file,host_builder,child_symbol}。
 
 每单元的 owned_ui_roles、每状态的 responsibility 明确 shell/content/overlay/behavior；

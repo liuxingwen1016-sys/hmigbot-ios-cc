@@ -50,6 +50,84 @@ def source_ref(root: Path, rel: str) -> dict[str, Any]:
     return ref
 
 
+def _is_shared_component(view: dict[str, Any]) -> bool:
+    """Keep reusable SwiftUI declarations out of the route graph.
+
+    Older ``resources-inventory.json`` files predate the ``surface`` field.
+    The fallback deliberately uses the same conservative naming/path rules as
+    the source index so cached evidence remains usable.
+    """
+    if view.get("surface") == "shared_component":
+        return True
+    name = str(view.get("view_name", ""))
+    bases = " ".join(str(item) for item in view.get("bases", []))
+    if any(token in bases for token in ("UIViewRepresentable", "UIViewControllerRepresentable", "UIViewController")):
+        return True
+    path = Path(str(view.get("file_path", "")))
+    if name.endswith(("Row", "Cell", "Card", "Button", "Pill", "Badge", "Header", "Footer")):
+        return True
+    if any(part.lower() in {"components", "design", "widgets"} for part in path.parts):
+        return True
+    return name in {"Coordinator", "ScannerHost"}
+
+
+def _presentation_hints(source_root: Path, views: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Infer only source-backed presentation ownership for delivery units.
+
+    The hint is intentionally small and reviewable.  It does not guess visual
+    details.  Modal targets are detected from the source modifier that owns
+    them, while all other screen declarations remain routed pages.  This
+    prevents the converter from turning SwiftUI sheets into ordinary pushes.
+    """
+    files = sorted(source_root.rglob("*.swift")) if source_root.is_dir() else []
+    texts: list[tuple[Path, str]] = []
+    for path in files:
+        try:
+            texts.append((path, path.read_text(encoding="utf-8")))
+        except (OSError, UnicodeDecodeError):
+            continue
+    hints: dict[str, dict[str, Any]] = {}
+    for view in views:
+        name = str(view.get("view_name", ""))
+        if not name:
+            continue
+        if _is_shared_component(view):
+            hints[name] = {
+                "presentation_role": "embedded",
+                "source": "shared_component",
+                "harmony_mapping": "embedded_builder",
+            }
+            continue
+        candidates: list[tuple[int, dict[str, Any]]] = []
+        for path, text in texts:
+            # A bounded window avoids crossing unrelated declarations while
+            # still covering the common ``sheet { NavigationStack { ... } }``
+            # form used by SwiftUI.
+            for match in re.finditer(r"\.(sheet|fullScreenCover)\s*\(", text):
+                window = text[match.start(): match.start() + 900]
+                target = re.search(rf"\b{re.escape(name)}\s*\(", window)
+                if not target:
+                    continue
+                kind = match.group(1)
+                candidate = {
+                    "presentation_role": "hosted_destination",
+                    "source": f".{kind}",
+                    "harmony_mapping": "bindSheet" if kind == "sheet" else "bindContentCover",
+                    "host_source": path.relative_to(source_root).as_posix(),
+                    "source_line": text.count("\n", 0, match.start()) + 1,
+                }
+                candidates.append((target.start(), candidate))
+        selected = min(candidates, key=lambda item: item[0])[1] if candidates else None
+        if selected is None:
+            selected = {
+                "presentation_role": "routed_page",
+                "source": "navigation_or_tab",
+                "harmony_mapping": "NavDestination",
+            }
+        hints[name] = selected
+    return hints
+
+
 def views_from_evidence(root: Path) -> list[dict[str, Any]]:
     path = evidence_path(root)
     if path.is_file():
@@ -90,6 +168,7 @@ def draft(project_root: str | Path, out: str | Path) -> dict[str, Any]:
     root = Path(project_root).expanduser().resolve()
     views = views_from_evidence(root)
     source_root = evidence_source_root(root)
+    presentation_hints = _presentation_hints(source_root, views)
     units = []
     for index, view in enumerate(views, 1):
         name = str(view["view_name"])
@@ -98,11 +177,21 @@ def draft(project_root: str | Path, out: str | Path) -> dict[str, Any]:
         source_file = str(view["file_path"])
         symbol = name
         component = f"ios.{name}"
+        hint = presentation_hints.get(name, {
+            "presentation_role": "routed_page",
+            "source": "navigation_or_tab",
+            "harmony_mapping": "NavDestination",
+        })
         units.append({
             "unit_id": f"ios.{index:04d}.{slug}",
             "page_id": page_id,
             "component": component,
-            "presentation_role": "routed_page" if index == 1 else "page",
+            "presentation_role": hint["presentation_role"],
+            "presentation": {
+                "source": hint["source"],
+                "harmony_mapping": hint["harmony_mapping"],
+                **({"host_source": hint["host_source"], "source_line": hint["source_line"]} if hint.get("host_source") else {}),
+            },
             "required": True,
             "required_states": [{"state_id": "default", "arrival_mode": "preview", "responsibility": "content", "source_refs": [source_ref(source_root, source_file)]}],
             "source_refs": [source_ref(source_root, source_file)],

@@ -51,6 +51,39 @@ class IOSPipelineContractTest(unittest.TestCase):
         self.assertEqual(skeleton["swiftui_views"][0]["class_name"], "HomeView")
         self.assertEqual(skeleton["target_input_sha256"], json.loads(output.read_text())["target_input_sha256"])
 
+    def test_delivery_preserves_modal_presentation_and_embedded_components(self):
+        (self.root / "App").mkdir()
+        (self.root / "App/CuikeApp.swift").write_text(
+            "import SwiftUI\n"
+            "struct RootView: View {\n"
+            "  var body: some View {\n"
+            "    TabView { HomeView() }\n"
+            "      .sheet(isPresented: .constant(true)) { SettingsView() }\n"
+            "      .fullScreenCover(isPresented: .constant(false)) { BrewView() }\n"
+            "  }\n}\n",
+            encoding="utf-8",
+        )
+        (self.root / "Views/SettingsView.swift").write_text(
+            "import SwiftUI\nstruct SettingsView: View { var body: some View { Text(\"Settings\") } }\n",
+            encoding="utf-8",
+        )
+        (self.root / "Views/BrewView.swift").write_text(
+            "import SwiftUI\nstruct BrewView: View { var body: some View { Text(\"Brew\") } }\n",
+            encoding="utf-8",
+        )
+        (self.root / "Views/Theme.swift").write_text(
+            "import SwiftUI\nstruct PrimaryButton: View { var body: some View { Button(\"Go\") {} } }\n",
+            encoding="utf-8",
+        )
+        output = self.root / "spec/.i2h/resources-inventory.json"
+        ui_evidence.run(str(self.root), str(output), str(self.root / "spec/baseline/res-index"))
+        inventory = ui_delivery.draft(self.root, self.root / "draft.json")
+        by_name = {unit["component"]: unit for unit in inventory["units"]}
+        self.assertEqual(by_name["ios.SettingsView"]["presentation_role"], "hosted_destination")
+        self.assertEqual(by_name["ios.SettingsView"]["presentation"]["harmony_mapping"], "bindSheet")
+        self.assertEqual(by_name["ios.BrewView"]["presentation"]["harmony_mapping"], "bindContentCover")
+        self.assertEqual(by_name["ios.PrimaryButton"]["presentation_role"], "embedded")
+
     def test_delivery_draft_validates_and_ownership_is_explicit(self):
         output = self.root / "spec/.i2h/resources-inventory.json"
         ui_evidence.run(str(self.root), str(output), str(self.root / "spec/baseline/res-index"))
