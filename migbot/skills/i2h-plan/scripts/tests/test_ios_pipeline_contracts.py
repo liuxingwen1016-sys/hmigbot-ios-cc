@@ -95,6 +95,19 @@ class IOSPipelineContractTest(unittest.TestCase):
         ownership = ui_state_ownership.review(self.root, approved)
         self.assertEqual(ownership["status"], "PASS")
 
+    def test_delivery_rejects_inconsistent_presentation_mapping(self):
+        output = self.root / "spec/.i2h/resources-inventory.json"
+        ui_evidence.run(str(self.root), str(output), str(self.root / "spec/baseline/res-index"))
+        inventory = ui_delivery.draft(self.root, self.root / "draft.json")
+        inventory["units"][0]["presentation_role"] = "hosted_destination"
+        inventory["units"][0]["presentation"]["source"] = ".sheet"
+        inventory["units"][0]["presentation"]["harmony_mapping"] = "NavDestination"
+        checked = ui_delivery.validate(self.root, inventory)
+        self.assertEqual(checked["status"], "invalid")
+        codes = {item["code"] for item in checked["validation"]["errors"]}
+        self.assertIn("PRESENTATION_MAPPING_MISMATCH", codes)
+        self.assertIn("SHEET_MAPPING_MISMATCH", codes)
+
     def test_delivery_keeps_external_ios_source_root_and_hashes_refs(self):
         harmony = self.root / "harmony"
         harmony.mkdir()

@@ -257,6 +257,32 @@ def validate(project_root: str | Path, inventory: dict[str, Any]) -> dict[str, A
         if not output_file or output_file in seen_outputs:
             errors.append({"code": "OUTPUT_DUPLICATE", "unit_id": unit_id, "file": output_file})
         seen_outputs.add(str(output_file))
+        presentation = unit.get("presentation")
+        role = unit.get("presentation_role")
+        if presentation is not None:
+            if not isinstance(presentation, dict):
+                errors.append({"code": "PRESENTATION_INVALID", "unit_id": unit_id})
+            else:
+                source = str(presentation.get("source", ""))
+                mapping = presentation.get("harmony_mapping")
+                expected = {
+                    "hosted_destination": {"bindSheet", "bindContentCover"},
+                    "embedded": {"embedded_builder"},
+                    "routed_page": {"NavDestination"},
+                }.get(str(role))
+                if expected is not None and mapping not in expected:
+                    errors.append({
+                        "code": "PRESENTATION_MAPPING_MISMATCH",
+                        "unit_id": unit_id,
+                        "presentation_role": role,
+                        "harmony_mapping": mapping,
+                    })
+                if source == ".sheet" and mapping != "bindSheet":
+                    errors.append({"code": "SHEET_MAPPING_MISMATCH", "unit_id": unit_id})
+                if source == ".fullScreenCover" and mapping != "bindContentCover":
+                    errors.append({"code": "FULLSCREEN_MAPPING_MISMATCH", "unit_id": unit_id})
+                if source == "shared_component" and mapping != "embedded_builder":
+                    errors.append({"code": "EMBEDDED_MAPPING_MISMATCH", "unit_id": unit_id})
         for ref in unit.get("source_refs", []):
             if not isinstance(ref, dict) or not ref.get("file"):
                 errors.append({"code": "SOURCE_REF_INVALID", "unit_id": unit_id})
