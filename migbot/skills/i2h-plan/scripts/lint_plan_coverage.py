@@ -744,11 +744,16 @@ class PlanCoverageLinter:
             # Accept canonical page_0001_ClassName IDs as well as the older
             # page_0001 shorthand.  The class suffix is part of the identity
             # in newer i2h-spec outputs and must not produce a parser warning.
-            match = re.search(r'\b(page_\d{4}(?:_[A-Za-z_]\w*)?)\b', line)
+            # Manifest page rows always use the canonical class-suffixed form.
+            # Bare source-index IDs are mapping metadata and must not become
+            # additional pages in the coverage denominator.
+            match = re.search(r'\bpage_(\d{4})_[A-Za-z_]\w*\b', line)
             if match:
-                pid = match.group(1)
+                # Coverage is keyed by the stable numeric page identity. The
+                # class suffix is descriptive and must not create a second
+                # page, otherwise a 12-page iOS manifest becomes 31 pages.
+                pid = f'page_{match.group(1)}'
                 pages[pid] = {}
-                pages.setdefault(pid.split('_', 2)[0], pages[pid])
 
                 # 检查 status
                 if 'skipped' in line.lower():

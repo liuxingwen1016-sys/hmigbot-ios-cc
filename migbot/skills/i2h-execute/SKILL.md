@@ -1171,6 +1171,29 @@ ${componentFiles.map(f => `- ${f}`).join('\n')}
 
 ### Stage 5 完成标记
 
+在生成 Stage 5 marker 前，必须先完成执行覆盖率账本收口。Closer 应将本轮实际执行的
+packet intent 写入 `spec/execution/writeback/`，然后用确定性脚本展开
+`spec/.i2h/plan-coverage.json` 中对应 packet 的 `requirement_ids` 和 digest，最后运行
+`apply_writeback.py` 生成 `spec/.i2h/impl-claims.json`：
+
+```bash
+INTENT=$(find spec/execution/writeback -name '*intent*.json' -type f | sort | tail -1)
+if [ -z "$INTENT" ]; then
+  echo "BLOCKED: execute packet intent is missing; cannot claim requirements"
+  exit 1
+fi
+python3 .claude/skills/i2h-execute/scripts/build_writeback.py "$INTENT" \
+  --project-root . \
+  --out spec/execution/writeback/writeback-final.json
+python3 .claude/skills/i2h-execute/scripts/apply_writeback.py \
+  spec/execution/writeback/writeback-final.json --project-root .
+python3 .claude/skills/i2h-execute/scripts/lint_execute_coverage.py .
+```
+
+`impl-claims.json` 缺失、claim 数量不足或 packet digest 不一致时，Stage 5 必须保持
+BLOCKED，不能只写 `stage5-complete.txt`。这条门禁防止生成代码已经落盘但 366 条
+requirement 没有任何可追溯实现声明的情况。
+
 在写入 Stage 5 marker 前，针对 iOS 源码中识别到的系统能力运行确定性平台门禁：
 
 ```bash

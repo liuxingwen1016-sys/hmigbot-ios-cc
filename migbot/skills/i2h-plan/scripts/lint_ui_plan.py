@@ -61,6 +61,7 @@ class UIPlannLinter:
         self.ui_manifest_path = self.spec_dir / "ui-manifest.md"
         self.errors: List[ValidationError] = []
         self.warnings: List[ValidationError] = []
+        self.feature_priorities: Dict[str, str] = self._load_feature_priorities()
 
     def run(self) -> bool:
         """运行所有校验"""
@@ -380,8 +381,9 @@ class UIPlannLinter:
         lines = content.splitlines()
 
         for line in lines:
-            # 简单解析：查找 page_NNNN 或 NNNN 序号
-            seq_match = re.search(r'\b(\d{4})\b', line)
+            # 只读取屏幕级页面表中的 canonical ID。不要从生成日期、source-index
+            # 映射表或普通说明文字中提取裸四位数字。
+            seq_match = re.search(r'\bpage_(\d{4})_[A-Za-z_]\w*\b', line)
             if seq_match:
                 seq = seq_match.group(1)
                 pages[seq] = {}
@@ -392,11 +394,27 @@ class UIPlannLinter:
 
         return pages
 
+    def _load_feature_priorities(self) -> Dict[str, str]:
+        """读取 feature-index.md 中的真实优先级，避免把所有页面都算成 P0。"""
+        path = self.spec_dir / "feature-index.md"
+        if not path.exists():
+            return {}
+        priorities: Dict[str, str] = {}
+        current: Optional[str] = None
+        for line in path.read_text().splitlines():
+            match = re.match(r'^###\s+(F\d{3})\b', line)
+            if match:
+                current = match.group(1)
+                continue
+            if current:
+                priority = re.search(r'\b(P[0-3])\b', line)
+                if priority and ('优先级' in line or 'priority' in line.lower()):
+                    priorities[current] = priority.group(1)
+        return priorities
+
     def _get_priority(self, f_id: str) -> str:
         """获取功能优先级（简化实现）"""
-        # 实际应该从 feature-index.md 读取
-        # 这里简化假设
-        return 'P0'
+        return self.feature_priorities.get(f_id, 'P1')
 
     def _add_error(self, message: str, line: Optional[int] = None,
                    suggestion: Optional[str] = None):
