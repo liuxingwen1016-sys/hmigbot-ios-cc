@@ -267,6 +267,8 @@ Skill({
 })
 ```
 
+对于 i2h 的最终产物，`dev-identity` 只描述默认的资源迁移权限，不代表可以把模板身份当作验收结果。执行器必须额外读取 iOS `CFBundleIdentifier` / `BUNDLE_PREFIX`，并把它与实际 signing profile 一起登记。
+
 ### 落地内容（dev-identity scope）
 
 **只写 dev 安全字段**:
@@ -283,6 +285,11 @@ Skill({
 - bundleName/vendor 与签名/AGC 强绑定
 - dev 阶段写入会导致签名装机不一致
 - 保留脚手架占位，部署期再落地
+
+**i2h 例外与门禁**:
+- 如果 signing profile 已与源工程 bundle ID 对齐，i2h 必须在 Stage 0 直接写入真实 `bundleName`、`vendor` 和版本字段，并在 `identity_status=PASS` 时进入 Stage 1。
+- 如果 signing profile 仍绑定模板 bundleName，允许保留模板值仅用于诊断或未签名构建，但必须写入 `identity_signing_pending` 阻断项。真实 i2h verify 不得把 `com.example.*` / `vendor=example` 判为 PASS，也不得用 unsigned HAP 代替安装验证。
+- `spec/execution/stage0-environment.json` 必须记录 `source_bundle_id`、`target_bundle_name` 和 `signing_profile_bundle_name`，三者不一致时保持 BLOCKED。
 
 ### 非阻断策略
 
