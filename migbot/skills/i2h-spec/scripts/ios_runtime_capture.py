@@ -285,6 +285,7 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
         run_command([xcrun, "simctl", "io", device, "screenshot", str(screenshot)], timeout=args.timeout)
 
     ui_payload = json.loads(ui_json.read_text(encoding="utf-8"))
+    captured_nodes = ui_payload.get("nodes", []) if isinstance(ui_payload, dict) else []
     raw = {
         "schema_version": 2,
         "page_id": args.page_id,
@@ -294,8 +295,10 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
         "app": {**identity, "app_path": str(app)},
         "screenshot": screenshot.name,
         "ui_json": ui_json.name,
-        "nodes": ui_payload.get("nodes", []) if isinstance(ui_payload, dict) else [],
+        "nodes": captured_nodes,
     }
+    if isinstance(ui_payload, dict) and not captured_nodes and isinstance(ui_payload.get("debug_description"), str):
+        raw["debug_description"] = ui_payload["debug_description"]
     raw_path = output_dir / "capture.json"
     atomic_json(raw_path, raw)
     normalized = normalize(raw_path)

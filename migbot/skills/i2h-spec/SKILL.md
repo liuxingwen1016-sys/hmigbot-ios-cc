@@ -128,6 +128,14 @@ python3 .claude/skills/i2h-spec/scripts/ios_runtime_capture.py \
 运行时证据使用 PNG + accessibility JSON。Android 的 `view.xml` 只适用于 legacy
 或 Android 输入，不得作为 iOS 的必需格式。
 
+XCTest helper 可以通过环境变量 `I2H_UI_JSON_OUT` 或
+`TEST_RUNNER_I2H_UI_JSON_OUT` 写入 JSON。helper 有两种等价输出形式。优先写入
+`nodes` 数组；如果逐节点 XCTest 查询导致采集过慢，可以写入
+`debug_description` 字符串。`ios_runtime_capture.py` 会解析 XCUITest 的
+`debugDescription`，保留 role、label、identifier 和 frame，并忽略易变的对象地址。
+因此每个页面状态仍必须通过真实 Simulator 运行采集 PNG 和无障碍证据，不能把静态
+源码推断写成 runtime JSON。
+
 **脚本应输出**（骨架）：
 - Swift 文件路径列表
 - SwiftUI View 类名列表（`struct XXX: View`）

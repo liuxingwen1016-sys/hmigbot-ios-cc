@@ -12,12 +12,74 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
 
 
-TOOL_VERSION = "i2h-runtime-view/2.0"
+TOOL_VERSION = "i2h-runtime-view/2.1"
+
+
+_DEBUG_NODE_RE = re.compile(
+    r"^(?P<indent>\s*)(?:→)?(?P<role>[A-Za-z][A-Za-z0-9 ()]*),"
+    r"(?:\s+0x[0-9A-Fa-f]+,)?\s+"
+    r"\{\{(?P<x>-?\d+(?:\.\d+)?),\s*(?P<y>-?\d+(?:\.\d+)?)\},\s*"
+    r"\{(?P<w>-?\d+(?:\.\d+)?),\s*(?P<h>-?\d+(?:\.\d+)?)\}\}"
+    r"(?P<attributes>.*)$"
+)
+_DEBUG_NODE_WITHOUT_FRAME_RE = re.compile(
+    r"^(?P<indent>\s*)(?:→)?(?P<role>[A-Za-z][A-Za-z0-9 ()]*),"
+    r"(?:\s+0x[0-9A-Fa-f]+,)?\s+(?P<attributes>.+)$"
+)
+
+
+def _debug_attribute(attributes: str, name: str) -> str | None:
+    match = re.search(rf"\b{name}:\s*'(?P<value>(?:[^'\\]|\\.)*)'", attributes)
+    if not match:
+        return None
+    return match.group("value").replace("\\'", "'").replace("\\n", "\n")
+
+
+def parse_debug_description(value: str) -> list[dict[str, Any]]:
+    """Parse XCUITest ``debugDescription`` into stable, flat evidence nodes.
+
+    XCUITest's debug description is the only tree API available without making
+    one remote XCTest query per node. The parser intentionally keeps the
+    fields needed by the migration pipeline and ignores volatile object
+    addresses. Container nodes without a frame are retained for semantics,
+    while framed nodes provide the geometry used for UI alignment.
+    """
+    nodes: list[dict[str, Any]] = []
+    for line in value.splitlines():
+        match = _DEBUG_NODE_RE.match(line)
+        has_frame = match is not None
+        if not match:
+            match = _DEBUG_NODE_WITHOUT_FRAME_RE.match(line)
+        if not match:
+            continue
+        role = match.group("role").strip()
+        attrs = match.group("attributes")
+        node: dict[str, Any] = {
+            "id": f"node-{len(nodes):04d}",
+            "role": role,
+            "label": _debug_attribute(attrs, "label"),
+            "value": _debug_attribute(attrs, "value"),
+            "children": [],
+            "source": "xctest-debug-description",
+        }
+        if has_frame:
+            node["frame"] = {
+                "x": float(match.group("x")),
+                "y": float(match.group("y")),
+                "width": float(match.group("w")),
+                "height": float(match.group("h")),
+            }
+        identifier = _debug_attribute(attrs, "identifier")
+        if identifier:
+            node["identifier"] = identifier
+        nodes.append(node)
+    return nodes
 
 
 def digest(path: Path) -> str:
@@ -50,6 +112,8 @@ def normalize(path: Path) -> dict[str, Any]:
     nodes = source.get("nodes", [])
     if nodes is None:
         nodes = []
+    if not nodes and isinstance(source.get("debug_description"), str):
+        nodes = parse_debug_description(source["debug_description"])
     if not isinstance(nodes, list):
         raise ValueError("runtime capture 'nodes' must be an array")
     normalized_nodes = []
