@@ -101,8 +101,10 @@ python3 "${CLAUDE_PLUGIN_ROOT:-.claude}/skills/i2h-spec/scripts/ui_evidence.py" 
 
 `ui_evidence.py` 同时生成内容寻址的 `spec/.i2h/cache/source-index.json`。索引包含
 全量 Swift 文件的 SHA256、声明行、属性包装器、方法、依赖、路由、资源引用和页面
-归属。其 cache key 由 source tree hash、tool version 和 references/templates hash
-组成。页面或 feature worker 必须先读取索引切片，禁止再次 Read 整个 Swift 项目。
+归属。索引把可导航屏幕写入 `pages[]`，把 PrimaryButton、BeanBag、
+UIViewRepresentable 等复用视图写入 `components[]`，两者不能混作页面计数。其 cache
+key 由 source tree hash、tool version 和 references/templates hash 组成。页面或
+feature worker 必须先读取索引切片，禁止再次 Read 整个 Swift 项目。
 
 页面分析使用 `pipeline_workers.run_bounded`，默认 4 个 worker，每批 3–5 页。每个
 worker 写入 `spec/.i2h/checkpoints/pages/` 下的独立 checkpoint 和临时目录，失败时只
@@ -179,7 +181,9 @@ XCTest helper 可以通过环境变量 `I2H_UI_JSON_OUT` 或
 
 #### Step A2a: 确定性骨架生成（脚本优先）
 
-页面的确定性骨架来自上一步 `ui_evidence.py` 的 `views[]`；对每个 View
+页面的确定性骨架来自上一步 `ui_evidence.py` 的 `pages[]`。复用组件从
+`components[]` 作为共享组件输入，不能为组件创建独立页面或重复执行 runtime capture。
+对每个页面 View
 仍必须完整读取源码，并由 LLM 补充用途、复杂度、依赖和导航语义。不存在
 可执行的 `ios-view-analyzer` 脚本时，不得引用悬空路径或把推断字段伪装成脚本事实。
 
