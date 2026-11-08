@@ -46,6 +46,14 @@ screen comparison and the end-of-scroll reachability result. Occluded final
 content is a `FAIL` finding even when the initial screenshot perceptual score
 does not regress.
 
+Interactive source controls must remain interactive Harmony controls. A SwiftUI
+Picker, Toggle, Button, Stepper, or `NavigationLink` cannot be emitted as a
+plain `Text` node with a coordinate-only gesture. The output must expose a
+button, picker, switch, or equivalent accessibility role with the source label,
+selected value, and stable identifier. Stage-1 smoke must tap every P0 picker,
+toggle, save action, and primary navigation action by identifier or role. A
+screen that looks close but exposes only non-clickable text is a `FAIL` finding.
+
 ## F101 camera and OCR capability closure
 
 When the iOS source contains camera or VisionKit OCR behavior, the Harmony

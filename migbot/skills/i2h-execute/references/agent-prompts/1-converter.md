@@ -68,7 +68,14 @@ Read: <ios_file> 的 imports
    - `viewWillAppear` / `onAppear`
    - 其他生命周期方法
 
-6. **状态刷新边界**:
+6. **展示语义和宿主层级**:
+   - 逐项读取页面规格中的 `presentation`、`source_navigation` 和 `harmony_mapping`，先决定页面是根 Tab、NavigationLink/全屏路由，还是宿主拥有的 `.sheet()`/`.fullScreenCover()`。
+   - iOS `.sheet()` 必须转换为宿主组件的 `bindSheet($$state, builder, options)`，iOS `.fullScreenCover()` 必须转换为 `bindContentCover` 或规格明确的全屏容器。禁止把这两类页面默认登记为 `NavDestination`。
+   - 只有 iOS `NavigationLink`、push、独立全屏流程或规格明确的 routed dialog 才能登记 `NavDestination` 和 `NavPathStack` 路由。`pageMap` 只能登记这些真实路由目标，不能把 sheet 页面批量加入。
+   - sheet builder 必须挂在拥有状态的根宿主节点上，使用 `$$` 双向绑定，关闭时回写 `false`，并保留 iOS 的取消、保存和确认生命周期。不要把 sheet 内容放到 Navigation 内部再用普通 push 伪装模态。
+   - 浮动 Tab、底部胶囊和其他根宿主常驻元素的可见性必须按原始 presentation 决定。sheet 覆盖时保留 iOS 背景上下文和 dim 行为，full-screen 或 pushed 页面显示期间隐藏被覆盖的常驻元素，返回根页后恢复。
+
+7. **状态刷新边界**:
    - 标记由持久化数据、异步任务或计时器驱动的字段，以及页面在写入完成后必须立即反映的派生状态。
    - 记录页面是否位于 `Navigation`、`NavDestination`、Tab 或其他可缓存的路由容器内。路由容器中的页面不能只依赖首次构造时的快照。
 
