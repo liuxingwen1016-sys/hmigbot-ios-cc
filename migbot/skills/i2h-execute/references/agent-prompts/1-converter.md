@@ -68,6 +68,10 @@ Read: <ios_file> 的 imports
    - `viewWillAppear` / `onAppear`
    - 其他生命周期方法
 
+6. **状态刷新边界**:
+   - 标记由持久化数据、异步任务或计时器驱动的字段，以及页面在写入完成后必须立即反映的派生状态。
+   - 记录页面是否位于 `Navigation`、`NavDestination`、Tab 或其他可缓存的路由容器内。路由容器中的页面不能只依赖首次构造时的快照。
+
 ### Step 2: 读取运行时快照（如有）
 
 **读取快照**:
@@ -264,7 +268,18 @@ export class HomeViewModel {
 }
 ```
 
-#### 3.4 处理依赖
+#### 3.4 ArkUI 状态与导航一致性
+
+转换 SwiftUI 的 `@State`、`@Observable`、`@Published` 或共享 Store 时，必须让 ArkUI V2 建立与原页面等价的依赖关系。
+
+- 可观察模型使用 `@ObservedV2`，可变字段使用 `@Trace`。读取 `@Trace` 字段计算得到、且会影响 UI 的 getter 必须使用 `@Computed`，不能用普通 getter 代替。
+- 页面从共享 Store 读取数据时，通过 `@Param data` 或等价的可观察输入传递同一个 Store，并在页面内用 `@Monitor('data.revision')` 观察写入、计时器和异步持久化完成后的版本变化。不要把 Store 复制成一次性的本地快照。
+- 异步写入完成后，必须先重新加载或整体替换受影响的数组、嵌套对象和派生源，再切换页面或显示成功状态。只修改嵌套对象的普通属性，或只更新一个未被页面读取的计数器，不能作为刷新方案。
+- 当多个 Tab 或 `NavDestination` 共享同一 Store，且写入后要求当前页面立即刷新时，在根组件维护递增的 `navigationGeneration`。版本变化时递增它，并把包含 Tabs/Navigation 的完整子树放进 keyed `ForEach`，使用 generation 作为 key 以创建新的页面实例。例如 `ForEach([this.navigationGeneration], (generation: number) => { ... }, (generation: number) => \`${generation}\`)`。仅给外层 `Tabs` 或 `Navigation` 添加 `.id()` 不能替代完整子树重建。
+- 对于完成、保存、放弃等动作后重新进入同名的临时页面，使用 `NavPathStack.pushPath` 并设置 `launchMode: LaunchMode.NEW_INSTANCE`。不要使用会复用旧 `NavDestination` 的同名快捷 push。保留用户可见的路由和返回语义。
+- 完成后必须执行一次不重启进程的状态链路检查。至少覆盖异步写入后的当前页、返回列表页、重新打开同名页面和放弃/删除后的列表状态，并保留 layout dump 或截图证据。
+
+#### 3.5 处理依赖
 
 **Base 层依赖**:
 
@@ -334,6 +349,10 @@ python3 .claude/skills/i2h-execute/scripts/layout_scale.py \
    - leading/trailing → start/end
    - center → center
    - top/bottom → top/bottom
+
+4. **浮动层与底部安全区**:
+   - 任何悬浮 Tab、底部工具条、全局手势层或 `Stack` 覆盖层都必须为页面最后一个可交互控件预留完整的底部 inset。覆盖层不能遮住主按钮、输入框、滚动列表最后一项或弹窗触发区域。
+   - 使用目标设备的 Accessibility/layout dump 检查覆盖层和底部操作控件的 bounds。对每个包含底部操作的页面执行一次滚动到末尾后的点击 smoke，记录控件可见、可点击且没有被覆盖层拦截的证据。
 
 ### Step 5: 资源处理
 
