@@ -40,6 +40,22 @@ Stage-1 smoke must scroll each tab to its end and verify that the last visible
 row or card remains above the capsule. A screenshot that only shows the
 initial page is insufficient for this check.
 
+## Source-backed custom geometry and ordering
+
+SwiftUI `Shape`, `InsettableShape`, `Path`, `Canvas`, and `.path(in:)` are
+source geometry obligations. When the source trigger is present, the target
+must preserve the outline, curves, inner label area, gradients, typography,
+and shadows with an ArkUI `Shape`/`Path`/Canvas or an equivalent custom draw
+implementation. A single rounded rectangle, plain text, emoji, or Unicode
+glyph is a placeholder and cannot be recorded as pixel-equivalent evidence.
+If an SDK limitation prevents an exact path, the decision ledger must record
+the source anchor and the measured geometry difference.
+
+Seed data and list queries must preserve the iOS source order and stable
+tie-breakers. Generated timestamps must not reverse the visible order merely
+to make sample dates monotonic. Acceptance evidence should include the first
+viewport order and the explicit comparator used by the Harmony store.
+
 The converter should preserve source-backed accessibility identifiers and
 labels for every toolbar and tab action. The visual report records both the
 screen comparison and the end-of-scroll reachability result. Occluded final

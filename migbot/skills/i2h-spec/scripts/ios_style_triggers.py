@@ -19,6 +19,19 @@ SCHEMA = "i2h-ios-style-triggers/1"
 
 RULES: tuple[dict[str, Any], ...] = (
     {
+        "id": "custom_shape_geometry",
+        "patterns": (
+            r"\b(?:struct|enum|class)\s+\w+\s*:\s*(?:InsettableShape|Shape)\b",
+            r"\bPath\s*(?:\{|\()",
+            r"\bCanvas\s*\{",
+            r"\.path\s*\(",
+        ),
+        "reference": "ios-custom-shape-geometry",
+        "suggested_skills": ["arkts-component-builder", "arkts-ui-alignment"],
+        "native_api_candidates": ["Path", "Canvas", "Shape"],
+        "fallback": "custom_shape_path_with_source_geometry",
+    },
+    {
         "id": "floating_tabbar",
         "patterns": (r"\bTabView\s*\(",),
         "reference": "ios-floating-tabbar",

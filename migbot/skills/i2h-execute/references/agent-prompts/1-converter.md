@@ -81,6 +81,7 @@ Read: <ios_file> 的 imports
    - sheet builder 必须挂在拥有状态的根宿主节点上，使用 `$$` 双向绑定，关闭时回写 `false`，并保留 iOS 的取消、保存和确认生命周期。不要把 sheet 内容放到 Navigation 内部再用普通 push 伪装模态。
    - 任何 `Stepper`/加减控件都必须保留可区分的增加与减少语义。不要用容易被 ArkUI 字体裁剪的单字符 `+`/`-` 作为唯一视觉图标。优先使用明确的自绘横线/竖线组合、系统 Symbol 或带稳定 accessibility id 的图标按钮，并在真机 dump 与点击 smoke 中分别验证增加和减少会改变正确的值。
    - 源代码中的图标和图片是 UI 事实。优先读取 source index/resource facts 中的 image asset、SF Symbol 名称、SVG 几何和 accessibility frame，迁移到对应的 `app.media`、`SymbolGlyph`、`Path`/Canvas vector 或等价资源，并保留尺寸、颜色、填充/描边和可访问标签。禁止把有源资源或线稿图标降级为 emoji、Unicode 字符、随机 glyph 或纯文字占位符。若目标平台只能用替代图标，必须记录 asset mapping 和几何偏差，不能把替代品标为像素等价。
+   - 源代码中的 `Shape`、`InsettableShape`、`Path`、`Canvas` 和 `.path(in:)` 是几何事实。必须读取 source trigger 的几何锚点，把曲线、圆角/不规则轮廓、内层 label、渐变、字体和阴影迁移为 ArkUI `Shape`/`Path`/Canvas 或等价自绘实现。禁止用一个 `RoundedRectangle`、纯文字、emoji 或 Unicode 图标覆盖整块源形状来充当占位符。目标 SDK 暂时无法表达时，保留最接近的自绘路径并在 decision ledger 记录几何差异和待办，不得把占位实现标为视觉等价。
    - 浮动 Tab、底部胶囊和其他根宿主常驻元素的可见性必须按原始 presentation 决定。sheet 覆盖时保留 iOS 背景上下文和 dim 行为，full-screen 或 pushed 页面显示期间隐藏被覆盖的常驻元素，返回根页后恢复。
    - SwiftUI `Form` 中的 `Picker` 默认映射为紧凑的可访问选择行，保留源标签、当前值、chevron 和稳定 `id`。只有源代码明确使用 segmented control 或 chip group 时才映射为 `TagPill`/多 chip 布局，不能把 Settings 外观或 BeanEditor 处理法、烘焙度、档案颜色自动展开成大块 chip 网格。
    - 逐项对齐 sheet 的源 section 顺序和首屏内容预算。不要在源 Settings/BeanEditor 的 About、保存或主表单之前插入 Harmony-only 的系统表面预览、桥接卡片或额外说明。目标平台特有能力放到源页面明确对应的 section 之后，或单独的设置子页，不能把源 sheet 的关键内容推到首屏以下。
@@ -291,6 +292,7 @@ export class HomeViewModel {
 
 - 可观察模型使用 `@ObservedV2`，可变字段使用 `@Trace`。读取 `@Trace` 字段计算得到、且会影响 UI 的 getter 必须使用 `@Computed`，不能用普通 getter 代替。
 - 页面从共享 Store 读取数据时，通过 `@Param data` 或等价的可观察输入传递同一个 Store，并在页面内用 `@Monitor('data.revision')` 观察写入、计时器和异步持久化完成后的版本变化。不要把 Store 复制成一次性的本地快照。
+- 迁移演示数据、seed 和查询时必须保持 iOS 源的排序方向、稳定 tie-breaker 和首屏顺序。禁止为了生成递增/倒序时间戳而反转源列表，也不能把源 `sort`/`order` 语义替换成任意默认顺序。若 Harmony 查询 API 的默认排序不同，显式写出等价 comparator 并在 acceptance evidence 中保留首屏顺序。
 - 异步写入完成后，必须先重新加载或整体替换受影响的数组、嵌套对象和派生源，再切换页面或显示成功状态。只修改嵌套对象的普通属性，或只更新一个未被页面读取的计数器，不能作为刷新方案。
 - 当多个 Tab 或 `NavDestination` 共享同一 Store，且写入后要求当前页面立即刷新时，在根组件维护递增的 `navigationGeneration`。版本变化时递增它，并把包含 Tabs/Navigation 的完整子树放进 keyed `ForEach`，使用 generation 作为 key 以创建新的页面实例。例如 `ForEach([this.navigationGeneration], (generation: number) => { ... }, (generation: number) => \`${generation}\`)`。仅给外层 `Tabs` 或 `Navigation` 添加 `.id()` 不能替代完整子树重建。
 - 对于完成、保存、放弃等动作后重新进入同名的临时页面，使用 `NavPathStack.pushPath` 并设置 `launchMode: LaunchMode.NEW_INSTANCE`。不要使用会复用旧 `NavDestination` 的同名快捷 push。保留用户可见的路由和返回语义。
