@@ -85,7 +85,20 @@ def main(argv=None):
     ns=ap.parse_args(argv); root=Path(ns.project_root)
     if ns.command=='prepare': result=prepare(root,ns.scope_manifest)
     else:
-        rp=Path(ns.report); result=finalize(root,ns.scope_manifest,_load(rp)); rp.write_text(json.dumps(result,ensure_ascii=False,indent=2))
+        rp=Path(ns.report)
+        report=_load(rp)
+        try:
+            result=finalize(root,ns.scope_manifest,report)
+        except ValueError as exc:
+            # A changed source invalidates the capture scope, but the CLI must
+            # still persist a blocked report so callers retain the evidence
+            # paths and can diagnose the stale run without parsing stderr.
+            result=report
+            result['status']='visual_blocked'
+            result['fix']='none'
+            findings=result.setdefault('failure_findings',[])
+            findings.append({'root_cause':'stale_capture_scope','detail':str(exc)})
+        rp.write_text(json.dumps(result,ensure_ascii=False,indent=2))
     if ns.command=='prepare': Path(ns.out).write_text(json.dumps(result,ensure_ascii=False,indent=2))
     else: print(json.dumps(result,ensure_ascii=False,indent=2))
     return 0 if result.get('status') in ('PASS','CAPTURE_PENDING','DIFF') else 2
