@@ -935,3 +935,9 @@ done
 
 **最后更新**: 2024-11-03  
 **版本**: v2.0（重写版，LLM 主导 + Python 辅助）
+
+## 可选源端真值与状态覆盖
+
+当计划选择高风险功能或 selected smoke 时，可用 `scripts/source_oracle.py` 校验源端预期值。Oracle 只验证当前源文件、行号和引用摘要，不能替代目标侧通过，也不要求为每个页面生成完整用例。未选择或未解析的 case 保留为 `unresolved`。
+
+`ui_obligations` 还会记录嵌入页面候选、条件分支、Sheet/Alert/ConfirmationDialog/Popover/ContextMenu、加载/空态/错误状态标记。它们是交付覆盖输入，不能直接当作运行时状态已观察。

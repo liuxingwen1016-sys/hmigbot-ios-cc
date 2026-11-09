@@ -1599,3 +1599,7 @@ fi
 ```
 
 ---
+
+## 可选资源增量协议
+
+`scripts/resource_delta.py` 提供 task-owned OpenHarmony 资源增量的初始化、提交和原子合并。它通过 preimage hash 和锁拒绝并发冲突，默认不替换 `sweep_resources.py`，只有明确声明资源 scope 的任务才可使用。
