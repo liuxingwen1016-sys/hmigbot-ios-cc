@@ -152,6 +152,12 @@ def normalize(path: Path) -> dict[str, Any]:
     app = source.get("app", {})
     if not isinstance(app, dict):
         app = {}
+    device = source.get("device", {})
+    if not isinstance(device, dict):
+        device = {}
+    identity = source.get("evidence_identity", {})
+    if not isinstance(identity, dict):
+        identity = {}
     page_id = source.get("page_id")
     state_id = source.get("state_id") or source.get("state")
     status = source.get("status")
@@ -169,6 +175,12 @@ def normalize(path: Path) -> dict[str, Any]:
         "captured_at": source.get("captured_at"),
         "device": source.get("device", {}),
         "app": app,
+        "evidence_identity": identity,
+        "source_sha256": identity.get("source_sha256") or source.get("source_sha256"),
+        "scenario_id": identity.get("scenario_id") or source.get("scenario_id"),
+        "configuration_id": identity.get("configuration_id") or source.get("configuration_id"),
+        "checkpoint_id": identity.get("checkpoint_id") or source.get("checkpoint_id"),
+        "device_udid": identity.get("device_udid") or device.get("udid"),
         "screenshot": screenshot_value,
         "screenshot_path": screenshot_value,
         "screenshot_sha256": digest(screenshot_path) if screenshot_path and screenshot_path.is_file() else None,

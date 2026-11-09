@@ -24,6 +24,7 @@ from typing import Any, Sequence
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 from runtime_view import atomic_json, normalize  # noqa: E402
+from ios_evidence_protocol import bundle_identity, source_identity  # noqa: E402
 
 
 def utc_now() -> str:
@@ -176,12 +177,16 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
     output_dir = Path(args.output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     xcrun = args.xcrun
+    if args.require_device_id and not args.device_id:
+        raise RuntimeError("exact simulator UDID is required when --require-device-id is set")
     device = choose_device(xcrun, args.device_id)
     derived_data = Path(args.derived_data).expanduser().resolve()
     project = Path(args.project).expanduser()
     if not project.is_absolute():
         project = project_root / project
     project = project.resolve()
+    source_root = Path(args.source_root).expanduser().resolve() if args.source_root else None
+    source_sha256 = source_identity(source_root) if source_root else None
 
     plan = {
         "project_root": str(project_root),
@@ -192,6 +197,10 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
         "page_id": args.page_id,
         "state_id": args.state_id,
         "output_dir": str(output_dir),
+        "source_sha256": source_sha256,
+        "scenario_id": args.scenario_id,
+        "configuration_id": args.configuration_id,
+        "checkpoint_id": args.checkpoint_id,
     }
     if args.dry_run:
         return {"status": "dry_run", "plan": plan}
@@ -220,6 +229,7 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
     app = find_app(derived_data, args.app_path)
     app_bundle_id = bundle_id(app, args.bundle_id)
     identity = app_identity(app, app_bundle_id)
+    identity["bundle_sha256"] = bundle_identity(app)
     run_command([xcrun, "simctl", "install", device, str(app)], timeout=args.timeout)
     run_command([xcrun, "simctl", "launch", device, app_bundle_id], timeout=args.timeout)
 
@@ -293,6 +303,17 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
         "captured_at": utc_now(),
         "device": {"udid": device},
         "app": {**identity, "app_path": str(app)},
+        "evidence_identity": {
+            "platform": "ios",
+            "page_id": args.page_id,
+            "state_id": args.state_id,
+            "scenario_id": args.scenario_id,
+            "configuration_id": args.configuration_id,
+            "checkpoint_id": args.checkpoint_id,
+            "source_sha256": source_sha256,
+            "build_sha256": identity.get("bundle_sha256"),
+            "device_udid": device,
+        },
         "screenshot": screenshot.name,
         "ui_json": ui_json.name,
         "nodes": captured_nodes,
@@ -306,6 +327,7 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
     atomic_json(normalized_path, normalized)
     snapshot_meta = update_snapshot_meta(output_dir, args.page_id, args.state_id, normalized)
     manifest = {
+        "schema": "hmigbot-ios-ui-evidence/1",
         "status": "audited" if not normalized["warnings"] else "captured",
         "page_id": args.page_id,
         "state_id": args.state_id,
@@ -314,6 +336,15 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
         "ui_json_path": ui_json.name,
         "png_sha256": normalized.get("screenshot_sha256"),
         "ui_json_sha256": normalized.get("ui_json_sha256"),
+        "identity": {
+            **normalized.get("evidence_identity", {}),
+            "screenshot_sha256": normalized.get("screenshot_sha256"),
+            "ui_json_sha256": normalized.get("ui_json_sha256"),
+        },
+        "artifacts": {
+            "screenshot": {"path": screenshot.name, "sha256": normalized.get("screenshot_sha256")},
+            "ui_json": {"path": ui_json.name, "sha256": normalized.get("ui_json_sha256")},
+        },
     }
     atomic_json(output_dir / "manifest.json", manifest)
     return {
@@ -331,6 +362,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--scheme", required=True)
     parser.add_argument("--configuration", default="Debug")
     parser.add_argument("--device-id")
+    parser.add_argument("--require-device-id", action="store_true", help="reject automatic device selection")
     parser.add_argument("--xcrun", default="xcrun")
     parser.add_argument("--derived-data", default="build/i2h-derived-data")
     parser.add_argument("--app-path")
@@ -338,12 +370,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--page-id", required=True)
     parser.add_argument("--state-id", default="normal")
+    parser.add_argument("--source-root", help="current read-only iOS source root for evidence binding")
+    parser.add_argument("--scenario-id", default="default")
+    parser.add_argument("--configuration-id", default="Debug")
+    parser.add_argument("--checkpoint-id", help="explicit XCTest/Hypium checkpoint identity")
     parser.add_argument("--accessibility-json")
     parser.add_argument("--accessibility-command")
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--timeout", type=int, default=600)
     args = parser.parse_args(argv)
+    if not args.checkpoint_id:
+        args.checkpoint_id = f"{args.page_id}:{args.state_id}"
     try:
         result = capture(args)
     except (OSError, RuntimeError, subprocess.SubprocessError, json.JSONDecodeError, plistlib.InvalidFileException) as exc:

@@ -15,6 +15,10 @@ Pipeline 第一步：分析 iOS 项目，生成完整的迁移规格。
 - **Python 辅助**：只做确定性提取（文件列表、类名、属性名）
 - **References 指导**：所有关键步骤必须加载对应的 reference 文档
 
+运行时 UI 采集和双端配对遵循 [references/ios-evidence-protocol.md](./references/ios-evidence-protocol.md)。
+证据必须绑定当前源码、构建、精确设备、场景、配置和 checkpoint。缺少设备时记录
+`not_run` 或 `blocked`，不把静态推断或单端截图当作运行时通过。
+
 ---
 
 ## 关键约束（Critical）
