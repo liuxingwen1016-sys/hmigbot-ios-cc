@@ -50,19 +50,23 @@ class RuntimeViewTests(unittest.TestCase):
             screenshot = root / "screen.png"
             ui_json = root / "ui.json"
             receipt = root / "foreground-receipt.json"
+            acknowledgement = root / "foreground-capture-ack.json"
             screenshot.write_bytes(b"png")
             ui_json.write_text(json.dumps({"nodes": [{"id": "title", "role": "staticText"}]}), encoding="utf-8")
             receipt.write_text(json.dumps({"schema": "hmigbot-ios-foreground-receipt/1", "ready": True}), encoding="utf-8")
+            acknowledgement.write_text(json.dumps({"schema": "hmigbot-ios-foreground-ack/1"}), encoding="utf-8")
             capture.write_text(json.dumps({
                 "page_id": "page_0001_RootView",
                 "state_id": "normal",
                 "screenshot": "screen.png",
                 "ui_json": "ui.json",
                 "foreground_receipt": "foreground-receipt.json",
+                "foreground_ack": "foreground-capture-ack.json",
                 "nodes": [{"id": "title", "role": "staticText"}],
             }), encoding="utf-8")
             result = normalize(capture)
             self.assertIsNotNone(result["foreground_receipt_sha256"])
+            self.assertIsNotNone(result["foreground_ack_sha256"])
             self.assertEqual(result["warnings"], [])
 
 

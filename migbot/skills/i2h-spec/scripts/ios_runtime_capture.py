@@ -24,7 +24,7 @@ from typing import Any, Sequence
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 from runtime_view import atomic_json, normalize  # noqa: E402
-from ios_evidence_protocol import bundle_identity, source_identity  # noqa: E402
+from ios_evidence_protocol import bundle_identity, sha256_file, source_identity  # noqa: E402
 
 
 def utc_now() -> str:
@@ -198,6 +198,25 @@ def validate_foreground_receipt(path: Path, *, bundle_id: str, page_id: str, sta
     return payload
 
 
+def write_foreground_ack(path: Path, *, bundle_id: str, page_id: str, state_id: str, screenshot: Path) -> dict[str, Any]:
+    """Publish an atomic same-run screenshot acknowledgement for XCTest.
+
+    The external probe keeps the app alive after writing its receipt.  This
+    acknowledgement is the release signal that lets XCTest return without
+    tearing down the foreground app before ``simctl io screenshot`` completes.
+    """
+    payload = {
+        "schema": "hmigbot-ios-foreground-ack/1",
+        "bundle_id": bundle_id,
+        "page_id": page_id,
+        "state_id": state_id,
+        "screenshot_sha256": sha256_file(screenshot),
+        "captured_at": utc_now(),
+    }
+    atomic_json(path, payload)
+    return payload
+
+
 def capture(args: argparse.Namespace) -> dict[str, Any]:
     project_root = Path(args.project_root).expanduser().resolve()
     output_dir = Path(args.output_dir).expanduser().resolve()
@@ -262,9 +281,11 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
     ui_json = output_dir / "ios-accessibility.json"
     screenshot = output_dir / "ios-runtime.png"
     foreground_receipt = output_dir / "foreground-receipt.json"
+    foreground_ack = output_dir / "foreground-capture-ack.json"
     screenshot_taken = False
     receipt_payload: dict[str, Any] | None = None
     foreground_receipt.unlink(missing_ok=True)
+    foreground_ack.unlink(missing_ok=True)
     if args.accessibility_json:
         ui_json.unlink(missing_ok=True)
         copy_accessibility_json(Path(args.accessibility_json).expanduser().resolve(), ui_json)
@@ -275,6 +296,7 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
         ui_json.unlink(missing_ok=True)
         screenshot.unlink(missing_ok=True)
         foreground_receipt.unlink(missing_ok=True)
+        foreground_ack.unlink(missing_ok=True)
         command_env = os.environ.copy()
         command_env.update(
             {
@@ -291,6 +313,10 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
                 "TEST_RUNNER_I2H_STATE_ID": args.state_id,
                 "I2H_FOREGROUND_RECEIPT_OUT": str(foreground_receipt),
                 "TEST_RUNNER_I2H_FOREGROUND_RECEIPT_OUT": str(foreground_receipt),
+                "I2H_FOREGROUND_CAPTURE_ACK_OUT": str(foreground_ack),
+                "TEST_RUNNER_I2H_FOREGROUND_CAPTURE_ACK_OUT": str(foreground_ack),
+                "I2H_FOREGROUND_ACK_TIMEOUT": str(min(args.timeout, 60)),
+                "TEST_RUNNER_I2H_FOREGROUND_ACK_TIMEOUT": str(min(args.timeout, 60)),
             }
         )
         log_path = output_dir / "accessibility-command.log"
@@ -315,6 +341,13 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
                         time.sleep(0.25)
                         run_command([xcrun, "simctl", "io", device, "screenshot", str(screenshot)], timeout=args.timeout)
                         screenshot_taken = True
+                        write_foreground_ack(
+                            foreground_ack,
+                            bundle_id=app_bundle_id,
+                            page_id=args.page_id,
+                            state_id=args.state_id,
+                            screenshot=screenshot,
+                        )
                     if time.monotonic() > deadline:
                         process.kill()
                         raise RuntimeError(f"accessibility command timed out after {args.timeout}s")
@@ -338,6 +371,17 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
 
     if not screenshot_taken:
         run_command([xcrun, "simctl", "io", device, "screenshot", str(screenshot)], timeout=args.timeout)
+        if args.accessibility_command:
+            # Legacy commands may exit without waiting for the acknowledgement.
+            # Keep the artifact explicit so downstream verification can reject
+            # captures that lack the same-run foreground handshake.
+            write_foreground_ack(
+                foreground_ack,
+                bundle_id=app_bundle_id,
+                page_id=args.page_id,
+                state_id=args.state_id,
+                screenshot=screenshot,
+            )
 
     ui_payload = json.loads(ui_json.read_text(encoding="utf-8"))
     captured_nodes = ui_payload.get("nodes", []) if isinstance(ui_payload, dict) else []
@@ -365,6 +409,7 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
     }
     if receipt_payload is not None:
         raw["foreground_receipt"] = foreground_receipt.name
+        raw["foreground_ack"] = foreground_ack.name
     if isinstance(ui_payload, dict) and not captured_nodes and isinstance(ui_payload.get("debug_description"), str):
         raw["debug_description"] = ui_payload["debug_description"]
     raw_path = output_dir / "capture.json"
@@ -388,6 +433,7 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
             "screenshot_sha256": normalized.get("screenshot_sha256"),
             "ui_json_sha256": normalized.get("ui_json_sha256"),
             "foreground_receipt_sha256": normalized.get("foreground_receipt_sha256"),
+            "foreground_ack_sha256": normalized.get("foreground_ack_sha256"),
         },
         "artifacts": {
             "screenshot": {"path": screenshot.name, "sha256": normalized.get("screenshot_sha256")},
@@ -398,6 +444,10 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
         manifest["artifacts"]["foreground_receipt"] = {
             "path": foreground_receipt.name,
             "sha256": normalized.get("foreground_receipt_sha256"),
+        }
+        manifest["artifacts"]["foreground_ack"] = {
+            "path": foreground_ack.name,
+            "sha256": normalized.get("foreground_ack_sha256"),
         }
     atomic_json(output_dir / "manifest.json", manifest)
     return {

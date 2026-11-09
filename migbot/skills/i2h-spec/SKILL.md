@@ -131,6 +131,11 @@ worker 写入 `spec/.i2h/checkpoints/pages/` 下的独立 checkpoint 和临时�
 并通过 XCTest/XCUITest helper 生成 accessibility JSON 和同一次探针的 foreground receipt。没有 accessibility JSON 或 foreground receipt 时必须
 阻断 `runtime_required`，不能把截图或源码推断伪装成运行时树。
 
+真实 XCTest 探针在写入 receipt 后必须等待 `I2H_FOREGROUND_CAPTURE_ACK_OUT`。采集器完成
+`simctl io screenshot` 后原子写入 acknowledgement，探针收到该文件才允许退出。这样可
+避免 XCTest teardown 与截图并发导致 PNG 实际来自 SpringBoard。acknowledgement 会和
+receipt 一起写入 manifest，旧的 accessibility JSON 输入保持兼容但不声称有前台握手。
+
 ```bash
 python3 .claude/skills/i2h-spec/scripts/ios_runtime_capture.py \
   --project-root . \

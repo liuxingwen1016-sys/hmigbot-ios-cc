@@ -59,6 +59,16 @@ final class I2HAccessibilityCaptureTests: XCTestCase {
             let receiptData = try JSONSerialization.data(withJSONObject: receiptPayload, options: [.prettyPrinted])
             try receiptData.write(to: URL(fileURLWithPath: receipt), options: .atomic)
         }
+        if let acknowledgement = environment["TEST_RUNNER_I2H_FOREGROUND_CAPTURE_ACK_OUT"] ?? environment["I2H_FOREGROUND_CAPTURE_ACK_OUT"] {
+            let timeout = Double(environment["TEST_RUNNER_I2H_FOREGROUND_ACK_TIMEOUT"] ?? environment["I2H_FOREGROUND_ACK_TIMEOUT"] ?? "60") ?? 60
+            let deadline = Date().addingTimeInterval(timeout)
+            while !FileManager.default.fileExists(atPath: acknowledgement) {
+                if Date() >= deadline {
+                    throw NSError(domain: "i2h.accessibility", code: 2, userInfo: [NSLocalizedDescriptionKey: "foreground screenshot acknowledgement timed out"])
+                }
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+        }
     }
 
     @MainActor private func navigate(app: XCUIApplication, page: String) -> Bool {
