@@ -72,6 +72,22 @@ class UiEvidenceTests(unittest.TestCase):
         self.assertTrue(obligations['has_form'])
         self.assertFalse(obligations['has_scroll'])
 
+    def test_ui_obligations_capture_lazy_grid_geometry(self):
+        source = '''
+        struct TastingView: View {
+            var body: some View {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 75))], spacing: 12) {
+                    Text("柑橘")
+                }
+            }
+        }
+        '''
+        obligations = parse_ui_obligations(source)
+        self.assertEqual(obligations['grid']['kind'], 'lazy_v_grid')
+        self.assertEqual(obligations['grid']['spacing'], 12.0)
+        self.assertEqual(obligations['grid']['adaptive_minimum'], 75.0)
+        self.assertEqual(obligations['grid']['fixed_item_count'], 1)
+
     def test_view_evidence_carries_ui_obligations(self):
         self.write('Views/RecipeView.swift', '''
         import SwiftUI

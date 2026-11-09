@@ -72,6 +72,14 @@ RULES: tuple[dict[str, Any], ...] = (
         "fallback": "native_slider_with_source_value_and_enabled_state",
     },
     {
+        "id": "lazy_grid",
+        "patterns": (r"\bLazyVGrid\s*\(", r"\bLazyHGrid\s*\("),
+        "reference": "ios-lazy-grid",
+        "suggested_skills": ["arkts-component-builder", "arkts-ui-alignment"],
+        "native_api_candidates": ["Grid", "GridItem"],
+        "fallback": "native_grid_with_source_columns_spacing_and_adaptive_minimum",
+    },
+    {
         "id": "glass_switch",
         "patterns": (r"\bToggle\s*\(",),
         "reference": "ios-glass-switch",

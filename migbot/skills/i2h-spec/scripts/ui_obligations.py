@@ -118,6 +118,20 @@ def parse_ui_obligations(text: str, *, line_offset: int = 0) -> dict[str, Any]:
         if item.get("kind") == "picker" and item.get("label")
     ]
     has_scroll = any(name in containers for name in ("ScrollView", "List", "LazyVStack", "LazyHStack", "LazyVGrid"))
+    grid = None
+    grid_match = re.search(r"\b(LazyVGrid|LazyHGrid)\s*\(", text)
+    if grid_match:
+        grid_kind = "lazy_v_grid" if grid_match.group(1) == "LazyVGrid" else "lazy_h_grid"
+        spacing_match = re.search(r"\bspacing\s*:\s*([0-9.]+)", text[grid_match.start():])
+        adaptive_match = re.search(r"\.adaptive\s*\(\s*minimum\s*:\s*([0-9.]+)", text[grid_match.start():])
+        fixed_count = len(re.findall(r"\bGridItem\s*\(", text[grid_match.start():]))
+        grid = {
+            "kind": grid_kind,
+            "line": _line(text, grid_match.start()) + line_offset,
+            "spacing": float(spacing_match.group(1)) if spacing_match else None,
+            "adaptive_minimum": float(adaptive_match.group(1)) if adaptive_match else None,
+            "fixed_item_count": fixed_count,
+        }
     chart = None
     if re.search(r"\bChart\s*\(", text):
         y_domain = re.search(r"chartYScale\s*\(\s*domain\s*:\s*([^\)]+)", text)
@@ -213,6 +227,7 @@ def parse_ui_obligations(text: str, *, line_offset: int = 0) -> dict[str, Any]:
         "searchable": searchable,
         "searchable_placement": "toolbar" if searchable else None,
         "chart": chart,
+        "grid": grid,
         "presentations": presentations,
         "conditional_states": conditional_states,
         "state_markers": state_markers,
