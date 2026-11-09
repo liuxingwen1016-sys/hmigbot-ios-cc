@@ -47,7 +47,16 @@ class UiObligationGateTests(unittest.TestCase):
         codes = {row["code"] for row in result["errors"]}
         self.assertIn("toolbar_search_inline_input", codes)
         self.assertIn("chart_line_points_missing", codes)
-        result = self.run_gate("Toolbar() { Text('search') } Canvas() { drawLine(); drawCircle(); }.height(120)", obligations)
+        result = self.run_gate("Toolbar() { Search({ value: '' }) } Canvas() { drawLine(); drawCircle(); }.height(120)", obligations)
+        self.assertEqual(result["status"], "PASS")
+
+    def test_toolbar_search_rejects_permanent_search_without_toolbar_state(self):
+        obligations = {"searchable": True, "searchable_placement": "toolbar"}
+        result = self.run_gate("Column() { Search({ value: '' }) }", obligations)
+        self.assertEqual(result["status"], "FAIL")
+        self.assertIn("toolbar_search_inline_input", {row["code"] for row in result["errors"]})
+
+        result = self.run_gate("Column() { if (this.showSearch) { Search({ value: '' }) } }", obligations)
         self.assertEqual(result["status"], "PASS")
 
     def test_accepts_legacy_string_picker_labels(self):

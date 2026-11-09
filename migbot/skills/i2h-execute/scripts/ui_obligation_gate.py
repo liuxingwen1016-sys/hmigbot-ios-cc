@@ -131,6 +131,16 @@ def _check_unit(root: Path, unit: dict[str, Any]) -> list[dict[str, str]]:
     if obligations.get("searchable") and obligations.get("searchable_placement") == "toolbar":
         if re.search(r"\bTextInput\s*\(", source):
             errors.append({"code": "toolbar_search_inline_input", "unit_id": unit_id, "detail": relative})
+        # ArkUI Search is still an inline control unless the generated page
+        # gives it an explicit toolbar host or an expansion/focus state.  A
+        # prompt-only rule previously let a permanent Search() push the first
+        # screen down even though the iOS searchable modifier was toolbar
+        # collapsed on initial render.
+        if re.search(r"\bSearch\s*\(", source) and not re.search(
+            r"\b(?:Toolbar|toolbar)\b|\b(?:searchExpanded|showSearch|searchVisible|isSearchExpanded)\b",
+            source,
+        ):
+            errors.append({"code": "toolbar_search_inline_input", "unit_id": unit_id, "detail": relative})
         if not re.search(r"search|Search|toolbar|Toolbar", source):
             errors.append({"code": "toolbar_search_missing", "unit_id": unit_id, "detail": relative})
 
