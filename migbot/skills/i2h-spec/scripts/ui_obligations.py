@@ -213,6 +213,16 @@ def parse_ui_obligations(text: str, *, line_offset: int = 0) -> dict[str, Any]:
             seen_embedded.add(key)
             embedded_views.append(item)
 
+    bottom_anchor_patterns = (
+        r"\.safeAreaInset\s*\(\s*edge\s*:\s*\.bottom",
+        r"\.overlay\s*\(\s*alignment\s*:\s*\.bottom",
+        r"\.frame\s*\([^\n]*alignment\s*:\s*\.bottom",
+    )
+    fixed_bottom_action_required = bool(
+        primary_ids
+        and any(re.search(pattern, text) for pattern in bottom_anchor_patterns)
+    )
+
     return {
         "interactive_controls": controls,
         "accessibility_identifiers": identifiers,
@@ -221,7 +231,7 @@ def parse_ui_obligations(text: str, *, line_offset: int = 0) -> dict[str, Any]:
         "has_scroll": has_scroll,
         "has_overlay": "overlay" in containers,
         "primary_action_ids": primary_ids,
-        "fixed_bottom_action_required": bool(has_scroll and primary_ids),
+        "fixed_bottom_action_required": fixed_bottom_action_required,
         "form_picker_labels": form_pickers,
         "compact_picker_rows_required": bool("Form" in containers and form_pickers),
         "searchable": searchable,

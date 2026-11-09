@@ -88,6 +88,31 @@ class UiEvidenceTests(unittest.TestCase):
         self.assertEqual(obligations['grid']['adaptive_minimum'], 75.0)
         self.assertEqual(obligations['grid']['fixed_item_count'], 1)
 
+    def test_scroll_primary_action_is_not_fixed_without_source_bottom_anchor(self):
+        source = '''
+        struct TastingView: View {
+            var body: some View {
+                ScrollView { PrimaryButton("收好这一杯") { saveTasting() }.accessibilityIdentifier("saveTasting") }
+            }
+        }
+        '''
+        obligations = parse_ui_obligations(source)
+        self.assertEqual(obligations['primary_action_ids'], ['saveTasting'])
+        self.assertFalse(obligations['fixed_bottom_action_required'])
+
+    def test_source_bottom_anchor_requires_explicit_safe_area_or_overlay(self):
+        source = '''
+        struct HomeView: View {
+            var body: some View {
+                ScrollView { Text("content") }
+                    .safeAreaInset(edge: .bottom) { Button("准备这一杯") {}.accessibilityIdentifier("prepareRecipe") }
+            }
+        }
+        '''
+        obligations = parse_ui_obligations(source)
+        self.assertEqual(obligations['primary_action_ids'], ['prepareRecipe'])
+        self.assertTrue(obligations['fixed_bottom_action_required'])
+
     def test_view_evidence_carries_ui_obligations(self):
         self.write('Views/RecipeView.swift', '''
         import SwiftUI
