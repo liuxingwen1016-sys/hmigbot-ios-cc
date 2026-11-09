@@ -53,6 +53,18 @@ cd /path/to/hmigbot-ios
 
 安装后使用 `/i2h-init` 和 `/i2h-run` 作为主要入口。`/i2h-build` 使用已安装的 `i2h-tool` 辅助程序；设备和 DevEco 检查仍需要真实运行环境。
 
+## Codex 形态
+
+Claude 兼容源仍保留在 `migbot/`。使用 `codex-adapter/` 可确定性生成 `codex/`：
+
+```bash
+python3 codex-adapter/scripts/convert.py --dry-run
+python3 codex-adapter/scripts/convert.py
+python3 codex-adapter/scripts/verify.py --codex-dir codex
+```
+
+生成的 `$i2h-*` skills 保留 iOS → HarmonyOS 流水线、agents、runtime hooks 以及现有验收契约。映射和人工检查项见 [`codex/README.md`](codex/README.md) 与 [`codex/MIGRATION-REPORT.md`](codex/MIGRATION-REPORT.md)。
+
 ## 目录
 
 ```text

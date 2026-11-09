@@ -1,0 +1,256 @@
+# Codex 适配 —— 单行改写规则集（REWRITE-RULES.md R1/R2/R3/R5 的可执行形式）
+#
+# 语义 SSOT 仍是 REWRITE-RULES.md；本文件是它能被机器执行的那一部分。
+# 改本文件前先改 REWRITE-RULES.md，保持两者一致。
+#
+# 执行顺序 = 列表顺序，**先具体后泛化**。pattern 为 Python re 正则，repl 支持 \1 反向引用。
+# 无法用正则表达的（例外判定 / 机制不等价 / 上下文消歧 / 预算压缩）不在此处，
+# 由 rewrite.py 的 audit 报告交人工或 LLM 处理。
+
+# ── R0 机制不等价的逐条映射 ──────────────────────────────────────────────────
+# Codex 缺少 Claude Code 的某项机制时，光换词会留下假信息（「Codex 官方 import 语法」
+# ——Codex 根本没有），必须换成用指令补偿的等价表述。每处句子结构不同，只能逐条登记，
+# 这是 REWRITE-RULES.md 说的「已知固定映射」。
+#
+# 必须排在 R1 品牌词规则之前：否则 `Claude Code memory 系统` 会先被替换成
+# `Codex memory 系统`，本段就匹配不上了。
+
+# @ import 自动加载 → 显式读取指令（Codex 无 @ 前缀 import）
+- id: R0-import-design-point
+  pattern: '\| `@spec/decision-ledger\.md` 语法 \| Claude Code 官方 import 语法，\*\*按需自动加载\*\* ledger（比普通路径提及可靠性显著提高） \|'
+  repl: '| 显式读取指令 | Codex 的 AGENTS.md 无 `@` 前缀 import 自动加载机制，靠**写明「会话开始必须先读取」的动作指令**保证 ledger 被加载（比单纯路径提及可靠性显著提高） |'
+- id: R0-import-key-design
+  pattern: '- \*\*`@spec/decision-ledger\.md` import 语法\*\*：触发渐进披露按需加载 ledger（非普通路径文本）'
+  repl: '- **显式读取指令**：AGENTS.md 中写明「会话开始必须先读取 `spec/decision-ledger.md` 顶部『决策索引』段」（Codex 无 `@` import 自动加载，纯路径文本不保证被读取）'
+
+# Memory 系统 → 落盘到目标项目文件（Codex 无 memory 设施）
+- id: R0-memory-section-title
+  pattern: '### 4c\. 关键经验 → Memory 系统'
+  repl: '### 4c. 关键经验 → 项目记忆文件'
+- id: R0-memory-intro
+  pattern: '将本次迁移中值得跨会话复用的经验写入 Claude Code memory 系统：'
+  repl: '将本次迁移中值得跨会话复用的经验写入目标项目的 `spec/memory/` 目录（每条经验一个 markdown 文件）：'
+- id: R0-memory-format
+  pattern: 'Memory 写入格式遵循 auto memory 系统的规范（frontmatter \+ content）。'
+  repl: '每个记忆文件遵循 frontmatter + 正文的结构（frontmatter 至少含 name / description / type）。'
+
+# ── R1 术语与路径 ────────────────────────────────────────────────────────────
+- id: R1-snippet-name
+  pattern: 'claude-md-decision-snippet'
+  repl: 'agents-md-decision-snippet'
+- id: R1-claude-md
+  pattern: 'CLAUDE\.md'
+  repl: 'AGENTS.md'
+- id: R1-settings
+  pattern: '\.claude/settings\.json'
+  repl: '.codex/config.toml'
+- id: R1-agents-dir
+  pattern: '\.claude/agents/'
+  repl: '.codex/agents/'
+- id: R1-skills-dir-home
+  pattern: '~/\.claude/skills/'
+  repl: '~/.agents/skills/'
+- id: R1-skills-dir
+  pattern: '\.claude/skills/'
+  repl: '.agents/skills/'
+- id: R1-dot-claude-home
+  pattern: '~/\.claude/'
+  repl: '~/.agents/'
+- id: R1-dot-claude
+  pattern: '\.claude/'
+  repl: '.agents/'
+- id: R1-brand-cc
+  pattern: '[Cc]laude[- ][Cc]ode'
+  repl: 'Codex'
+- id: R1-skill-rename
+  pattern: 'hmos_fix_build_errors'
+  repl: 'hmos-fix-build-errors'
+
+# ── R2 Skill 调用语法 ────────────────────────────────────────────────────────
+- id: R2-python-call-with-args
+  pattern: 'Skill\(\s*"([a-z0-9_-]+)"\s*,\s*args\s*=\s*"([^"]*)"\s*\)'
+  repl: '调用 `$\1` skill（读取 `.agents/skills/\1/SKILL.md` 并按其执行），参数：`\2`'
+- id: R2-python-call-no-args
+  pattern: 'Skill\(\s*"([a-z0-9_-]+)"\s*\)'
+  repl: '调用 `$\1` skill（读取 `.agents/skills/\1/SKILL.md` 并按其执行）'
+- id: R2-keyword-call
+  pattern: 'Skill\(\s*skill\s*=\s*"([a-z0-9_-]+)"\s*\)'
+  repl: '调用 `$\1` skill（读取 `.agents/skills/\1/SKILL.md` 并按其执行）'
+- id: R2-call-with-args
+  pattern: '调\s*`?Skill\(\s*\{\s*skill:\s*"([a-z0-9_-]+)"\s*,\s*args:\s*"([^"]*)"\s*\}\s*\)`?'
+  repl: '调用 `$\1` skill（参数：`\2`）'
+- id: R2-inline-with-args
+  pattern: '`?Skill\(\s*\{\s*skill:\s*"([a-z0-9_-]+)"\s*,\s*args:\s*"([^"]*)"\s*\}\s*\)`?'
+  repl: '`$\1` skill（参数：`\2`）'
+- id: R2-inline-no-args
+  pattern: '`?Skill\(\s*\{\s*skill:\s*"([a-z0-9_-]+)"[^}]*\}\s*\)`?'
+  repl: '`$\1` skill'
+- id: R2-tool-phrasing
+  pattern: '以 Skill 工具直接调用'
+  repl: '直接调用'
+- id: R2-tool-phrasing2
+  pattern: '用 Skill 工具调用'
+  repl: '显式调用'
+- id: R2-verb-call
+  pattern: '调 Skill:?\s+`?([a-z0-9_-]+)`?'
+  repl: '调用 `$\1` skill'
+- id: R2-verb-use
+  pattern: '使用 Skill:?\s+`?([a-z0-9_-]+)`?'
+  repl: '使用 `$\1` skill'
+# shell 脚本里出裸名，不带 `$`（R9 最后一条）。
+# .sh 的 `$` 是变量展开：`$android-fact-tree` 会被 bash 当成未定义变量 `$android`
+# 展开成空串，只剩 `-fact-tree`。脚本照跑不报错，只是 echo 出来的提示信息悄悄不对。
+# 不用 `\$` 转义：那只在双引号里对，单引号里会原样打印出反斜杠，而且会让
+# 「.sh 里绝不新增 $」这条可机械检查的不变式退化成依赖引号上下文的判断。
+# 裸名也是这些提示串的既有风格（同句里 `XML 走 a2h-functional-merge` 本就没有 $）。
+# 必须排在下面两条之前 —— 否则它们先把 Skill(x) 改成 $x 了。
+- id: R2-paren-sh
+  when_path: '*.sh'
+  pattern: '`?Skill\(([a-z0-9_-]+)\)`?'
+  repl: '\1'
+- id: R2-paren-backticked
+  pattern: '`Skill\(([a-z0-9_-]+)\)`'
+  repl: '`$\1`'
+- id: R2-paren-bare
+  pattern: 'Skill\(([a-z0-9_-]+)\)'
+  repl: '$\1'
+
+# ── R3 子代理派发 ────────────────────────────────────────────────────────────
+- id: R3-subagent-type-field
+  pattern: 'subagent_type\s*=\s*["`]([a-z0-9-]+)["`]'
+  repl: 'agent_type = "\1"'
+- id: R3-agent-call-field
+  pattern: '\bAgent\(\s*agent_type\s*='
+  repl: 'spawn_agent(agent_type='
+# 带括号补语的先处理：把 `（` 接成 `；`，避免出现两个相邻括号组
+- id: R3-dispatch-named-paren
+  pattern: '派发 Agent `([a-z0-9-]+)`（'
+  repl: '派发 Codex 子代理 `\1`（定义于 `.codex/agents/\1.toml`；'
+- id: R3-dispatch-named-paren2
+  pattern: '派 Agent `([a-z0-9-]+)`（'
+  repl: '派发 Codex 子代理 `\1`（定义于 `.codex/agents/\1.toml`；'
+- id: R3-dispatch-named
+  pattern: '派发 Agent `([a-z0-9-]+)`'
+  repl: '派发 Codex 子代理 `\1`（定义于 `.codex/agents/\1.toml`）'
+- id: R3-dispatch-named-bare
+  pattern: '派发 Agent ([a-z0-9-]+)'
+  repl: '派发子代理 \1'
+- id: R3-dispatch-short
+  pattern: '派 Agent `([a-z0-9-]+)`'
+  repl: '派发 Codex 子代理 `\1`（定义于 `.codex/agents/\1.toml`）'
+- id: R3-table-cell
+  pattern: '\(Agent:\s*([a-z0-9-]+)'
+  repl: '(子代理: \1'
+- id: R3-agent-backtick
+  pattern: 'Agent `([a-z0-9-]+)`'
+  repl: '子代理 `\1`'
+- id: R3-agent-bare-known
+  pattern: 'Agent ([a-z]+-[a-z0-9-]+)\b'
+  repl: '子代理 \1'
+# 多行调用的**首行**形态：`Agent(subagent_type="X",` 后续参数续行。
+# 块变换只认 `Agent(` 独占行，这种同行写法漏网；因闭合括号在多行之外，
+# 下面两条要求 `)` 的规则也不会命中，故单列一条（放在它们之前）。
+- id: R3-pseudo-agent-headline
+  pattern: 'Agent\(subagent_type\s*=\s*"([a-z0-9-]+)"\s*,\s*$'
+  repl: 'dispatch_codex_subagent("\1",   # 定义于 .codex/agents/\1.toml'
+- id: R3-subagent-type-inline
+  pattern: 'Agent\(subagent_type\s*=\s*"general-purpose"[^)]*\)'
+  repl: '通用子代理'
+- id: R3-subagent-type-named
+  pattern: 'Agent\(subagent_type\s*=\s*"([a-z0-9-]+)"[^)]*\)'
+  repl: '子代理 `\1`'
+- id: R3-general-purpose
+  pattern: 'Agent\(general-purpose[^)]*\)'
+  repl: '通用子代理'
+# 散文里的 subagent_type 指涉（冒号形式，非伪代码块 —— 块由 rewrite.py 的块变换处理）
+# 引号形式在前：`subagent_type: "general-purpose"` 比裸值更常见
+- id: R3-subagent-prose-general-q
+  pattern: '`?subagent_type:\s*"general-purpose"`?,?'
+  repl: '通用子代理'
+- id: R3-subagent-prose-general
+  pattern: '`?subagent_type:\s*general-purpose(\s*或\s*Explore)?`?'
+  repl: '通用子代理'
+- id: R3-subagent-prose-named-q
+  pattern: '`?subagent_type:\s*"([a-z0-9-]+)"`?,?'
+  repl: '子代理 `\1`'
+- id: R3-subagent-prose-named
+  pattern: '`?subagent_type:\s*`?([a-z0-9-]+)`?'
+  repl: '子代理 `\1`'
+# 反引号包裹的工具名指涉
+- id: R3-agent-tool-tick
+  pattern: '`Agent` 工具'
+  repl: '子代理派发'
+- id: R3-task-tool-tick
+  pattern: '`Task` 工具'
+  repl: '子代理派发'
+- id: R3-plural-many
+  pattern: '多个 Agent'
+  repl: '多个子代理'
+- id: R3-plural-all
+  pattern: '所有 Agent'
+  repl: '所有子代理'
+- id: R3-dispatch-noun
+  pattern: 'Agent 派发'
+  repl: '子代理派发'
+- id: R3-tool-dispatch
+  pattern: '用 Agent 工具派发'
+  repl: '用子代理派发'
+- id: R3-task-tool
+  pattern: 'Task 工具'
+  repl: '子代理派发'
+- id: R3-agent-tool
+  pattern: 'Agent 工具'
+  repl: '子代理派发'
+
+# ── R5 内嵌 agent prompt 路径重定向 ──────────────────────────────────────────
+- id: R5-agent-prompt-path
+  pattern: '(?<!references/)agents/(step[0-9][a-z]?-[a-z0-9-]+\.md)'
+  repl: 'references/agent-prompts/\1'
+# 只在**拥有该文件的 skill 内**改路径。a2h-verify 等只是「提及」别的 skill 的 spec-fixer.md，
+# 在那里改路径会指向本 skill 下不存在的文件（断链），留给 audit 的 agent-disambiguation。
+- id: R5-spec-fixer-path
+  when_path: 'skills/arkts-u[ti]-verifier/*'
+  pattern: '(?<!references/)agents/spec-fixer\.md'
+  repl: 'references/agent-prompts/spec-fixer.md'
+
+# 内嵌 agent 分裂：两个 skill 各有一个 agents/spec-fixer.md，转换后必须取不同 TOML 名。
+# 指向哪个由**所在 skill 目录**唯一决定，故用 when_path 限定而非留给人判断。
+# 文件名 spec-fixer.md 本身不改（prompt 正文文件确实叫这个名）。
+# 跨 skill 提及时靠**同句线索**消歧：句中已点名 arkts-ut-verifier / arkts-ui-verifier，
+# 指向就是确定的，不必留给人。放在 when_path 两条之前（那两条只在各自 skill 目录内生效）。
+- id: R5-spec-fixer-ut-by-context
+  pattern: '(arkts-ut-verifier[^；。\n]*[；;])spec-fixer\b(?!-u[ti])(?!\.md)'
+  repl: '\1spec-fixer-ut'
+- id: R5-spec-fixer-ui-by-context
+  pattern: '(arkts-ui-verifier[^；。\n]*[；;])spec-fixer\b(?!-u[ti])(?!\.md)'
+  repl: '\1spec-fixer-ui'
+- id: R5-spec-fixer-ui
+  when_path: 'skills/arkts-ui-verifier/*'
+  pattern: '\bspec-fixer\b(?!-u[ti])(?!\.md)(?!/)'
+  repl: 'spec-fixer-ui'
+- id: R5-spec-fixer-ut
+  when_path: 'skills/arkts-ut-verifier/*'
+  pattern: '\bspec-fixer\b(?!-u[ti])(?!\.md)(?!/)'
+  repl: 'spec-fixer-ut'
+
+# Some legacy reference notes contain inline examples whose arguments are
+# plugin-qualified (for example ``hmigbot:visual-fixer``) or use single quotes.
+# They are documentation snippets rather than dispatch blocks, so normalize
+# the platform field and call name without trying to infer a TOML agent.
+- id: R3-subagent-type-fallback
+  pattern: '\bsubagent_type\b'
+  repl: 'agent_type'
+- id: R3-agent-call-fallback
+  pattern: '\bAgent\s*\('
+  repl: 'spawn_agent('
+
+# ── 品牌词兜底（放最后：前面的具体规则已消化掉复合词）────────────────────────
+- id: R1-brand-bare
+  pattern: '\bClaude\b'
+  repl: '模型'
+
+# 说明性/历史段落里的字段名仍需落到 Codex 术语，前面的结构规则优先处理
+# 可执行派发形态，兜底规则只负责消除残留字段名。
+- id: R3-subagent-type-fallback
+  pattern: '\bsubagent_type\b'
+  repl: 'agent_type'

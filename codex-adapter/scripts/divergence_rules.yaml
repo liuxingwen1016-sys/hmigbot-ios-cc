@@ -1,0 +1,99 @@
+# Codex 适配 —— 平台能力分歧的单行改写规则（REWRITE-RULES.md R10 的可执行形式）
+#
+# 与 rewrite_rules.yaml 的区别**不是 schema，是失效语义**：
+#   rewrite_rules.yaml  失配 = 源侧改了措辞      → 补个正则就行
+#   本文件              失配 = 两边能力真的分叉了 → 得人重新推导映射，不能靠猜
+# 所以两者分文件存放，报告里也分段统计。执行上完全一样：Rewriter 把两份规则拼成
+# 一个有序列表，本文件的规则排在形态翻译规则之后。
+#
+# 只装**单行内可完成**的分歧。删整行 / 换整节 / 插 banner 在 overlays.yaml（L2）。
+#
+# 语义 SSOT 是 REWRITE-RULES.md 的 R10 段，改本文件前先改它。
+
+# ── D1 metrics CLI：CC 用 `a2h metrics`，Codex 用 `a2h-codex` ─────────────────
+# 不是换个二进制名那么简单 —— 动词也不同，因为两边采集用量的机制不一样：
+# CC 侧 report-stage 自己刷 usage.v2 快照 + OTLP 上传；Codex 侧没有运行时事件源，
+# 用量靠生命周期 hook 上传会话记录、服务端事后解析，本地只需落一个阶段水位标记。
+# 故 report-stage(采集+上报) → mark-stage(只标记)，语义窄了一圈。
+- id: D1-report-stage
+  pattern: '\.migbot/bin/a2h metrics report-stage (a2h-[a-z-]+)'
+  repl: '.migbot/bin/a2h-codex mark-stage \1'
+
+# 命令旁的解释句要跟着改，否则产物会告诉模型「刷新 usage.v2 快照并上传」——
+# 而 a2h-codex 根本没这个行为，是假信息。整句匹配，故标 required。
+# a2h-execute / a2h-plan 用同一句式（只差阶段名），合成一条。
+- id: D1-stage-prose-plain
+  pattern: '标记 `(a2h-[a-z-]+)` 阶段水位、刷新 usage\.v2 快照并上传（受授权门控、尽力而为）。\*\*忽略退出码，绝不阻断。\*\*'
+  repl: '标记 `\1` 阶段水位（写 stage-marks fact + sentinel，受授权门控、尽力而为）。token 用量由生命周期 hook 上传的会话记录在服务端解析得出，本步不采集。**忽略退出码，绝不阻断。**'
+
+# a2h-spec 的收尾句自成一格（多了「精确的」「拒绝/离线时只是空跑」），单列一条。
+- id: D1-stage-prose-spec
+  pattern: '它标记 `a2h-spec` 阶段水位、刷新精确的 usage\.v2 快照并上传（受授权门控、尽力而为——拒绝/离线时只是空跑）。\*\*忽略其退出码，绝不阻断流水线。\*\*'
+  repl: '它标记 `a2h-spec` 阶段水位（写 stage-marks fact + sentinel，受授权门控、尽力而为——拒绝/离线时只是空跑）。token 用量由生命周期 hook 上传的会话记录在服务端解析得出，本步不采集。**忽略其退出码，绝不阻断流水线。**'
+
+# ── D2 slash command：Codex 没有自定义 slash command，一律 `$` 前缀 ───────────
+# 白名单式匹配，三重防误伤（源侧 29 处 `/a2h-` 里只有 8 处是真命令，其余全是文件路径）：
+#   1. 后向断言排除路径字符 —— `../../a2h-plan/`、`$SKILLS_ROOT/a2h-functional-registry/`
+#   2. 前向断言排除 `/` 与词字符 —— 挡住「空格 + 路径」和 `/a2h-run` 撞 `/a2h-runner`
+#   3. 只列**确实注册成 skill** 的名字 —— a2h-fixer 是子代理不是 skill，写 `$a2h-fixer`
+#      是错的；它也正好挡掉 `由用户/a2h-fixer 离线处理` 这个「或」义斜杠的假阳性
+# 名单里 run / privacy / init / build 由 migbot-CodeX 侧独立维护（不经本转换器产出），
+# 登记在 overlays.yaml 的 external_skills，verify.py 据此不报「引用悬空」。
+- id: D2-slash-command
+  pattern: '(?<![A-Za-z0-9_./$-])/(a2h-(?:run|privacy|init|build|spec|plan|execute|verify|retrospect|functional-merge|functional-registry)(?:-zh)?)(?![a-z0-9-]|/)'
+  repl: '$\1'
+
+# CC 有两种调用形态（Skill 工具 / slash command），源侧因此写成「`Skill(X)` 或显式 `/X`」。
+# 上一条规则把 R2 产出的 `$X` 和裸 `/X` 并排留着，读起来是「`$X` 或显式 `$X`」——
+# Codex 只有一种形态，这个「或」本身就不成立，整句收成一个。
+# 排在 D2-slash-command 之后：`/X` 那半边要先有机会被上一条规则处理（若 X 在白名单里）。
+- id: D2-invocation-dual-form
+  pattern: '`\$([a-z0-9-]+)` 或显式 `[/$]\1`'
+  repl: '`$\1`'
+
+# hmigbot-ios 的 Claude command 入口也要转成 Codex skill 调用。
+- id: D2-i2h-slash-command
+  expect: required
+  pattern: '(?<![A-Za-z0-9_./$-])/(i2h-(?:init|build|run|spec|plan|execute|verify|retrospect)(?:-zh)?)(?![a-z0-9-]|/)'
+  repl: '$\1'
+
+# Claude command 文档通过 CLAUDE_PLUGIN_ROOT 定位随插件分发的脚本。
+# Codex 安装后对应的项目级技能根为 .agents，允许调用方用环境变量覆盖。
+- id: D2-codex-plugin-root
+  pattern: 'CLAUDE_PLUGIN_ROOT:-\.claude'
+  repl: 'CODEX_PLUGIN_ROOT:-.agents'
+
+- id: D2-plugin-root-var
+  pattern: 'CLAUDE_PLUGIN_ROOT'
+  repl: 'CODEX_PLUGIN_ROOT'
+
+# ── D3 派发工具名：Codex 无 Task 工具，派发子代理用 spawn_agent ───────────────
+# 源侧写的是英文 `Task tool`（不是 R3 认的中文「Task 工具」），中文规则和 R8 禁用词
+# 都逮不着，8 处静默漏过整个转换（人工补丁那轮只逮到 md 里的 4 处）。
+#
+# 两个维度各切一刀：
+#  ① 语义 —— 作**派发动作**时译成 spawn_agent（真实工具名）；作**执行上下文**时
+#     （「PID 锁在 Task tool 跨 Bash 调用语义下无效」）译成 sub-agent。派发义在前。
+#  ② 载体 —— md 里给工具名加反引号，**脚本里绝不能加**：这些串大多在 shell 的
+#     双引号 echo 里，反引号是命令替换，产物一跑就去执行 spawn_agent 了。
+#     故同一条语义规则按 when_path 拆成 md / 非 md 两份。
+- id: D3-task-tool-dispatch-md
+  when_path: '*.md'
+  expect: required
+  pattern: 'Task tool (\*\*串行\*\*)?派'
+  repl: '`spawn_agent` \1派'
+# 防御性（源侧目前只在脚本里这么写）：md 里出现「用 Task tool 做」时也别掉进上下文义
+- id: D3-task-tool-verb-md
+  when_path: '*.md'
+  pattern: '用 Task tool 做'
+  repl: '用 `spawn_agent` 做'
+- id: D3-task-tool-dispatch-code
+  pattern: 'Task tool (\*\*串行\*\*)?派'
+  repl: 'spawn_agent \1派'
+- id: D3-task-tool-verb-code
+  pattern: '用 Task tool 做'
+  repl: '用 spawn_agent 做'
+- id: D3-task-tool-context
+  expect: required
+  pattern: 'Task tool'
+  repl: 'sub-agent'

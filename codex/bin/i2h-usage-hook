@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# i2h-usage-hook — 模型 hook kept deliberately side-effect free.
+#
+# The iOS plugin does not collect or upload the Android telemetry used by the
+# legacy a2h runtime. Consume the hook payload and keep the session alive.
+cat >/dev/null
+exit 0

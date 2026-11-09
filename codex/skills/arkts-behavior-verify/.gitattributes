@@ -1,0 +1,4 @@
+* -text
+
+# Preserve compiled runtime data byte-for-byte.
+**/_entry.dist/** -text

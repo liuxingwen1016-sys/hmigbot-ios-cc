@@ -1,0 +1,15 @@
+{
+  "bundle": "com.example.app",
+  "ability": "EntryAbility",
+  "root": {"text": "首页"},
+  "start_recipe": [
+    {"when": {"text": "用户协议及隐私政策"}, "tap": {"text": "同意"}, "note": "首次启动协议弹窗"}
+  ],
+  "business_readings": [
+    {"name": "account", "selector": {"text_contains": "账号"}}
+  ],
+  "grant_permissions": true,
+  "grant_location": false,
+  "limits": {"max_swipes": 8, "extra_swipes": 2, "search_swipes": 4, "breaker": 3},
+  "prefilter": {"ahash_max": 10, "max_pairs_per_batch": 4, "max_frames_per_batch": 10}
+}

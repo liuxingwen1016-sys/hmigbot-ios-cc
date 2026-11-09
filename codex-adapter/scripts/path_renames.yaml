@@ -1,0 +1,9 @@
+# Codex 适配 —— 文件名转换
+#
+# 行规则改的是**正文里的引用**；文件本身也得跟着改名，否则引用指向不存在的文件。
+# 两边必须成对：rewrite_rules.yaml 里改了某个文件名的引用，这里就要有对应条目。
+#
+# pattern 匹配文件名（basename，不含目录），re.sub 语义。
+
+- pattern: '^claude-md-(.*)$'
+  repl: 'agents-md-\1'

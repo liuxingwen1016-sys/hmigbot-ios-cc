@@ -56,6 +56,18 @@ Prerequisites are Python 3.8+, Claude Code, an iOS project containing an `.xcode
 
 After installation, `/i2h-init` and `/i2h-run` are the intended workflow entry points. `/i2h-build` uses the installed `i2h-tool` helper; device and DevEco checks remain explicit runtime prerequisites.
 
+## Codex form
+
+The Claude-compatible source remains under `migbot/`. A deterministic Codex build is generated under `codex/` with the adapter in `codex-adapter/`:
+
+```bash
+python3 codex-adapter/scripts/convert.py --dry-run
+python3 codex-adapter/scripts/convert.py
+python3 codex-adapter/scripts/verify.py --codex-dir codex
+```
+
+The generated `$i2h-*` skills preserve the iOS → HarmonyOS pipeline, agents, runtime hooks, and validation contracts. See [`codex/README.md`](codex/README.md) and [`codex/MIGRATION-REPORT.md`](codex/MIGRATION-REPORT.md) for the mapping and manual-review items.
+
 ## Repository layout
 
 ```text

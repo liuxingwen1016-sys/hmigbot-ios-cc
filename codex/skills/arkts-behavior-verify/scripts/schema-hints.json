@@ -1,0 +1,423 @@
+{
+  "schema_version": 1,
+  "files": {
+    "engines/interaction/scripts/acceptance_plan.py": {
+      "sha256": "955dc87c7be4193b9261e29bb9fd52e3af4b05fc1d7bc73cd02852e6f5e11b58",
+      "enums": {
+        "STATUSES": [
+          "BLOCKED",
+          "FAIL",
+          "NOT_TESTED",
+          "PASS"
+        ]
+      }
+    },
+    "engines/interaction/scripts/compact_interaction_review.py": {
+      "sha256": "b8d747bddc97062aea2ed9d51a9877c1dcfb269fbb54602e324b3bacffe53872",
+      "enums": {
+        "STATUSES": [
+          "FIX_REQUIRED",
+          "NO_DEFECT",
+          "UNCERTAIN",
+          "UNREVIEWED"
+        ],
+        "RISKS": [
+          "HIGH",
+          "LOW",
+          "MEDIUM"
+        ],
+        "CHANGE_KINDS": [
+          "EXISTING_ROUTE_ACTIVATION",
+          "LOCAL_EFFECT",
+          "NAV_CONTAINER_MODE_CHANGE",
+          "NAV_TOPOLOGY_MUTATION"
+        ],
+        "BLOCKED_CHANGE_KINDS": [
+          "NAV_CONTAINER_MODE_CHANGE",
+          "NAV_TOPOLOGY_MUTATION"
+        ],
+        "TARGET_ROLES": [
+          "DESTINATION_CONTENT",
+          "DOMAIN_COMMAND",
+          "HANDLER",
+          "INPUT_PROVENANCE",
+          "INVALIDATION",
+          "OBSERVABLE",
+          "PERSISTENCE",
+          "READBACK"
+        ],
+        "EFFECT_ROLES": [
+          "ASYNC_TERMINAL",
+          "DOMAIN_COMMAND",
+          "DURABLE_EFFECT",
+          "ENTRY_SIDE_EFFECTS",
+          "FAILURE_STATE",
+          "INPUT_IDENTITY",
+          "INVALIDATION",
+          "OBSERVABLE_STABILITY",
+          "READBACK"
+        ],
+        "OBLIGATION_STATUSES": [
+          "NOT_APPLICABLE",
+          "REQUIRED"
+        ],
+        "PLATFORM_STATUSES": [
+          "MATCHED",
+          "NOT_APPLICABLE",
+          "UNRESOLVED"
+        ],
+        "UNCERTAINTY_CLASSES": [
+          "ANDROID_ORACLE_UNAVAILABLE",
+          "ARKTS_CLOSURE_UNRESOLVED",
+          "EXTERNAL_DEPENDENCY_REQUIRED",
+          "PLATFORM_CONTRACT_UNAVAILABLE",
+          "PRODUCT_SEMANTICS_UNRESOLVED",
+          "RUNTIME_STATE_REQUIRED"
+        ],
+        "STRUCTURAL_ORACLE_ROLES": [
+          "android_oracle_action_branch",
+          "android_oracle_labeled_action",
+          "android_oracle_linked_control"
+        ]
+      }
+    },
+    "engines/interaction/scripts/export_fast_result.py": {
+      "sha256": "689939f998e1b708d23acea995246a1735ab4f4e983cb7c1429f266ec22da029",
+      "enums": {
+        "REVIEW_STATUSES": [
+          "FIX_REQUIRED",
+          "NO_DEFECT",
+          "UNCERTAIN",
+          "UNREVIEWED"
+        ],
+        "REPAIR_STATUSES": [
+          "APPLIED",
+          "FAILED",
+          "NO_CHANGE",
+          "PARTIAL"
+        ],
+        "QUICK_STATUSES": [
+          "CLOSED_LIKELY",
+          "REVIEW_FAILED",
+          "ROUND2_REQUIRED",
+          "UNCERTAIN"
+        ],
+        "RUNTIME_STATUSES": [
+          "BLOCKED",
+          "FAIL",
+          "PASS"
+        ],
+        "LEGACY_STATIC_CONFIDENCE_STATUSES": [
+          "STATIC_APPLIED",
+          "STATIC_NO_CHANGE",
+          "STATIC_PARTIAL",
+          "UNCERTAIN"
+        ]
+      }
+    },
+    "engines/interaction/scripts/fast_interaction_repair.py": {
+      "sha256": "7455a8b70001103c83fbb03f920a2b82a11395e4668c6dbe63348e4c44bbfb53",
+      "enums": {
+        "RESULT_STATUSES": [
+          "APPLIED",
+          "FAILED",
+          "NO_CHANGE",
+          "PARTIAL"
+        ],
+        "REASON_CODES": [
+          "ALREADY_EQUIVALENT",
+          "BATCH_EXECUTION_FAILED",
+          "BLOCKED_BY_FAILED_DEPENDENCY",
+          "COMPILER_FAILURE",
+          "DEPENDENCY_MISSING",
+          "EVIDENCE_GAP",
+          "NONE",
+          "NO_SAFE_PATCH",
+          "OWNERSHIP_INSUFFICIENT",
+          "PARTIAL_EFFECT",
+          "UNCLASSIFIED"
+        ],
+        "EFFECT_ROLES": [
+          "ASYNC_TERMINAL",
+          "DOMAIN_COMMAND",
+          "DURABLE_EFFECT",
+          "ENTRY_SIDE_EFFECTS",
+          "FAILURE_STATE",
+          "INPUT_IDENTITY",
+          "INVALIDATION",
+          "OBSERVABLE_STABILITY",
+          "READBACK"
+        ],
+        "ROLE_RESULT_STATUSES": [
+          "ALREADY_SATISFIED",
+          "IMPLEMENTED",
+          "NOT_APPLICABLE",
+          "UNRESOLVED"
+        ],
+        "ROOT_CAUSE_RESOLUTIONS": [
+          "CLOSED",
+          "NOT_APPLICABLE",
+          "UNRESOLVED"
+        ],
+        "PLATFORM_RESULT_STATUSES": [
+          "MATCHED",
+          "NOT_APPLICABLE",
+          "UNRESOLVED"
+        ]
+      }
+    },
+    "engines/interaction/scripts/fast_preflight.py": {
+      "sha256": "e9d310b6d0c434429e2ecf834d462c3defa4d3fc063cf858862171a3e97afc9e",
+      "enums": {
+        "HARD_BLOCKING_REASON_CODES": [
+          "ANDROID_ROOT_UNREADABLE",
+          "ARKTS_ROOT_UNREADABLE",
+          "OUTPUT_NOT_WRITABLE",
+          "RESULT_INIT_FAILED",
+          "SOURCE_GUARD_INIT_FAILED",
+          "SOURCE_SNAPSHOT_FAILED"
+        ]
+      }
+    },
+    "engines/interaction/scripts/quick_interaction_review.py": {
+      "sha256": "e38f873c7b3679db6d50f5f4947834bcd0242d7f9d5804e8289953741e2027a1",
+      "enums": {
+        "STATUSES": [
+          "CLOSED_LIKELY",
+          "REVIEW_FAILED",
+          "ROUND2_REQUIRED",
+          "UNCERTAIN"
+        ],
+        "CHANGE_KINDS": [
+          "EXISTING_ROUTE_ACTIVATION",
+          "LOCAL_EFFECT",
+          "NAV_CONTAINER_MODE_CHANGE",
+          "NAV_TOPOLOGY_MUTATION"
+        ],
+        "TARGET_ROLES": [
+          "DESTINATION_CONTENT",
+          "DOMAIN_COMMAND",
+          "HANDLER",
+          "INPUT_PROVENANCE",
+          "INVALIDATION",
+          "OBSERVABLE",
+          "PERSISTENCE",
+          "READBACK"
+        ],
+        "EFFECT_ROLES": [
+          "ASYNC_TERMINAL",
+          "DOMAIN_COMMAND",
+          "DURABLE_EFFECT",
+          "ENTRY_SIDE_EFFECTS",
+          "FAILURE_STATE",
+          "INPUT_IDENTITY",
+          "INVALIDATION",
+          "OBSERVABLE_STABILITY",
+          "READBACK"
+        ],
+        "ROLE_STATUSES": [
+          "BLOCKED",
+          "EXTERNAL_EVIDENCE_REQUIRED",
+          "NOT_APPLICABLE",
+          "SATISFIED"
+        ],
+        "ROOT_CAUSE_RESOLUTIONS": [
+          "CLOSED",
+          "NOT_APPLICABLE",
+          "UNRESOLVED"
+        ],
+        "PLATFORM_RESULT_STATUSES": [
+          "MATCHED",
+          "NOT_APPLICABLE",
+          "UNRESOLVED"
+        ]
+      }
+    },
+    "engines/interaction/scripts/repair_targets.py": {
+      "sha256": "beb611c7ff2568da200d36c82ba3d129979028e4ab42808be0bebaf0f4766124",
+      "enums": {
+        "TARGET_ROLES": [
+          "DESTINATION_CONTENT",
+          "DOMAIN_COMMAND",
+          "HANDLER",
+          "INPUT_PROVENANCE",
+          "INVALIDATION",
+          "OBSERVABLE",
+          "PERSISTENCE",
+          "READBACK"
+        ]
+      }
+    },
+    "engines/interaction/scripts/review_repair_coverage.py": {
+      "sha256": "b3cf89013c703acdb4ba931ee41697c94c170828a8a2f9a99c59161867a6815b",
+      "enums": {
+        "ROLES": [
+          "FAILURE_STATE",
+          "INVALIDATION",
+          "OBSERVABLE_STABILITY",
+          "READBACK"
+        ]
+      }
+    },
+    "engines/interaction/scripts/scope_decisions.py": {
+      "sha256": "85046bbb6b83b82350e5344f21c9b64cd63c57e065e3666a9e6027a4ef63883f",
+      "enums": {
+        "SCOPE_RELATIONS": [
+          "APPLICABLE",
+          "NOT_APPLICABLE",
+          "UNRESOLVED"
+        ],
+        "SCOPE_DEFECT_STATUSES": [
+          "DEFECT_CONFIRMED",
+          "NO_DEFECT",
+          "UNRESOLVED"
+        ]
+      }
+    },
+    "engines/interaction/scripts/workflow_packets.py": {
+      "sha256": "9b67505db940acfa299f15fc6dfa90489b1cf7f395fa22ae8e8f9a25616e66a6",
+      "enums": {
+        "ROLES": [
+          "ASYNC_TERMINAL",
+          "DOMAIN_COMMAND",
+          "DURABLE_EFFECT",
+          "ENTRY_SIDE_EFFECTS",
+          "FAILURE_STATE",
+          "INPUT_IDENTITY",
+          "INVALIDATION",
+          "OBSERVABLE_STABILITY",
+          "READBACK"
+        ]
+      }
+    },
+    "engines/setting/scripts/compact_review.py": {
+      "sha256": "db9b78e3daf07ed2d263716e6dfe91825450f2de4f80056bdad704edfa4b56b5",
+      "enums": {
+        "STATUSES": [
+          "FIX_REQUIRED",
+          "NO_DEFECT",
+          "UNCERTAIN",
+          "UNREVIEWED"
+        ],
+        "TIMINGS": [
+          "COLD_START",
+          "HOT_CHANGE",
+          "NEXT_ACTION",
+          "NEXT_ITEM_OR_SESSION"
+        ],
+        "RISKS": [
+          "HIGH",
+          "LOW",
+          "MEDIUM"
+        ],
+        "TARGET_ROLES": [
+          "ACTIVATION",
+          "CONSUMER",
+          "PERSISTENCE_FOUNDATION",
+          "STARTUP",
+          "UI_SURFACE"
+        ],
+        "CHANGE_KINDS": [
+          "EXISTING_ROUTE_ACTIVATION",
+          "LOCAL_EFFECT",
+          "NAV_CONTAINER_MODE_CHANGE",
+          "NAV_TOPOLOGY_MUTATION"
+        ],
+        "BLOCKED_NAVIGATION_CHANGE_KINDS": [
+          "NAV_CONTAINER_MODE_CHANGE",
+          "NAV_TOPOLOGY_MUTATION"
+        ],
+        "CONSUMER_MAPPING_STATUSES": [
+          "MATCHED",
+          "MISSING",
+          "NOT_APPLICABLE"
+        ],
+        "CHAIN_ROLES": [
+          "ACTIVATION",
+          "CONSUMER",
+          "OBSERVABLE_RESULT",
+          "OVERRIDE_PRECEDENCE",
+          "PERSISTENCE",
+          "PLATFORM_EFFECT",
+          "SETTING_INPUT"
+        ],
+        "CHAIN_STATUSES": [
+          "BROKEN",
+          "CONNECTED",
+          "MISSING",
+          "NOT_APPLICABLE"
+        ]
+      }
+    },
+    "engines/setting/scripts/export_fast_result.py": {
+      "sha256": "8a52fcc03a582de9cbd5f9c73bbbda667d68321fbc817e8f46d0251e66989e1d",
+      "enums": {
+        "REVIEW_STATUSES": [
+          "FIX_REQUIRED",
+          "NO_DEFECT",
+          "UNCERTAIN",
+          "UNREVIEWED"
+        ],
+        "REPAIR_STATUSES": [
+          "APPLIED",
+          "FAILED",
+          "NO_CHANGE",
+          "PARTIAL"
+        ],
+        "QUICK_REVIEW_STATUSES": [
+          "CLOSED_LIKELY",
+          "REVIEW_FAILED",
+          "ROUND2_REQUIRED",
+          "UNCERTAIN"
+        ]
+      }
+    },
+    "engines/setting/scripts/fast_preflight.py": {
+      "sha256": "2b62e82d32cc215c0058a2fe7ed2a17d2ca4e6f88fb96a3dde5ee1575c9f5367",
+      "enums": {
+        "HARD_BLOCKING_REASON_CODES": [
+          "ANDROID_ROOT_UNREADABLE",
+          "ARKTS_ROOT_UNREADABLE",
+          "OUTPUT_NOT_WRITABLE",
+          "RESULT_INIT_FAILED",
+          "SOURCE_GUARD_INIT_FAILED",
+          "SOURCE_SNAPSHOT_FAILED"
+        ]
+      }
+    },
+    "engines/setting/scripts/fast_repair_plan.py": {
+      "sha256": "8f829790bb5b0e228fae5a4eb9faa1724952cc48845bb7ee4707185b98b427af",
+      "enums": {
+        "RESULT_STATUSES": [
+          "APPLIED",
+          "FAILED",
+          "NO_CHANGE",
+          "PARTIAL"
+        ]
+      }
+    },
+    "engines/setting/scripts/quick_repair_review.py": {
+      "sha256": "e03c89c80bfdb03bbb5de9bc4eeb188eff3abb3d7ba197d7645444d8ba3dc327",
+      "enums": {
+        "STATUSES": [
+          "CLOSED_LIKELY",
+          "REVIEW_FAILED",
+          "ROUND2_REQUIRED",
+          "UNCERTAIN"
+        ],
+        "ROLES": [
+          "ACTIVATION",
+          "CONSUMER",
+          "PERSISTENCE_FOUNDATION",
+          "STARTUP",
+          "UI_SURFACE"
+        ],
+        "CONSUMER_CLOSURE_STATUSES": [
+          "MATCHED",
+          "MISSING",
+          "NOT_APPLICABLE"
+        ]
+      }
+    }
+  }
+}

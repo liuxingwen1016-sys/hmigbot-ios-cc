@@ -1,0 +1,55 @@
+import json
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT))
+from ui_obligation_gate import evaluate  # noqa: E402
+
+
+class UiObligationGateTests(unittest.TestCase):
+    def run_gate(self, source: str, obligations: dict):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            output = root / "entry/src/main/ets/pages/Test.ets"
+            output.parent.mkdir(parents=True)
+            output.write_text(source, encoding="utf-8")
+            inventory = root / "spec/baseline/ui-delivery-approved.json"
+            inventory.parent.mkdir(parents=True)
+            inventory.write_text(json.dumps({"units": [{"unit_id": "u", "output": {"file": str(output.relative_to(root))}, "source_obligations": obligations}]}), encoding="utf-8")
+            return evaluate(root, inventory)
+
+    def test_fixed_action_must_be_outside_scroll_and_picker_rows_are_required(self):
+        obligations = {
+            "fixed_bottom_action_required": True,
+            "primary_action_ids": ["saveBean"],
+            "compact_picker_rows_required": True,
+            "form_picker_labels": [{"label": "处理法"}],
+        }
+        bad = "Scroll() { Column() { Button('保存').id('saveBean') } }"
+        result = self.run_gate(bad, obligations)
+        self.assertEqual(result["status"], "FAIL")
+        self.assertIn("fixed_action_inside_scroll", {row["code"] for row in result["errors"]})
+        good = "Scroll() { Column() { Text('处理法') } } Column() { Select([{value:'水洗'}]).id('processPicker') Button('保存').id('saveBean') }"
+        result = self.run_gate(good, obligations)
+        self.assertEqual(result["status"], "PASS")
+
+    def test_toolbar_search_and_chart_have_structural_markers(self):
+        obligations = {
+            "searchable": True,
+            "searchable_placement": "toolbar",
+            "chart": {"height": 120},
+        }
+        result = self.run_gate("TextInput() Rect()", obligations)
+        self.assertEqual(result["status"], "FAIL")
+        codes = {row["code"] for row in result["errors"]}
+        self.assertIn("toolbar_search_inline_input", codes)
+        self.assertIn("chart_line_points_missing", codes)
+        result = self.run_gate("Toolbar() { Text('search') } Canvas() { drawLine(); drawCircle(); }.height(120)", obligations)
+        self.assertEqual(result["status"], "PASS")
+
+
+if __name__ == "__main__":
+    unittest.main()

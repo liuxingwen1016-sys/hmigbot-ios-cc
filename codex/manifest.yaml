@@ -1,0 +1,10 @@
+collection: hmigbot-ios-codex
+description: iOS → HarmonyOS migration skills, agents, commands and runtime assets for Codex
+platform: codex
+maintainer: liuxingwen1016-sys
+version: 1.0.0
+skills_dir: skills/
+agents_dir: agents/
+commands_dir: commands/
+hooks_dir: hooks/
+generated_by: codex-adapter/scripts/convert.py

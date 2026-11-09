@@ -1,0 +1,91 @@
+#!/usr/bin/env python3
+"""Create the project-local i2h configuration used by Codex.
+
+Bootstrap is non-interactive: ``$i2h-init`` remains the human confirmation
+gate. It only creates an inspectable configuration skeleton.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+from pathlib import Path
+
+
+def first_existing(candidates: list[str]) -> str:
+    for candidate in candidates:
+        if not candidate:
+            continue
+        path = Path(os.path.expanduser(candidate))
+        if path.exists():
+            return str(path)
+    return ""
+
+
+def build_config(ios: str | None, language: str | None) -> dict:
+    cwd = Path.cwd().resolve()
+    destination = cwd / ".migbot" / "config.json"
+    current: dict = {}
+    if destination.is_file():
+        try:
+            parsed = json.loads(destination.read_text(encoding="utf-8"))
+            if isinstance(parsed, dict):
+                current = parsed
+        except (OSError, json.JSONDecodeError):
+            pass
+    ios_value = ios or os.environ.get("I2H_IOS_PATH") or current.get("ios", "")
+    if ios_value:
+        ios_path = Path(os.path.expanduser(ios_value))
+        if not ios_path.is_absolute():
+            ios_path = (cwd / ios_path).resolve()
+        ios_value = os.path.relpath(ios_path, cwd)
+    lang = language or current.get("language")
+    if lang not in {"zh", "en"}:
+        lang = "zh" if os.environ.get("LANG", "").lower().startswith(("zh", "cn")) else "en"
+    harmony = current.get("harmonyos") or "."
+    harmony_path = Path(os.path.expanduser(harmony))
+    if not harmony_path.is_absolute():
+        harmony_path = (cwd / harmony_path).resolve()
+    hvigorw = current.get("hvigorw", "")
+    if not hvigorw:
+        for candidate in (harmony_path / "hvigorw", harmony_path / "hvigorw.bat"):
+            if candidate.exists():
+                hvigorw = str(candidate)
+                break
+    return {
+        "version": current.get("version", "1.0.0"),
+        "language": lang,
+        "ios": ios_value or "../ios-app",
+        "harmonyos": harmony,
+        "xcode": current.get("xcode", ""),
+        "xcrun": first_existing([current.get("xcrun", ""), shutil.which("xcrun") or ""]),
+        "simctl": first_existing([current.get("simctl", ""), shutil.which("simctl") or ""]),
+        "deveco": current.get("deveco", ""),
+        "hvigorw": hvigorw,
+        "hdc": first_existing([current.get("hdc", ""), shutil.which("hdc") or ""]),
+        "app_name": current.get("app_name", ""),
+        "confirmed": bool(current.get("confirmed", False)),
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--ios", "--ios-path", dest="ios")
+    parser.add_argument("--language", "--lang", choices=("zh", "en"))
+    parser.add_argument("--confirm", action="store_true")
+    args = parser.parse_args()
+    config = build_config(args.ios, args.language)
+    if args.confirm:
+        config["confirmed"] = True
+    destination = Path.cwd() / ".migbot" / "config.json"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(destination.name + ".tmp")
+    temporary.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(destination)
+    print(json.dumps({"ok": True, "config": str(destination), "values": config}, ensure_ascii=False))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

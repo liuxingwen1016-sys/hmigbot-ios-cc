@@ -1,0 +1,4 @@
+# Copy to .codex/config.toml when a project needs explicit Codex limits.
+[agents]
+max_threads = 6
+max_depth = 2

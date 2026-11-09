@@ -1,0 +1,54 @@
+{
+  "skill_name": "codex-adapter",
+  "evals": [
+    {
+      "id": 1,
+      "name": "regenerate-after-source-change",
+      "prompt": "我刚给 arkts-navigation-builder 改了 SKILL.md，加了一段新的子代理派发流程。codex 那边要跟着更新一下吗？怎么弄",
+      "expected_output": "指出 codex/ 是产物、源侧是 SSOT，改源侧后跑 `python3 codex-adapter/scripts/convert.py` 重新生成即可（建议先 --dry-run 看差异）。不应建议手工去改 codex/ 下的对应文件。跑完提示看 MIGRATION-REPORT.md 的「待人工 / LLM 处理」段，只处理列出的项。",
+      "files": [],
+      "expectations": [
+        "建议改源侧 + 重新生成，而不是手工编辑 codex/ 产物",
+        "给出 convert.py 的实际调用方式，并提到 --dry-run 可先看差异",
+        "提到跑完要看 MIGRATION-REPORT.md 的待人工项"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "add-rule-for-new-syntax",
+      "prompt": "转换完发现 codex 那边还留着「用 Task 工具起一个子进程」这种说法，Task 工具是 Claude Code 的东西，Codex 下没有。这种要怎么让它下次自动转掉",
+      "expected_output": "定位到 scripts/rewrite_rules.yaml，给出一条形如 {id, pattern, repl} 的新规则，把「Task 工具」改为「子代理派发」，并说明规则列表有序、要先具体后泛化。提醒同步更新 references/REWRITE-RULES.md（SSOT 一致）。若该写法只在特定 skill 下出现，应提到 when_path 限定。",
+      "files": [],
+      "expectations": [
+        "改的是 scripts/rewrite_rules.yaml，不是去手工改产物",
+        "给出的规则条目含 id / pattern / repl 三个字段",
+        "提到规则顺序（先具体后泛化）或 when_path 之一",
+        "提到 REWRITE-RULES.md 需同步（SSOT 一致）"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "protect-false-positive",
+      "prompt": "问题来了：skill-hub-guide.md 里有一行 `platform: claude-code`，那是 Hub 注册表的合法平台枚举值，结果被转换器改成 platform: Codex 了，把注册表搞坏了。怎么办",
+      "expected_output": "识别这是规则误伤，应登记进 scripts/exceptions.yaml 而不是删规则（删了会漏掉真正该转的地方）。给出三级粒度中合适的一种：整文件 protected_paths、行级 protected_lines 正则，或源文件行内写 codex-keep 标记。强调保护区是把判断固化成数据，判一次长期复用。",
+      "files": [],
+      "expectations": [
+        "改 exceptions.yaml 加保护，而不是删除或弱化那条转换规则",
+        "给出 protected_paths / protected_lines / codex-keep 行内标记中至少一种具体写法",
+        "解释为什么是保护而非改规则（同一字符串在不同语境里有的必改有的必留）"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "triage-manual-items",
+      "prompt": "跑完转换，报告里「待人工 / LLM 处理」剩了几条，其中一条是 mechanism-gap，说 `@spec/decision-ledger.md` 是 import 语法。这个我该怎么处理",
+      "expected_output": "解释 mechanism-gap 的含义：Codex 没有 @ import 的自动加载机制，纯路径文本不保证被读取，所以不能只换词，要用显式指令补偿——在 AGENTS.md 里写明「会话开始必须先读取 spec/decision-ledger.md 顶部决策索引段」。并指出改动要落回源侧（arkts-skills/），否则下次重新生成会覆盖。",
+      "files": [],
+      "expectations": [
+        "说明这类要用指令补偿机制缺失，不是简单替换词",
+        "给出具体的补偿写法（显式读取指令）",
+        "指出改动要落在源侧而非 codex/ 产物"
+      ]
+    }
+  ]
+}

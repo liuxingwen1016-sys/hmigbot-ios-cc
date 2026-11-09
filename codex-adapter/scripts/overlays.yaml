@@ -1,0 +1,19 @@
+# i2h 源技能已经使用 i2h runtime 的阶段标记和恢复契约，因此没有 a2h 版本
+# 那种 metrics/授权门整节替换。当前只注入 Codex 子代理派发约定。
+
+external_skills:
+  - harmonyos-development
+  - hmos-api-reference
+  - a2h-functional-registry
+  - a2h-spec
+  - android-fact-tree
+
+overlays:
+  - id: D-dispatch-banner
+    path:
+      - skills/i2h-spec/SKILL.md
+      - skills/i2h-execute/SKILL.md
+    op: insert_after_frontmatter
+    body: overlays/codex-dispatch-banner.md
+    render: agents_list
+    why: Codex 使用 spawn_agent 与 agent_type，源技能只描述了 Claude 派发约定

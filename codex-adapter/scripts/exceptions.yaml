@@ -1,0 +1,39 @@
+# Codex 适配 —— 保护区（REWRITE-RULES.md R1「例外」条款的可执行形式）
+#
+# 规则会误伤的地方在这里登记：同一个字符串在不同语境里，有的必须改、有的必须留。
+# 判断一次，长期复用 —— 这是把人工判断固化成数据的地方，每新发现一处误伤就往这里加。
+#
+# 三级粒度（命中即整体跳过改写）：
+#   protected_paths    整文件跳过（相对 codex/ 的 glob）
+#   protected_lines    命中该正则的行跳过（全局生效）
+#   inline_marker      行内出现该标记的行跳过（写在源文件里，就地声明）
+
+# ── 整文件保护 ──────────────────────────────────────────────────────────────
+protected_paths:
+  # 多平台 skill 注册表文档：claude-code 是 Hub 的合法平台枚举值，不是待迁移的品牌词。
+  # 这两个文件描述的是「Hub 支持哪些平台」，改掉会让注册表语义失真。
+  # 注：codex 条目需人工增补（枚举扩展而非替换），见 audit 报告 enum-extension 项。
+  - "skills/skill-checker/references/skill-hub-guide.md"
+  - "skills/skill-checker/references/skill-taxonomy.yaml"
+  # 转换器自身：正常放在仓库根 codex-adapter/，本就扫不到；这条与 convert.py 的
+  # SKIP_SKILLS 一样是防御性兜底 —— 万一被挪进 arkts-skills/skills/，它正文里的
+  # `Claude Code` / `.claude/` / `Skill({` 是待转换术语的**样本**而非内容，
+  # 过一遍规则会把规则表改成「Codex → Codex」这种废话。
+  - "skills/codex-adapter/*"
+
+# ── 行级保护（正则，全局）────────────────────────────────────────────────────
+protected_lines:
+  # 平台枚举字段与枚举表行
+  - 'platform:\s*(claude-code|opencode)'
+  - '^\s*claude-code:\s'
+  - '\|\s*claude-code\s*[/|]'
+  # 溯源/对照语境：明确在讲「原 Claude Code 版本是怎样的」，改掉会变成假信息
+  - '原\s*Claude Code'
+  - '与\s*Claude Code\s*版本的差异'
+  - 'Claude Code\s*(平台)?源'
+  # 双生态兼容：同时判断两边路径的 fallback，规则会把它压成单边
+  - '\.agents/.*\.claude/|\.claude/.*\.agents/'
+
+# ── 行内标记（写在源文件里就地声明「此行不转换」）────────────────────────────
+# 用法：在该行尾部加注释 <!-- codex-keep -->（md）或 # codex-keep（py/sh/yaml）
+inline_marker: 'codex-keep'
