@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 from pathlib import Path
 from typing import Any
@@ -51,6 +52,36 @@ def _has_id(source: str, value: str) -> bool:
     )
 
 
+def _row_value(row: Any, key: str) -> Any:
+    """Read obligation rows emitted by both old and current spec writers.
+
+    Early i2h-spec reports represented picker labels as plain strings.  The
+    richer schema uses objects so it can carry a source anchor and control
+    identifier alongside the label.  The execute gate must accept both forms
+    because old approved inventories remain valid inputs.
+    """
+    if isinstance(row, dict):
+        return row.get(key)
+    if key == "label" and isinstance(row, str):
+        return row
+    return None
+
+
+def _contains_numeric_literal(source: str, expected: Any) -> bool:
+    """Match numeric source literals by value, allowing ``120``/``120.0``."""
+    try:
+        expected_value = float(expected)
+    except (TypeError, ValueError):
+        return False
+    for match in re.finditer(r"(?<![\w.])[-+]?(?:\d+(?:\.\d+)?)(?![\w.])", source):
+        try:
+            if math.isclose(float(match.group(0)), expected_value, rel_tol=0.0, abs_tol=1e-9):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
 def _check_unit(root: Path, unit: dict[str, Any]) -> list[dict[str, str]]:
     output = unit.get("output") or {}
     relative = output.get("file")
@@ -83,7 +114,11 @@ def _check_unit(root: Path, unit: dict[str, Any]) -> list[dict[str, str]]:
             errors.append({"code": "fixed_action_control_missing", "unit_id": unit_id, "detail": relative})
 
     if obligations.get("compact_picker_rows_required"):
-        labels = [str(row.get("label")) for row in obligations.get("form_picker_labels", []) if row.get("label")]
+        labels = [
+            str(label)
+            for row in obligations.get("form_picker_labels", [])
+            if (label := _row_value(row, "label"))
+        ]
         picker_count = len(re.findall(r"\bSelect\s*\(", source))
         if picker_count < len(labels):
             errors.append({"code": "compact_picker_missing", "unit_id": unit_id, "detail": f"expected {len(labels)} Select controls"})
@@ -105,7 +140,7 @@ def _check_unit(root: Path, unit: dict[str, Any]) -> list[dict[str, str]]:
         has_point = re.search(r"\b(?:Point|point|drawCircle)\b", source)
         if not (has_line and has_point):
             errors.append({"code": "chart_line_points_missing", "unit_id": unit_id, "detail": relative})
-        if chart.get("height") is not None and not re.search(rf"\b{re.escape(str(chart['height']))}\b", source):
+        if chart.get("height") is not None and not _contains_numeric_literal(source, chart["height"]):
             errors.append({"code": "chart_height_missing", "unit_id": unit_id, "detail": str(chart["height"])})
     return errors
 

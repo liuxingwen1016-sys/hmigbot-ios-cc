@@ -30,6 +30,20 @@ class LayoutScaleTests(unittest.TestCase):
             self.assertEqual(payload["source_reference_width_pt"], 402.0)
             self.assertEqual(payload["source_accessibility_json_sha256"], __import__("hashlib").sha256(source.read_bytes()).hexdigest())
 
+    def test_reads_object_accessibility_frame(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "ios-accessibility.json"
+            source.write_text(json.dumps({"nodes": [{"frame": {"x": 0, "y": 0, "width": 402, "height": 874}}]}))
+            output = root / "layout-scale.json"
+            self.assertEqual(main([
+                "--ios-accessibility-json", str(source),
+                "--target-logical-width-vp", "365.7142857",
+                "--out", str(output),
+            ]), 0)
+            payload = json.loads(output.read_text())
+            self.assertEqual(payload["source_reference_width_pt"], 402.0)
+
     def test_rejects_non_positive_width(self):
         with self.assertRaises(ValueError):
             derive(0, 365)

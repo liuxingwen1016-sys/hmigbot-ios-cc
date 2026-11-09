@@ -1,9 +1,11 @@
 # iOS runtime evidence protocol
 
 `ios_runtime_capture.py` may publish a current evidence manifest beside each
-state capture. The manifest binds the PNG and accessibility JSON to the
-read-only iOS source, exact Simulator UDID, app bundle, scenario, configuration
-and checkpoint. A missing Simulator or Harmony endpoint is recorded as
+state capture. A real XCTest command also publishes a same-run foreground
+receipt after the app and requested page are ready. The manifest binds the PNG,
+accessibility JSON and, when present, foreground receipt to the read-only iOS
+source, exact Simulator UDID, app bundle, scenario, configuration and
+checkpoint. A missing Simulator or Harmony endpoint is recorded as
 `not_run` or `blocked` and never converted into a visual pass.
 
 Use the extra identity fields when a runtime capture is selected for Spec:

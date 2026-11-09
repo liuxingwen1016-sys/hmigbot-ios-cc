@@ -172,6 +172,32 @@ def copy_accessibility_json(source: Path, destination: Path) -> None:
     shutil.copy2(source, destination)
 
 
+def validate_foreground_receipt(path: Path, *, bundle_id: str, page_id: str, state_id: str) -> dict[str, Any]:
+    """Validate the same-run XCTest readiness receipt before taking a screenshot."""
+    if not path.is_file():
+        raise RuntimeError(f"foreground receipt not found: {path}")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"invalid foreground receipt: {path}: {exc}") from exc
+    expected = {
+        "schema": "hmigbot-ios-foreground-receipt/1",
+        "bundle_id": bundle_id,
+        "page_id": page_id,
+        "state_id": state_id,
+        "state": "runningForeground",
+        "ready": True,
+    }
+    mismatches = [
+        f"{key}={payload.get(key)!r} expected {value!r}"
+        for key, value in expected.items()
+        if payload.get(key) != value
+    ]
+    if mismatches:
+        raise RuntimeError("foreground receipt mismatch: " + ", ".join(mismatches))
+    return payload
+
+
 def capture(args: argparse.Namespace) -> dict[str, Any]:
     project_root = Path(args.project_root).expanduser().resolve()
     output_dir = Path(args.output_dir).expanduser().resolve()
@@ -235,7 +261,10 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
 
     ui_json = output_dir / "ios-accessibility.json"
     screenshot = output_dir / "ios-runtime.png"
+    foreground_receipt = output_dir / "foreground-receipt.json"
     screenshot_taken = False
+    receipt_payload: dict[str, Any] | None = None
+    foreground_receipt.unlink(missing_ok=True)
     if args.accessibility_json:
         ui_json.unlink(missing_ok=True)
         copy_accessibility_json(Path(args.accessibility_json).expanduser().resolve(), ui_json)
@@ -245,6 +274,7 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
         # belongs to the target page instead of SpringBoard.
         ui_json.unlink(missing_ok=True)
         screenshot.unlink(missing_ok=True)
+        foreground_receipt.unlink(missing_ok=True)
         command_env = os.environ.copy()
         command_env.update(
             {
@@ -259,6 +289,8 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
                 "TEST_RUNNER_I2H_UI_JSON_OUT": str(ui_json),
                 "TEST_RUNNER_I2H_PAGE_ID": args.page_id,
                 "TEST_RUNNER_I2H_STATE_ID": args.state_id,
+                "I2H_FOREGROUND_RECEIPT_OUT": str(foreground_receipt),
+                "TEST_RUNNER_I2H_FOREGROUND_RECEIPT_OUT": str(foreground_receipt),
             }
         )
         log_path = output_dir / "accessibility-command.log"
@@ -273,7 +305,13 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
             deadline = time.monotonic() + args.timeout
             try:
                 while process.poll() is None:
-                    if not screenshot_taken and ui_json.is_file():
+                    if not screenshot_taken and ui_json.is_file() and foreground_receipt.is_file():
+                        receipt_payload = validate_foreground_receipt(
+                            foreground_receipt,
+                            bundle_id=app_bundle_id,
+                            page_id=args.page_id,
+                            state_id=args.state_id,
+                        )
                         time.sleep(0.25)
                         run_command([xcrun, "simctl", "io", device, "screenshot", str(screenshot)], timeout=args.timeout)
                         screenshot_taken = True
@@ -290,6 +328,13 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
         raise RuntimeError("accessibility evidence is required. Pass --accessibility-json or --accessibility-command")
     if not ui_json.is_file():
         raise RuntimeError(f"accessibility command did not create {ui_json}")
+    if args.accessibility_command and receipt_payload is None:
+        receipt_payload = validate_foreground_receipt(
+            foreground_receipt,
+            bundle_id=app_bundle_id,
+            page_id=args.page_id,
+            state_id=args.state_id,
+        )
 
     if not screenshot_taken:
         run_command([xcrun, "simctl", "io", device, "screenshot", str(screenshot)], timeout=args.timeout)
@@ -318,6 +363,8 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
         "ui_json": ui_json.name,
         "nodes": captured_nodes,
     }
+    if receipt_payload is not None:
+        raw["foreground_receipt"] = foreground_receipt.name
     if isinstance(ui_payload, dict) and not captured_nodes and isinstance(ui_payload.get("debug_description"), str):
         raw["debug_description"] = ui_payload["debug_description"]
     raw_path = output_dir / "capture.json"
@@ -340,12 +387,18 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
             **normalized.get("evidence_identity", {}),
             "screenshot_sha256": normalized.get("screenshot_sha256"),
             "ui_json_sha256": normalized.get("ui_json_sha256"),
+            "foreground_receipt_sha256": normalized.get("foreground_receipt_sha256"),
         },
         "artifacts": {
             "screenshot": {"path": screenshot.name, "sha256": normalized.get("screenshot_sha256")},
             "ui_json": {"path": ui_json.name, "sha256": normalized.get("ui_json_sha256")},
         },
     }
+    if receipt_payload is not None:
+        manifest["artifacts"]["foreground_receipt"] = {
+            "path": foreground_receipt.name,
+            "sha256": normalized.get("foreground_receipt_sha256"),
+        }
     atomic_json(output_dir / "manifest.json", manifest)
     return {
         "status": "captured",

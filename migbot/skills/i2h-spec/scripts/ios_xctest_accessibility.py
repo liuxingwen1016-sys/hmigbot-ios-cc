@@ -33,35 +33,55 @@ final class I2HAccessibilityCaptureTests: XCTestCase {
         app.launchArguments = ["--uitesting"]
         app.launch()
         let page = environment["TEST_RUNNER_I2H_PAGE_ID"] ?? environment["I2H_PAGE_ID"] ?? ""
-        navigate(app: app, page: page)
+        guard app.waitForExistence(timeout: 10), navigate(app: app, page: page) else {
+            throw NSError(domain: "i2h.accessibility", code: 1, userInfo: [NSLocalizedDescriptionKey: "target app/page did not become ready"])
+        }
+        let bundleID = environment["TEST_RUNNER_I2H_BUNDLE_ID"] ?? environment["I2H_BUNDLE_ID"] ?? ""
+        let stateID = environment["TEST_RUNNER_I2H_STATE_ID"] ?? environment["I2H_STATE_ID"] ?? "default"
         let payload: [String: Any] = [
             "page_id": page,
-            "state_id": environment["TEST_RUNNER_I2H_STATE_ID"] ?? environment["I2H_STATE_ID"] ?? "default",
+            "state_id": stateID,
+            "foreground_bundle_id": bundleID,
+            "foreground_state": "runningForeground",
             "debug_description": app.debugDescription,
         ]
         let data = try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted])
         try data.write(to: URL(fileURLWithPath: output), options: .atomic)
+        if let receipt = environment["TEST_RUNNER_I2H_FOREGROUND_RECEIPT_OUT"] ?? environment["I2H_FOREGROUND_RECEIPT_OUT"] {
+            let receiptPayload: [String: Any] = [
+                "schema": "hmigbot-ios-foreground-receipt/1",
+                "bundle_id": bundleID,
+                "page_id": page,
+                "state_id": stateID,
+                "state": "runningForeground",
+                "ready": true,
+            ]
+            let receiptData = try JSONSerialization.data(withJSONObject: receiptPayload, options: [.prettyPrinted])
+            try receiptData.write(to: URL(fileURLWithPath: receipt), options: .atomic)
+        }
     }
 
-    @MainActor private func navigate(app: XCUIApplication, page: String) {
+    @MainActor private func navigate(app: XCUIApplication, page: String) -> Bool {
         switch page {
         case "page_0001_RootView", "page_0002_HomeView":
-            _ = app.buttons["prepareRecipe"].waitForExistence(timeout: 10)
+            return app.buttons["prepareRecipe"].waitForExistence(timeout: 10)
         case "page_0003_BeanLibraryView":
+            guard app.tabBars.buttons["豆档案"].waitForExistence(timeout: 5) else { return false }
             app.tabBars.buttons["豆档案"].tap()
-            _ = app.buttons["addBean"].waitForExistence(timeout: 5)
+            return app.buttons["addBean"].waitForExistence(timeout: 5)
         case "page_0007_RecipeView":
+            guard app.buttons["prepareRecipe"].waitForExistence(timeout: 5) else { return false }
             app.buttons["prepareRecipe"].tap()
-            _ = app.staticTexts["targetWater"].waitForExistence(timeout: 5)
+            return app.staticTexts["targetWater"].waitForExistence(timeout: 5)
         case "page_0008_BrewView":
+            guard app.buttons["prepareRecipe"].waitForExistence(timeout: 5) else { return false }
             app.buttons["prepareRecipe"].tap()
-            _ = app.buttons["startBrew"].waitForExistence(timeout: 5)
+            guard app.buttons["startBrew"].waitForExistence(timeout: 5) else { return false }
             app.buttons["startBrew"].tap()
-            _ = app.buttons["finishEarly"].waitForExistence(timeout: 5)
+            return app.buttons["finishEarly"].waitForExistence(timeout: 5)
         default:
-            break
+            return app.exists
         }
-        Thread.sleep(forTimeInterval: 0.5)
     }
 }
 '''
