@@ -40,6 +40,12 @@ Stage-1 smoke must scroll each tab to its end and verify that the last visible
 row or card remains above the capsule. A screenshot that only shows the
 initial page is insufficient for this check.
 
+Root-page navigation chrome is source-backed. Do not add an app title, vendor
+bar, or default navigation header when the iOS root page does not render one.
+Keep source toolbar actions at the same edge and preserve the source first
+viewport budget so Harmony-only chrome cannot push source content below the
+floating tab envelope.
+
 ## Source-backed custom geometry and ordering
 
 SwiftUI `Shape`, `InsettableShape`, `Path`, `Canvas`, and `.path(in:)` are

@@ -83,6 +83,7 @@ Read: <ios_file> 的 imports
    - 源代码中的图标和图片是 UI 事实。优先读取 source index/resource facts 中的 image asset、SF Symbol 名称、SVG 几何和 accessibility frame，迁移到对应的 `app.media`、`SymbolGlyph`、`Path`/Canvas vector 或等价资源，并保留尺寸、颜色、填充/描边和可访问标签。禁止把有源资源或线稿图标降级为 emoji、Unicode 字符、随机 glyph 或纯文字占位符。若目标平台只能用替代图标，必须记录 asset mapping 和几何偏差，不能把替代品标为像素等价。
    - 源代码中的 `Shape`、`InsettableShape`、`Path`、`Canvas` 和 `.path(in:)` 是几何事实。必须读取 source trigger 的几何锚点，把曲线、圆角/不规则轮廓、内层 label、渐变、字体和阴影迁移为 ArkUI `Shape`/`Path`/Canvas 或等价自绘实现。禁止用一个 `RoundedRectangle`、纯文字、emoji 或 Unicode 图标覆盖整块源形状来充当占位符。目标 SDK 暂时无法表达时，保留最接近的自绘路径并在 decision ledger 记录几何差异和待办，不得把占位实现标为视觉等价。
    - 浮动 Tab、底部胶囊和其他根宿主常驻元素的可见性必须按原始 presentation 决定。sheet 覆盖时保留 iOS 背景上下文和 dim 行为，full-screen 或 pushed 页面显示期间隐藏被覆盖的常驻元素，返回根页后恢复。
+   - 根页面的顶部导航 chrome 也是源事实。若 iOS 根页没有可见的 app title、默认 toolbar 标题或 Harmony-only 品牌栏，目标页不得自行插入这些元素。保留源 toolbar 的按钮、顺序、尺寸和安全区位置，避免把顶部 chrome 推入 `Scroll` 或挤压源首屏内容。
    - SwiftUI `Form` 中的 `Picker` 默认映射为紧凑的可访问选择行，保留源标签、当前值、chevron 和稳定 `id`。只有源代码明确使用 segmented control 或 chip group 时才映射为 `TagPill`/多 chip 布局，不能把 Settings 外观或 BeanEditor 处理法、烘焙度、档案颜色自动展开成大块 chip 网格。
    - 逐项对齐 sheet 的源 section 顺序和首屏内容预算。不要在源 Settings/BeanEditor 的 About、保存或主表单之前插入 Harmony-only 的系统表面预览、桥接卡片或额外说明。目标平台特有能力放到源页面明确对应的 section 之后，或单独的设置子页，不能把源 sheet 的关键内容推到首屏以下。
 
