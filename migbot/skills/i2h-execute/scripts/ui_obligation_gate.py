@@ -15,6 +15,19 @@ from pathlib import Path
 from typing import Any
 
 
+_SYMBOL_SUBSTITUTES = frozenset("★☆✓→+−☼◔↗")
+_SYMBOL_FIDELITY_MARKER = re.compile(r"symbol_fidelity\s*:\s*approved\b[^\n]*\basset\s*=", re.IGNORECASE)
+_PRESENTATION_FALLBACK_KEYS = (
+    "owner",
+    "state",
+    "scrim",
+    "corner",
+    "detent",
+    "dismissal",
+    "safe_area",
+)
+
+
 def _read(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -82,12 +95,89 @@ def _contains_numeric_literal(source: str, expected: Any) -> bool:
     return False
 
 
+def _presentation_rows(unit: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return source modifiers owned by this generated host unit.
+
+    A destination unit sourced from ``.sheet { DestinationView() }`` is not
+    itself the owner of the modal binding.  The host declaration's
+    ``source_obligations.presentations`` rows are therefore the authoritative
+    rows for this gate.
+    """
+    obligations = unit.get("source_obligations") or {}
+    rows = obligations.get("presentations", []) if isinstance(obligations, dict) else []
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def _has_presentation_fallback(source: str) -> bool:
+    """Check the explicit, reviewable custom-overlay contract.
+
+    Native ``bindSheet``/``bindContentCover`` is preferred.  A custom overlay
+    is accepted only when one bounded marker declares the owner, state,
+    scrim, corner/detent geometry, dismissal path and safe-area responsibility.
+    This prevents an arbitrary ``pageKey`` overlay from silently replacing a
+    source presentation while keeping valid API-compatible fallbacks possible.
+    """
+    marker = re.search(r"presentation_fallback\s*[:=]", source, flags=re.IGNORECASE)
+    if not marker:
+        return False
+    window = source[marker.start(): marker.start() + 1200]
+    return all(re.search(rf"\b{re.escape(key)}\s*[:=]", window, flags=re.IGNORECASE) for key in _PRESENTATION_FALLBACK_KEYS)
+
+
+def _check_presentation_fidelity(source: str, unit: dict[str, Any], relative: str) -> list[dict[str, str]]:
+    errors: list[dict[str, str]] = []
+    unit_id = str(unit.get("unit_id", ""))
+    for row in _presentation_rows(unit):
+        kind = str(row.get("kind", ""))
+        if kind not in {"sheet", "full_screen_cover"}:
+            continue
+        binding = "bindSheet" if kind == "sheet" else "bindContentCover"
+        if re.search(rf"\b{binding}\s*(?:<|\(|=)", source):
+            continue
+        if _has_presentation_fallback(source):
+            continue
+        errors.append({
+            "code": "presentation_binding_missing",
+            "unit_id": unit_id,
+            "detail": f"{relative}: expected {binding} or a complete presentation_fallback marker",
+        })
+    return errors
+
+
+def _check_symbol_fidelity(source: str, unit: dict[str, Any], relative: str) -> list[dict[str, str]]:
+    """Reject isolated Unicode/emoji glyphs used as visual icon substitutes."""
+    if _SYMBOL_FIDELITY_MARKER.search(source):
+        return []
+    errors: list[dict[str, str]] = []
+    unit_id = str(unit.get("unit_id", ""))
+    # Restrict detection to string literals.  This avoids treating arithmetic
+    # plus/minus or operators in normal ArkTS expressions as visual glyphs.
+    for match in re.finditer(r"(['\"])(?P<value>(?:\\.|(?!\1).)*)\1", source, flags=re.DOTALL):
+        value = match.group("value")
+        hits = [symbol for symbol in _SYMBOL_SUBSTITUTES if symbol in value]
+        # '+' and '−' are common in ordinary copy, so only reject them when
+        # they are the whole literal.  The other glyphs are icon-shaped and
+        # are rejected whenever they appear in a literal.
+        hits = [symbol for symbol in hits if symbol not in {"+", "−"} or value.strip() == symbol]
+        if not hits:
+            continue
+        for symbol in sorted(set(hits)):
+            errors.append({
+                "code": "unicode_symbol_substitute",
+                "unit_id": unit_id,
+                "detail": f"{relative}: literal {symbol!r} requires a mapped asset/SF Symbol or symbol_fidelity approval",
+            })
+    return errors
+
+
 def _check_unit(root: Path, unit: dict[str, Any]) -> list[dict[str, str]]:
     output = unit.get("output") or {}
     relative = output.get("file")
     obligations = unit.get("source_obligations") or {}
-    if not isinstance(relative, str) or not obligations:
+    if not isinstance(relative, str):
         return []
+    if not isinstance(obligations, dict):
+        obligations = {}
     path = root / relative
     if not path.is_file():
         return [{"code": "output_missing", "unit_id": unit.get("unit_id", ""), "detail": relative}]
@@ -152,6 +242,8 @@ def _check_unit(root: Path, unit: dict[str, Any]) -> list[dict[str, str]]:
             errors.append({"code": "chart_line_points_missing", "unit_id": unit_id, "detail": relative})
         if chart.get("height") is not None and not _contains_numeric_literal(source, chart["height"]):
             errors.append({"code": "chart_height_missing", "unit_id": unit_id, "detail": str(chart["height"])})
+    errors.extend(_check_presentation_fidelity(source, unit, relative))
+    errors.extend(_check_symbol_fidelity(source, unit, relative))
     return errors
 
 

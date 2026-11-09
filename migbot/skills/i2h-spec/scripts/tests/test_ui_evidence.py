@@ -146,6 +146,19 @@ class UiEvidenceTests(unittest.TestCase):
         self.assertEqual({item['kind'] for item in obligations['state_markers']}, {'loading', 'empty'})
         self.assertEqual([item['name'] for item in obligations['embedded_view_candidates']], ['EmptyStateView', 'RecipeView'])
 
+    def test_ui_obligations_distinguish_full_screen_cover_from_sheet(self):
+        source = '''
+        struct HomeView: View {
+            var body: some View {
+                Text("Home")
+                    .fullScreenCover(isPresented: $showScan) { ScanView() }
+            }
+        }
+        '''
+        obligations = parse_ui_obligations(source)
+        self.assertEqual([item['kind'] for item in obligations['presentations']], ['full_screen_cover'])
+        self.assertEqual(obligations['presentations'][0]['source_pattern'], '.fullScreenCover')
+
     def test_same_file_views_keep_obligations_scoped_to_declaration(self):
         self.write('Views/BeanViews.swift', '''
         import SwiftUI

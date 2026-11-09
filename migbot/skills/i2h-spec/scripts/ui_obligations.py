@@ -143,7 +143,8 @@ def parse_ui_obligations(text: str, *, line_offset: int = 0) -> dict[str, Any]:
         }
     searchable = bool(re.search(r"\.searchable\s*\(", text))
     presentation_patterns = (
-        ("sheet", r"\.(sheet|fullScreenCover)\s*\("),
+        ("sheet", r"\.sheet\s*\("),
+        ("full_screen_cover", r"\.fullScreenCover\s*\("),
         ("alert", r"\.alert\s*\("),
         ("confirmation_dialog", r"\.confirmationDialog\s*\("),
         ("popover", r"\.popover\s*\("),

@@ -118,6 +118,29 @@ class SourceIndexTests(unittest.TestCase):
         self.assertEqual(units["ios.BeanDetailView"]["source_obligations"], pages["BeanDetailView"]["ui_obligations"])
         self.assertEqual(units["ios.BeanEditorView"]["source_obligations"], pages["BeanEditorView"]["ui_obligations"])
 
+    def test_delivery_preserves_host_presentation_obligations_and_full_screen_mapping(self):
+        source = self.root / "Views/PresentationViews.swift"
+        source.write_text(
+            "import SwiftUI\n"
+            "struct HostView: View {\n"
+            "  var body: some View { Text(\"Home\").sheet(isPresented: $showSheet) { SheetView() }.fullScreenCover(isPresented: $showFull) { FullView() } }\n"
+            "}\n"
+            "struct SheetView: View { var body: some View { Text(\"Sheet\") } }\n"
+            "struct FullView: View { var body: some View { Text(\"Full\") } }\n",
+            encoding="utf-8",
+        )
+        index = build_index(self.root, self.root / "spec/.i2h/cache/source-index.json", force=True)
+        evidence = self.root / "spec/.i2h/resources-inventory.json"
+        run(str(self.root), str(evidence), source_index_output=str(self.root / "spec/.i2h/cache/source-index.json"), source_index_force=True)
+        inventory = ui_delivery.draft(self.root, self.root / "delivery.json")
+        units = {unit["component"]: unit for unit in inventory["units"]}
+        host = units["ios.HostView"]
+        self.assertEqual({row["kind"] for row in host["source_obligations"]["presentations"]}, {"sheet", "full_screen_cover"})
+        self.assertEqual({row["kind"] for row in host["presentation"]["source_obligations"]}, {"sheet", "full_screen_cover"})
+        self.assertEqual(units["ios.SheetView"]["presentation"]["harmony_mapping"], "bindSheet")
+        self.assertEqual(units["ios.FullView"]["presentation"]["source"], ".fullScreenCover")
+        self.assertEqual(units["ios.FullView"]["presentation"]["harmony_mapping"], "bindContentCover")
+
 
 if __name__ == "__main__":
     unittest.main()

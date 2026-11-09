@@ -10,7 +10,7 @@ from ui_obligation_gate import evaluate  # noqa: E402
 
 
 class UiObligationGateTests(unittest.TestCase):
-    def run_gate(self, source: str, obligations: dict):
+    def run_gate(self, source: str, obligations: dict, presentation=None):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             output = root / "entry/src/main/ets/pages/Test.ets"
@@ -18,7 +18,10 @@ class UiObligationGateTests(unittest.TestCase):
             output.write_text(source, encoding="utf-8")
             inventory = root / "spec/baseline/ui-delivery-approved.json"
             inventory.parent.mkdir(parents=True)
-            inventory.write_text(json.dumps({"units": [{"unit_id": "u", "output": {"file": str(output.relative_to(root))}, "source_obligations": obligations}]}), encoding="utf-8")
+            unit = {"unit_id": "u", "output": {"file": str(output.relative_to(root))}, "source_obligations": obligations}
+            if presentation is not None:
+                unit["presentation"] = presentation
+            inventory.write_text(json.dumps({"units": [unit]}), encoding="utf-8")
             return evaluate(root, inventory)
 
     def test_fixed_action_must_be_outside_scroll_and_picker_rows_are_required(self):
@@ -72,6 +75,40 @@ class UiObligationGateTests(unittest.TestCase):
         obligations = {"chart": {"height": 120.0}}
         source = "Canvas() { drawLine(); drawCircle(); }.height(120)"
         result = self.run_gate(source, obligations)
+        self.assertEqual(result["status"], "PASS")
+
+    def test_sheet_requires_native_binding_or_complete_fallback_marker(self):
+        obligations = {"presentations": [{"kind": "sheet", "source_pattern": ".sheet"}]}
+        result = self.run_gate("Column() { Text('Recipe') }", obligations)
+        self.assertEqual(result["status"], "FAIL")
+        self.assertIn("presentation_binding_missing", {row["code"] for row in result["errors"]})
+
+        result = self.run_gate("Column() { Text('Recipe') }.bindSheet(this.showRecipe)", obligations)
+        self.assertEqual(result["status"], "PASS")
+
+        marker = (
+            "// presentation_fallback: kind=sheet owner=RootView state=showRecipe "
+            "scrim=true corner=top detent=medium dismissal=onDismiss safe_area=host\n"
+            "Column() { Text('Recipe') }"
+        )
+        result = self.run_gate(marker, obligations)
+        self.assertEqual(result["status"], "PASS")
+
+    def test_full_screen_cover_requires_content_cover_binding(self):
+        obligations = {"presentations": [{"kind": "full_screen_cover", "source_pattern": ".fullScreenCover"}]}
+        result = self.run_gate("Column() { Text('Scan') }", obligations)
+        self.assertEqual(result["status"], "FAIL")
+        result = self.run_gate("Column() { Text('Scan') }.bindContentCover(this.showScan)", obligations)
+        self.assertEqual(result["status"], "PASS")
+
+    def test_unicode_icon_literals_fail_without_asset_mapping(self):
+        result = self.run_gate("Text('✓')", {})
+        self.assertEqual(result["status"], "FAIL")
+        self.assertIn("unicode_symbol_substitute", {row["code"] for row in result["errors"]})
+
+        result = self.run_gate("Text('加一') + Text('+')", {})
+        self.assertEqual(result["status"], "FAIL")
+        result = self.run_gate("// symbol_fidelity: approved asset=app.media.plus\nText('+')", {})
         self.assertEqual(result["status"], "PASS")
 
 
