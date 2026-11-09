@@ -124,7 +124,12 @@ def _has_presentation_fallback(source: str) -> bool:
     return all(re.search(rf"\b{re.escape(key)}\s*[:=]", window, flags=re.IGNORECASE) for key in _PRESENTATION_FALLBACK_KEYS)
 
 
-def _check_presentation_fidelity(source: str, unit: dict[str, Any], relative: str) -> list[dict[str, str]]:
+def _check_presentation_fidelity(
+    source: str,
+    unit: dict[str, Any],
+    relative: str,
+    generated_sources=None,
+) -> list[dict[str, str]]:
     errors: list[dict[str, str]] = []
     unit_id = str(unit.get("unit_id", ""))
     for row in _presentation_rows(unit):
@@ -135,6 +140,17 @@ def _check_presentation_fidelity(source: str, unit: dict[str, Any], relative: st
         if re.search(rf"\b{binding}\s*(?:<|\(|=)", source):
             continue
         if _has_presentation_fallback(source):
+            continue
+        # A routed root often delegates modal ownership to Index/RootHost
+        # instead of the page file named by the source declaration.  Accept a
+        # single centralized binding or complete fallback marker in the
+        # generated surface, while still failing when the project has no
+        # implementation for the declared presentation kind.
+        if generated_sources and any(
+            re.search(rf"\b{binding}\s*(?:<|\(|=)", candidate)
+            or _has_presentation_fallback(candidate)
+            for candidate in generated_sources
+        ):
             continue
         errors.append({
             "code": "presentation_binding_missing",
@@ -170,7 +186,7 @@ def _check_symbol_fidelity(source: str, unit: dict[str, Any], relative: str) -> 
     return errors
 
 
-def _check_unit(root: Path, unit: dict[str, Any]) -> list[dict[str, str]]:
+def _check_unit(root: Path, unit: dict[str, Any], generated_sources=None) -> list[dict[str, str]]:
     output = unit.get("output") or {}
     relative = output.get("file")
     obligations = unit.get("source_obligations") or {}
@@ -242,7 +258,7 @@ def _check_unit(root: Path, unit: dict[str, Any]) -> list[dict[str, str]]:
             errors.append({"code": "chart_line_points_missing", "unit_id": unit_id, "detail": relative})
         if chart.get("height") is not None and not _contains_numeric_literal(source, chart["height"]):
             errors.append({"code": "chart_height_missing", "unit_id": unit_id, "detail": str(chart["height"])})
-    errors.extend(_check_presentation_fidelity(source, unit, relative))
+    errors.extend(_check_presentation_fidelity(source, unit, relative, generated_sources))
     errors.extend(_check_symbol_fidelity(source, unit, relative))
     return errors
 
@@ -254,9 +270,34 @@ def evaluate(root: Path | str, inventory: Path | str) -> dict[str, Any]:
         inventory_path = root / inventory_path
     data = _read(inventory_path)
     errors: list[dict[str, str]] = []
-    for unit in data.get("units", []):
+    units = [unit for unit in data.get("units", []) if isinstance(unit, dict)]
+    generated_sources: list[str] = []
+    for unit in units:
+        relative = (unit.get("output") or {}).get("file")
+        if isinstance(relative, str):
+            path = root / relative
+            if path.is_file():
+                generated_sources.append(path.read_text(encoding="utf-8"))
+    # The delivery inventory normally lists page outputs, while modal
+    # ownership may live in an unlisted entry/root host.  Include generated
+    # ArkTS files under the app source tree so centralized bindings are still
+    # verified without requiring an inventory rewrite.
+    known_paths = {
+        (unit.get("output") or {}).get("file")
+        for unit in units
+        if isinstance((unit.get("output") or {}).get("file"), str)
+    }
+    for path in sorted((root / "entry/src/main/ets").rglob("*.ets")):
+        relative = path.relative_to(root).as_posix()
+        if relative in known_paths:
+            continue
+        try:
+            generated_sources.append(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError):
+            continue
+    for unit in units:
         if isinstance(unit, dict):
-            errors.extend(_check_unit(root, unit))
+            errors.extend(_check_unit(root, unit, generated_sources))
     return {
         "schema_version": 1,
         "gate": "i2h-execute.ui-obligations",

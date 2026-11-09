@@ -101,6 +101,25 @@ class UiObligationGateTests(unittest.TestCase):
         result = self.run_gate("Column() { Text('Scan') }.bindContentCover(this.showScan)", obligations)
         self.assertEqual(result["status"], "PASS")
 
+    def test_hosted_presentation_can_use_centralized_binding_file(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            host = root / "entry/src/main/ets/pages/RootView.ets"
+            entry = root / "entry/src/main/ets/Index.ets"
+            host.parent.mkdir(parents=True)
+            entry.parent.mkdir(parents=True, exist_ok=True)
+            host.write_text("Column() { Text('Home') }", encoding="utf-8")
+            entry.write_text("RootView().bindSheet(this.showRecipe)", encoding="utf-8")
+            inventory = root / "spec/baseline/ui-delivery-approved.json"
+            inventory.parent.mkdir(parents=True)
+            inventory.write_text(json.dumps({"units": [{
+                "unit_id": "u",
+                "output": {"file": "entry/src/main/ets/pages/RootView.ets"},
+                "source_obligations": {"presentations": [{"kind": "sheet"}]},
+            }]}), encoding="utf-8")
+            result = evaluate(root, inventory)
+            self.assertEqual(result["status"], "PASS")
+
     def test_unicode_icon_literals_fail_without_asset_mapping(self):
         result = self.run_gate("Text('✓')", {})
         self.assertEqual(result["status"], "FAIL")
