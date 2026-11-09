@@ -21,6 +21,16 @@ from typing import Any
 ROOT = "spec/execution/resource-deltas"
 SCHEMA_VERSION = 1
 MAX_BYTES = 16 * 1024 * 1024
+_ELEMENT_TYPES = {
+    "string",
+    "color",
+    "float",
+    "boolean",
+    "integer",
+    "strarray",
+    "intarray",
+    "plural",
+}
 
 
 def _digest(raw: bytes) -> str:
@@ -113,6 +123,52 @@ def _json(path: Path) -> dict[str, Any]:
     return value
 
 
+def _validate_element_resource(relative: str, value: Any) -> None:
+    """Reject values that would make an OpenHarmony element resource unloadable.
+
+    A resource delta is JSON by transport, but ``resources/base/element`` is
+    not an arbitrary JSON directory.  Each file has one root key matching its
+    resource type and an array of named entries.  Validating this before the
+    atomic write prevents a generated ``{"token": ...}`` object from breaking
+    the next CompileResource invocation.
+    """
+    path = PurePosixPath(relative)
+    if len(path.parts) < 2 or path.parts[-2] != "element" or path.suffix != ".json":
+        return
+    resource_type = path.stem
+    if resource_type not in _ELEMENT_TYPES:
+        return
+    if not isinstance(value, dict) or set(value) != {resource_type}:
+        raise ValueError(
+            f"element resource {relative} must contain only the '{resource_type}' root key"
+        )
+    entries = value[resource_type]
+    if not isinstance(entries, list):
+        raise ValueError(f"element resource {relative} root must be an array")
+    names: set[str] = set()
+    for entry in entries:
+        if not isinstance(entry, dict) or not isinstance(entry.get("name"), str) or not entry["name"]:
+            raise ValueError(f"element resource {relative} entries need a non-empty name")
+        name = entry["name"]
+        if name in names:
+            raise ValueError(f"element resource {relative} has duplicate name: {name}")
+        names.add(name)
+        if "value" not in entry:
+            raise ValueError(f"element resource {relative} entries need value: {name}")
+        if resource_type == "plural":
+            plural_value = entry["value"]
+            if not isinstance(plural_value, list) or not plural_value:
+                raise ValueError(f"plural resource {relative} needs a non-empty value array: {name}")
+            for quantity in plural_value:
+                if (
+                    not isinstance(quantity, dict)
+                    or not isinstance(quantity.get("quantity"), str)
+                    or not quantity["quantity"]
+                    or "value" not in quantity
+                ):
+                    raise ValueError(f"plural resource {relative} has an invalid quantity: {name}")
+
+
 def init_scope(project: str | Path, scope_id: str, tasks: list[dict[str, Any]], resources: list[dict[str, Any]]) -> Path:
     root = _project(project)
     scope = _scope(root, scope_id)
@@ -160,6 +216,7 @@ def submit_delta(project: str | Path, scope_id: str, task_id: str, delta: dict[s
         _safe_relative(item["path"])
         if "value" not in item:
             raise ValueError("delta resource needs value")
+        _validate_element_resource(item["path"], item["value"])
         clean["resources"].append({"path": item["path"], "type": item.get("type", "json"), "expected_sha256": item.get("expected_sha256"), "value": item["value"]})
     destination = scope / f"delta-{task_id}-{attempt}.json"
     _atomic_write(destination, (json.dumps(clean, ensure_ascii=False, indent=2) + "\n").encode())
@@ -190,6 +247,7 @@ def merge(project: str | Path, scope_id: str) -> dict[str, Any]:
             expected = item.get("expected_sha256") or declared[relative].get("preimage_sha256")
             if expected is not None and _digest(current or b"") != expected:
                 raise ValueError(f"resource preimage changed: {relative}")
+            _validate_element_resource(relative, item["value"])
             raw = (json.dumps(item["value"], ensure_ascii=False, indent=2) + "\n").encode()
             writes.append((destination, raw))
         for destination, raw in writes:
