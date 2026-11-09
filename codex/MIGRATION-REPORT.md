@@ -109,12 +109,12 @@
 | arkts-ui-test-executor | skills/arkts-ui-verifier/agents/step3-execute-agent.md | tools 白名单 → developer_instructions 行为约束 |
 | arkts-ui-test-generator | skills/arkts-ui-verifier/agents/step2-generate-agent.md | tools 白名单 → developer_instructions 行为约束 |
 | arkts-ut-fixer | skills/arkts-ut-verifier/agents/arkts-ut-fixer.md | model: opus → 注释保留; color: orange → 丢弃; tools 白名单 → developer_instructions 行为约束 |
-| hmos-builder | arkts-agents/agents/hmos-builder.md | color: blue → 丢弃; skills 预加载(1) → developer_instructions 指引; tools 白名单 → developer_instructions 行为约束 |
-| i2h-closer | arkts-agents/agents/i2h-closer.md | model: opus → 注释保留; color: cyan → 丢弃; skills 预加载(2) → developer_instructions 指引; tools 白名单 → developer_instructions 行为约束 |
-| i2h-fixer | arkts-agents/agents/i2h-fixer.md | model: opus → 注释保留; color: orange → 丢弃; tools 白名单 → developer_instructions 行为约束 |
-| i2h-ios-analyzer | arkts-agents/agents/i2h-ios-analyzer.md | model: opus → 注释保留; color: yellow → 丢弃; tools 白名单 → developer_instructions 行为约束 |
-| i2h-migration-worker | arkts-agents/agents/i2h-migration-worker.md | model: opus → 注释保留; color: green → 丢弃; skills 预加载(11) → developer_instructions 指引; tools 白名单 → developer_instructions 行为约束 |
-| i2h-view-converter | arkts-agents/agents/i2h-view-converter.md | model: opus → 注释保留; color: cyan → 丢弃; skills 预加载(3) → developer_instructions 指引; tools 白名单 → developer_instructions 行为约束 |
+| hmos-builder | migbot/agents/hmos-builder.md | color: blue → 丢弃; skills 预加载(1) → developer_instructions 指引; tools 白名单 → developer_instructions 行为约束 |
+| i2h-closer | migbot/agents/i2h-closer.md | model: opus → 注释保留; color: cyan → 丢弃; skills 预加载(2) → developer_instructions 指引; tools 白名单 → developer_instructions 行为约束 |
+| i2h-fixer | migbot/agents/i2h-fixer.md | model: opus → 注释保留; color: orange → 丢弃; tools 白名单 → developer_instructions 行为约束 |
+| i2h-ios-analyzer | migbot/agents/i2h-ios-analyzer.md | model: opus → 注释保留; color: yellow → 丢弃; tools 白名单 → developer_instructions 行为约束 |
+| i2h-migration-worker | migbot/agents/i2h-migration-worker.md | model: opus → 注释保留; color: green → 丢弃; skills 预加载(11) → developer_instructions 指引; tools 白名单 → developer_instructions 行为约束 |
+| i2h-view-converter | migbot/agents/i2h-view-converter.md | model: opus → 注释保留; color: cyan → 丢弃; skills 预加载(3) → developer_instructions 指引; tools 白名单 → developer_instructions 行为约束 |
 
 ## 丢弃的 frontmatter 字段（需人工转 body 指引）
 
