@@ -299,3 +299,7 @@ python3 ios_device_checker.py --json | jq .
 **版本**: v1.0  
 **创建时间**: 2024-11-04  
 **状态**: ✅ 所有脚本已完成
+
+## 影响分诊
+
+`scripts/repair_triage.py` 读取现有验证 findings 和可选计划，输出 report-only 的 P0/P1/P2 修复优先级及受影响复查范围。未知所有权会扩大到 full_ui，结果不会修改原始验收状态。

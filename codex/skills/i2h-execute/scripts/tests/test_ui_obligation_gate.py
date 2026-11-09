@@ -50,6 +50,21 @@ class UiObligationGateTests(unittest.TestCase):
         result = self.run_gate("Toolbar() { Text('search') } Canvas() { drawLine(); drawCircle(); }.height(120)", obligations)
         self.assertEqual(result["status"], "PASS")
 
+    def test_accepts_legacy_string_picker_labels(self):
+        obligations = {
+            "compact_picker_rows_required": True,
+            "form_picker_labels": ["处理法", "产地"],
+        }
+        source = "Column() { Select([{value:'水洗'}]); Text('处理法'); Select([{value:'埃塞俄比亚'}]); Text('产地') }"
+        result = self.run_gate(source, obligations)
+        self.assertEqual(result["status"], "PASS")
+
+    def test_chart_height_matches_integer_and_decimal_forms(self):
+        obligations = {"chart": {"height": 120.0}}
+        source = "Canvas() { drawLine(); drawCircle(); }.height(120)"
+        result = self.run_gate(source, obligations)
+        self.assertEqual(result["status"], "PASS")
+
 
 if __name__ == "__main__":
     unittest.main()

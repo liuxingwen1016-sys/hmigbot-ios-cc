@@ -136,8 +136,10 @@ def normalize(path: Path) -> dict[str, Any]:
         or source.get("accessibility_json")
         or source.get("accessibility_json_path")
     )
+    foreground_receipt_value = source.get("foreground_receipt") or source.get("foreground_receipt_path")
     screenshot_path = resolve_artifact(path, screenshot_value)
     ui_json_path = resolve_artifact(path, ui_json_value)
+    foreground_receipt_path = resolve_artifact(path, foreground_receipt_value)
     warnings = []
     if not normalized_nodes:
         warnings.append("capture contains no accessibility nodes")
@@ -149,9 +151,17 @@ def normalize(path: Path) -> dict[str, Any]:
         warnings.append("capture has no accessibility JSON path")
     elif not ui_json_path or not ui_json_path.is_file():
         warnings.append("capture accessibility JSON path does not exist")
+    if foreground_receipt_value and (not foreground_receipt_path or not foreground_receipt_path.is_file()):
+        warnings.append("capture foreground receipt path does not exist")
     app = source.get("app", {})
     if not isinstance(app, dict):
         app = {}
+    device = source.get("device", {})
+    if not isinstance(device, dict):
+        device = {}
+    identity = source.get("evidence_identity", {})
+    if not isinstance(identity, dict):
+        identity = {}
     page_id = source.get("page_id")
     state_id = source.get("state_id") or source.get("state")
     status = source.get("status")
@@ -169,12 +179,20 @@ def normalize(path: Path) -> dict[str, Any]:
         "captured_at": source.get("captured_at"),
         "device": source.get("device", {}),
         "app": app,
+        "evidence_identity": identity,
+        "source_sha256": identity.get("source_sha256") or source.get("source_sha256"),
+        "scenario_id": identity.get("scenario_id") or source.get("scenario_id"),
+        "configuration_id": identity.get("configuration_id") or source.get("configuration_id"),
+        "checkpoint_id": identity.get("checkpoint_id") or source.get("checkpoint_id"),
+        "device_udid": identity.get("device_udid") or device.get("udid"),
         "screenshot": screenshot_value,
         "screenshot_path": screenshot_value,
         "screenshot_sha256": digest(screenshot_path) if screenshot_path and screenshot_path.is_file() else None,
         "ui_json": ui_json_value,
         "ui_json_path": ui_json_value,
         "ui_json_sha256": digest(ui_json_path) if ui_json_path and ui_json_path.is_file() else None,
+        "foreground_receipt": foreground_receipt_value,
+        "foreground_receipt_sha256": digest(foreground_receipt_path) if foreground_receipt_path and foreground_receipt_path.is_file() else None,
         "nodes": normalized_nodes,
         "warnings": warnings,
         "provenance": {

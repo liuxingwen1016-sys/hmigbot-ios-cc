@@ -35,14 +35,21 @@ def _frame_widths(payload: Any) -> list[float]:
     widths: list[float] = []
     for node in _walk(payload):
         frame = node.get("frame")
-        if isinstance(frame, list) and len(frame) >= 4:
-            try:
-                width = float(frame[2])
-                height = float(frame[3])
-            except (TypeError, ValueError):
-                continue
-            if width > 0 and height > 0:
-                widths.append(width)
+        if isinstance(frame, dict):
+            width_value = frame.get("width")
+            height_value = frame.get("height")
+        elif isinstance(frame, (list, tuple)) and len(frame) >= 4:
+            width_value = frame[2]
+            height_value = frame[3]
+        else:
+            continue
+        try:
+            width = float(width_value)
+            height = float(height_value)
+        except (TypeError, ValueError):
+            continue
+        if width > 0 and height > 0:
+            widths.append(width)
     return widths
 
 

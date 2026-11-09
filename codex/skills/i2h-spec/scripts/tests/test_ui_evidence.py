@@ -88,6 +88,23 @@ class UiEvidenceTests(unittest.TestCase):
         self.assertTrue(recipe['ui_obligations']['has_scroll'])
         self.assertEqual(recipe['ui_obligations']['interactive_controls'][-1]['label'], '开始冲煮')
 
+    def test_ui_obligations_capture_embedded_states_and_presentations(self):
+        source = '''
+        struct HomeView: View {
+            var body: some View {
+                if isLoading { ProgressView() }
+                else if beans.isEmpty { EmptyStateView() }
+                .sheet(isPresented: $showRecipe) { RecipeView() }
+                .confirmationDialog("确认", isPresented: $confirm) { Button("确定") {} }
+            }
+        }
+        '''
+        obligations = parse_ui_obligations(source)
+        self.assertEqual([item['kind'] for item in obligations['presentations']], ['sheet', 'confirmation_dialog'])
+        self.assertGreaterEqual(len(obligations['conditional_states']), 2)
+        self.assertEqual({item['kind'] for item in obligations['state_markers']}, {'loading', 'empty'})
+        self.assertEqual([item['name'] for item in obligations['embedded_view_candidates']], ['EmptyStateView', 'RecipeView'])
+
     def test_same_file_views_keep_obligations_scoped_to_declaration(self):
         self.write('Views/BeanViews.swift', '''
         import SwiftUI

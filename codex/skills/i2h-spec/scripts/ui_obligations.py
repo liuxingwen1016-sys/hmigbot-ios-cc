@@ -128,6 +128,77 @@ def parse_ui_obligations(text: str, *, line_offset: int = 0) -> dict[str, Any]:
             "height": float(chart_height.group(1)) if chart_height else None,
         }
     searchable = bool(re.search(r"\.searchable\s*\(", text))
+    presentation_patterns = (
+        ("sheet", r"\.(sheet|fullScreenCover)\s*\("),
+        ("alert", r"\.alert\s*\("),
+        ("confirmation_dialog", r"\.confirmationDialog\s*\("),
+        ("popover", r"\.popover\s*\("),
+        ("context_menu", r"\.contextMenu\s*\("),
+    )
+    presentations = []
+    for kind, pattern in presentation_patterns:
+        for match in re.finditer(pattern, text):
+            presentations.append({
+                "kind": kind,
+                "line": _line(text, match.start()) + line_offset,
+                "source_pattern": match.group(0).split("(", 1)[0],
+            })
+    presentations.sort(key=lambda item: item["line"])
+
+    conditional_patterns = (
+        ("if", r"\bif\s+[^\n{]+\{"),
+        ("else", r"\belse\s*(?:if\s+[^\n{]+)?\{"),
+        ("switch", r"\bswitch\s+[^\n{]+\{"),
+        ("case", r"\bcase\s+[^:\n]+:"),
+    )
+    conditional_states = []
+    for kind, pattern in conditional_patterns:
+        for match in re.finditer(pattern, text):
+            conditional_states.append({
+                "kind": kind,
+                "line": _line(text, match.start()) + line_offset,
+                "expression": re.sub(r"\s+", " ", match.group(0).strip()),
+            })
+    conditional_states.sort(key=lambda item: item["line"])
+
+    state_markers = []
+    state_patterns = (
+        ("loading", r"\b(?:isLoading|loading|ProgressView)\b"),
+        ("empty", r"\b(?:isEmpty|EmptyView|ContentUnavailableView|emptyState)\b"),
+        ("error", r"\b(?:error|ErrorView|failure|failed)\b"),
+    )
+    for kind, pattern in state_patterns:
+        for match in re.finditer(pattern, text, flags=re.IGNORECASE):
+            state_markers.append({"kind": kind, "line": _line(text, match.start()) + line_offset})
+    state_markers.sort(key=lambda item: item["line"])
+
+    # Custom view calls are candidates only.  They are deliberately not
+    # treated as proven page ownership because SwiftUI builders can hide
+    # content behind helpers and modifiers.
+    builtin = {
+        "VStack", "HStack", "ZStack", "List", "ScrollView", "LazyVStack", "LazyHStack",
+        "LazyVGrid", "NavigationStack", "NavigationView", "NavigationLink", "TabView", "Form",
+        "Group", "Button", "TextField", "SecureField", "Picker", "Toggle", "DatePicker", "Image",
+        "Sheet", "Alert", "UICollectionView", "UITableView", "UIScrollView", "UIButton", "UILabel",
+        "UIImageView", "UITextField", "UIStackView",
+    } | {
+        "Text", "Color", "Spacer", "Divider", "ForEach", "Group", "AnyView",
+        "GeometryReader", "Section", "Label", "Link", "Menu", "ProgressView",
+    }
+    embedded_candidates = []
+    for match in re.finditer(r"\b([A-Z][A-Za-z0-9_]*)\s*\(", text):
+        name = match.group(1)
+        if name in builtin:
+            continue
+        embedded_candidates.append({"name": name, "line": _line(text, match.start()) + line_offset})
+    seen_embedded = set()
+    embedded_views = []
+    for item in embedded_candidates:
+        key = (item["name"], item["line"])
+        if key not in seen_embedded:
+            seen_embedded.add(key)
+            embedded_views.append(item)
+
     return {
         "interactive_controls": controls,
         "accessibility_identifiers": identifiers,
@@ -142,4 +213,8 @@ def parse_ui_obligations(text: str, *, line_offset: int = 0) -> dict[str, Any]:
         "searchable": searchable,
         "searchable_placement": "toolbar" if searchable else None,
         "chart": chart,
+        "presentations": presentations,
+        "conditional_states": conditional_states,
+        "state_markers": state_markers,
+        "embedded_view_candidates": embedded_views,
     }

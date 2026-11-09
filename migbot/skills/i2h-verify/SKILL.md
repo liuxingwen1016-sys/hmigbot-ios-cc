@@ -116,6 +116,10 @@ CHECK-1/2 的具体规则见 [静态分析与 App 身份](references/static-and-
 
 ## CHECK-3：视觉对齐（简化版实现）
 
+视觉分数与功能完备度分开判断。可用 `scripts/visual_rubric.py` 对截图配对结果生成 report-only rubric。`design_difference` 或 `config_difference` 只有在绑定 source/target manifest 与截图哈希、且原因属于系统状态栏、系统导航栏、字体栅格、系统材质、safe-area、原生滚动物理时才可逐项豁免。缺证据的差异得分为 `null`。缺控件、错状态、错路由、错误弹窗和交互失效不能通过视觉豁免。
+
+视觉轴达到 0.95 才能记为 visual PASS。页面、控件、状态、路由、交互和关键功能仍按各自门禁要求达到 100%。pHash 或 SSIM 只作为图像测量输入，不能单独宣布 UI 完备度。
+
 **实现方式**：在 i2h-verify 主对话中执行双端截图对比（不依赖 arkts-visual-verify）
 
 ### 设备可用性检测

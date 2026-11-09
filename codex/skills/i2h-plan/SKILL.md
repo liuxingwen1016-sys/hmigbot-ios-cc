@@ -415,6 +415,8 @@ wires:
 
 ## 4. suggested_skills 标注规则
 
+当 `spec/ref/ios-style-triggers.json` 存在时，只消费与当前 page/source anchor 绑定的触发项。触发项是增量建议，不等价于已选定的原生 API。执行前必须按目标 SDK 探测结果选择原生实现或回退路径，不能因为样式名称包含 glass、sheet 或 toolbar 就全局加载对应 Skill。
+
 根据 task 内容自动标注应使用的 Domain Skill。完整的 task→skill 主映射表（含登录 / 支付 / 推送 / 相机 / 地图 / 视频等 100+ 领域条目）见 [references/skill-binding-rules.md](./references/skill-binding-rules.md)，标注时读。下方两表是 body 必备的 Core 决策规则。
 
 **承载字段（三层，单一权威源）**：① Base / FV 任务 → stanza `suggested_skills:`（base-plan.md / 索引）；② Slice 4 步默认映射 → **权威 = 下表**，slice 文件零复述；③ **per-slice 差异化追加 → slice 文件对应 Step 行 `suggested_skills+:` 字段（delta-only；命名含 `suggested_skills` 词根便于检索、`+` 表增量）**——plan 期读 spec 做出的语义判断（登录→arkts-login / 支付→arkts-payment / WebView→arkts-webview 等），必须落字段，不得只靠 execute runtime 兜底。

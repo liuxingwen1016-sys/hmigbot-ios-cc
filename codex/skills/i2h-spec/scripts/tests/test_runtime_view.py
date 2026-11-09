@@ -43,6 +43,28 @@ class RuntimeViewTests(unittest.TestCase):
             self.assertEqual(len(result["nodes"]), 4)
             self.assertEqual(result["warnings"], [])
 
+    def test_normalize_preserves_foreground_receipt_hash(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            capture = root / "capture.json"
+            screenshot = root / "screen.png"
+            ui_json = root / "ui.json"
+            receipt = root / "foreground-receipt.json"
+            screenshot.write_bytes(b"png")
+            ui_json.write_text(json.dumps({"nodes": [{"id": "title", "role": "staticText"}]}), encoding="utf-8")
+            receipt.write_text(json.dumps({"schema": "hmigbot-ios-foreground-receipt/1", "ready": True}), encoding="utf-8")
+            capture.write_text(json.dumps({
+                "page_id": "page_0001_RootView",
+                "state_id": "normal",
+                "screenshot": "screen.png",
+                "ui_json": "ui.json",
+                "foreground_receipt": "foreground-receipt.json",
+                "nodes": [{"id": "title", "role": "staticText"}],
+            }), encoding="utf-8")
+            result = normalize(capture)
+            self.assertIsNotNone(result["foreground_receipt_sha256"])
+            self.assertEqual(result["warnings"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -160,7 +160,7 @@
 | D2-i2h-slash-command | divergence | 39 |
 | R1-skill-rename | rewrite | 38 |
 | R1-brand-cc | rewrite | 34 |
-| R1-skills-dir | rewrite | 31 |
+| R1-skills-dir | rewrite | 33 |
 | R5-agent-prompt-path | rewrite | 23 |
 | R1-dot-claude-home | rewrite | 21 |
 | R2-paren-backticked | rewrite | 21 |
@@ -174,7 +174,7 @@
 | R3-subagent-type-fallback | rewrite | 9 |
 | R1-agents-dir | rewrite | 9 |
 | R3-dispatch-noun | rewrite | 8 |
-| D2-codex-plugin-root | divergence | 7 |
+| D2-codex-plugin-root | divergence | 8 |
 | D2-plugin-root-var | divergence | 7 |
 | R1-claude-md | rewrite | 6 |
 | R2-python-call-no-args | rewrite | 6 |

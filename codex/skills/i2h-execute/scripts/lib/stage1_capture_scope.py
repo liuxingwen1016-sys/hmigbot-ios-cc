@@ -85,7 +85,18 @@ def main(argv=None):
     ns=ap.parse_args(argv); root=Path(ns.project_root)
     if ns.command=='prepare': result=prepare(root,ns.scope_manifest)
     else:
-        rp=Path(ns.report); result=finalize(root,ns.scope_manifest,_load(rp)); rp.write_text(json.dumps(result,ensure_ascii=False,indent=2))
+        rp=Path(ns.report)
+        result=_load(rp)
+        try:
+            result=finalize(root,ns.scope_manifest,result)
+        except ValueError as exc:
+            # Preserve the capture cases and make source drift explicit in the
+            # report. The CLI contract is a blocked result with exit code 2.
+            result['status']='visual_blocked'
+            result['fix']='none'
+            result.setdefault('failure_findings',[]).append(
+                {'root_cause':'information_gap','detail':str(exc)})
+        rp.write_text(json.dumps(result,ensure_ascii=False,indent=2))
     if ns.command=='prepare': Path(ns.out).write_text(json.dumps(result,ensure_ascii=False,indent=2))
     else: print(json.dumps(result,ensure_ascii=False,indent=2))
     return 0 if result.get('status') in ('PASS','CAPTURE_PENDING','DIFF') else 2

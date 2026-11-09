@@ -20,6 +20,10 @@ Pipeline 第一步：分析 iOS 项目，生成完整的迁移规格。
 - **Python 辅助**：只做确定性提取（文件列表、类名、属性名）
 - **References 指导**：所有关键步骤必须加载对应的 reference 文档
 
+运行时 UI 采集和双端配对遵循 [references/ios-evidence-protocol.md](./references/ios-evidence-protocol.md)。
+证据必须绑定当前源码、构建、精确设备、场景、配置和 checkpoint。缺少设备时记录
+`not_run` 或 `blocked`，不把静态推断或单端截图当作运行时通过。
+
 ---
 
 ## 关键约束（Critical）
@@ -111,6 +115,17 @@ UIViewRepresentable 等复用视图写入 `components[]`，两者不能混作页
 key 由 source tree hash、tool version 和 references/templates hash 组成。页面或
 feature worker 必须先读取索引切片，禁止再次 Read 整个 Swift 项目。
 
+#### iOS 专属 UI 风格触发（按命中加载）
+
+在页面交付脚手架生成后，可对当前只读 iOS 源运行：
+
+```bash
+python3 "${CODEX_PLUGIN_ROOT:-.agents}/skills/i2h-spec/scripts/ios_style_triggers.py" \
+  <IOS_SOURCE_ROOT> --output spec/ref/ios-style-triggers.json
+```
+
+该产物只记录源码锚点、现有 ArkUI Skill 建议、候选原生 API 和回退路径。它不会全局加载玻璃、Popover、Context Menu 等样式 Skill，也不会把 API 26 能力当成当前项目可用能力。Plan 只消费命中的 `suggested_skills`，无命中项保持不触发。
+
 页面分析使用 `pipeline_workers.run_bounded`，默认 4 个 worker，每批 3–5 页。每个
 worker 写入 `spec/.i2h/checkpoints/pages/` 下的独立 checkpoint 和临时目录，失败时只
 重试该 worker。主线程只做稳定排序、合并和门禁，不能因为单个模型请求异常退回整批
@@ -118,7 +133,7 @@ worker 写入 `spec/.i2h/checkpoints/pages/` 下的独立 checkpoint 和临时�
 
 如果 `.migbot/config.json` 已确认 `xcode`、`xcrun`、`simctl`，在页面状态计划生成后执行
 `scripts/ios_runtime_capture.py`。它负责启动 Simulator、构建并安装 App、抓取 PNG，
-并通过 XCTest/XCUITest helper 生成 accessibility JSON。没有 accessibility JSON 时必须
+并通过 XCTest/XCUITest helper 生成 accessibility JSON 和同一次探针的 foreground receipt。没有 accessibility JSON 或 foreground receipt 时必须
 阻断 `runtime_required`，不能把截图或源码推断伪装成运行时树。
 
 ```bash
@@ -144,7 +159,7 @@ python3 .agents/skills/i2h-spec/scripts/ios_runtime_capture_plan.py \
   --device-id "$CUIKE_SIMULATOR_ID"
 ```
 
-计划文件的每个状态必须提供 `page_id`、`state_id`，以及 `accessibility_command` 或已有的 `accessibility_json`。`accessibility_command` 负责在真实 Simulator 中执行确定性导航，并写入环境变量 `I2H_UI_JSON_OUT`。一个状态失败时包装器继续采集其余状态，最终退出码为 2，并在 `capture-plan-manifest.json` 中记录 `blocked_reason`。下游只能把 `status=captured` 的状态作为运行时证据，不能把 partial 汇总伪装成全量通过。
+计划文件的每个状态必须提供 `page_id`、`state_id`，以及 `accessibility_command` 或已有的 `accessibility_json`。`accessibility_command` 负责在真实 Simulator 中执行确定性导航，并写入环境变量 `I2H_UI_JSON_OUT`。随后的 `I2H_FOREGROUND_RECEIPT_OUT` 必须由同一 XCTest 探针在应用前台且页面就绪后写出，采集器只在 JSON 与 receipt 同时存在时截图。一个状态失败时包装器继续采集其余状态，最终退出码为 2，并在 `capture-plan-manifest.json` 中记录 `blocked_reason`。下游只能把 `status=captured` 的状态作为运行时证据，不能把 partial 汇总伪装成全量通过。
 
 批量包装器同时把同一份清单写入目标工程的
 `spec/execution/ios-runtime-capture/capture-plan-manifest.json`。即使
@@ -925,3 +940,9 @@ done
 
 **最后更新**: 2024-11-03  
 **版本**: v2.0（重写版，LLM 主导 + Python 辅助）
+
+## 可选源端真值与状态覆盖
+
+当计划选择高风险功能或 selected smoke 时，可用 `scripts/source_oracle.py` 校验源端预期值。Oracle 只验证当前源文件、行号和引用摘要，不能替代目标侧通过，也不要求为每个页面生成完整用例。未选择或未解析的 case 保留为 `unresolved`。
+
+`ui_obligations` 还会记录嵌入页面候选、条件分支、Sheet/Alert/ConfirmationDialog/Popover/ContextMenu、加载/空态/错误状态标记。它们是交付覆盖输入，不能直接当作运行时状态已观察。
