@@ -163,6 +163,14 @@ python3 .claude/skills/i2h-spec/scripts/ios_runtime_capture_plan.py \
 
 计划文件的每个状态必须提供 `page_id`、`state_id`，以及 `accessibility_command` 或已有的 `accessibility_json`。`accessibility_command` 负责在真实 Simulator 中执行确定性导航，并写入环境变量 `I2H_UI_JSON_OUT`。随后的 `I2H_FOREGROUND_RECEIPT_OUT` 必须由同一 XCTest 探针在应用前台且页面就绪后写出，采集器只在 JSON 与 receipt 同时存在时截图。一个状态失败时包装器继续采集其余状态，最终退出码为 2，并在 `capture-plan-manifest.json` 中记录 `blocked_reason`。下游只能把 `status=captured` 的状态作为运行时证据，不能把 partial 汇总伪装成全量通过。
 
+如果状态需要进入非默认页面，必须在同一状态写入 `navigation`。它包含 `steps` 和可选的
+`anchors`。step 支持 `tap`、`type_text`、`swipe_up`、`swipe_down`、`wait`，tap/type
+目标使用 `element` 加 `identifier`、`label` 或 `label_contains`。`element` 可为
+`button`、`tab_button`、`static_text`、`text_field`、`search_field`、`navigation_bar`
+或 `switch`，可用 `reveal_swipes` 逐步揭示 ScrollView 内控件。每个 anchor 也必须
+使用同样的 selector，并可声明 `hittable: true`。XCTest 探针会在写出 receipt 前执行
+这些步骤和 anchor 校验，缺少目标时该页面状态为 BLOCKED，禁止把默认首页截图绑定到目标页。
+
 批量包装器同时把同一份清单写入目标工程的
 `spec/execution/ios-runtime-capture/capture-plan-manifest.json`。即使
 `--output-root` 指向临时目录，i2h-execute 的 visual scope 也会自动发现该清单，

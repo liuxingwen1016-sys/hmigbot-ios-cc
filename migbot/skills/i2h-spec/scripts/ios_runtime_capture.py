@@ -311,6 +311,8 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
                 "TEST_RUNNER_I2H_UI_JSON_OUT": str(ui_json),
                 "TEST_RUNNER_I2H_PAGE_ID": args.page_id,
                 "TEST_RUNNER_I2H_STATE_ID": args.state_id,
+                "I2H_NAVIGATION_JSON": args.navigation_json or "",
+                "TEST_RUNNER_I2H_NAVIGATION_JSON": args.navigation_json or "",
                 "I2H_FOREGROUND_RECEIPT_OUT": str(foreground_receipt),
                 "TEST_RUNNER_I2H_FOREGROUND_RECEIPT_OUT": str(foreground_receipt),
                 "I2H_FOREGROUND_CAPTURE_ACK_OUT": str(foreground_ack),
@@ -479,6 +481,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--checkpoint-id", help="explicit XCTest/Hypium checkpoint identity")
     parser.add_argument("--accessibility-json")
     parser.add_argument("--accessibility-command")
+    parser.add_argument("--navigation-json", help="JSON navigation steps consumed by the temporary XCTest probe")
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--timeout", type=int, default=600)

@@ -34,6 +34,22 @@ class CapturePlanTests(unittest.TestCase):
             payload = capture_plan.load_plan(path)
         self.assertEqual(len(payload["states"]), 2)
 
+    def test_load_plan_rejects_malformed_navigation(self):
+        with self._temporary_plan(
+            {
+                "states": [
+                    {
+                        "page_id": "page_0003_BeanLibraryView",
+                        "state_id": "normal",
+                        "accessibility_command": "echo ok",
+                        "navigation": {"steps": [{"action": "tap", "target": {"element": "button"}}]},
+                    }
+                ]
+            }
+        ) as path:
+            with self.assertRaisesRegex(ValueError, "needs identifier"):
+                capture_plan.load_plan(path)
+
     def test_run_state_marks_nonzero_capture_blocked(self):
         original_run = capture_plan.subprocess.run
 
@@ -54,6 +70,40 @@ class CapturePlanTests(unittest.TestCase):
                 self.assertEqual(result["status"], "blocked")
                 self.assertEqual(result["exit_code"], 3)
                 self.assertTrue((root / "page_0001_HomeView" / "states" / "normal" / "capture-plan.log").is_file())
+        finally:
+            capture_plan.subprocess.run = original_run
+
+    def test_run_state_passes_navigation_json_to_capture(self):
+        original_run = capture_plan.subprocess.run
+        commands = []
+
+        def fake_run(command, *args, **kwargs):
+            commands.append(command)
+            return type("Completed", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        capture_plan.subprocess.run = fake_run
+        try:
+            with __import__("tempfile").TemporaryDirectory() as directory:
+                result = capture_plan.run_state(
+                    base_args=["--project-root", "."],
+                    state={
+                        "page_id": "page_0003_BeanLibraryView",
+                        "state_id": "normal",
+                        "accessibility_command": "echo ok",
+                        "navigation": {
+                            "steps": [{"action": "tap", "target": {"element": "tab_button", "label": "豆档案"}}],
+                            "anchors": [{"element": "navigation_bar", "label": "豆档案"}],
+                        },
+                    },
+                    output_root=Path(directory),
+                    skip_build=True,
+                    timeout=1,
+                )
+                self.assertEqual(result["status"], "captured")
+                self.assertEqual(len(commands), 1)
+                self.assertIn("--navigation-json", commands[0])
+                encoded = commands[0][commands[0].index("--navigation-json") + 1]
+                self.assertIn("豆档案", encoded)
         finally:
             capture_plan.subprocess.run = original_run
 

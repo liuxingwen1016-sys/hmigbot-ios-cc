@@ -49,6 +49,27 @@ def load_plan(path: Path) -> dict[str, Any]:
         seen.add(key)
         if not state.get("accessibility_command") and not state.get("accessibility_json"):
             raise ValueError(f"states[{index}] needs accessibility_command or accessibility_json")
+        navigation = state.get("navigation")
+        if navigation is not None:
+            if not isinstance(navigation, dict) or not isinstance(navigation.get("steps"), list):
+                raise ValueError(f"states[{index}].navigation.steps must be an array")
+            for step_index, step in enumerate(navigation["steps"]):
+                if not isinstance(step, dict) or step.get("action") not in {"tap", "type_text", "swipe_up", "swipe_down", "wait"}:
+                    raise ValueError(f"states[{index}].navigation.steps[{step_index}] has an invalid action")
+                if step.get("action") in {"tap", "type_text"}:
+                    target = step.get("target")
+                    if not isinstance(target, dict) or target.get("element") not in {"button", "tab_button", "static_text", "text_field", "search_field", "navigation_bar", "switch", "any"}:
+                        raise ValueError(f"states[{index}].navigation.steps[{step_index}] needs a valid target element")
+                    if not any(isinstance(target.get(key), str) and target.get(key) for key in ("identifier", "label", "label_contains")):
+                        raise ValueError(f"states[{index}].navigation.steps[{step_index}] needs identifier, label, or label_contains")
+            anchors = navigation.get("anchors", [])
+            if not isinstance(anchors, list):
+                raise ValueError(f"states[{index}].navigation.anchors must be an array")
+            for anchor_index, anchor in enumerate(anchors):
+                if not isinstance(anchor, dict) or anchor.get("element") not in {"button", "tab_button", "static_text", "text_field", "search_field", "navigation_bar", "switch", "any"}:
+                    raise ValueError(f"states[{index}].navigation.anchors[{anchor_index}] has an invalid element")
+                if not any(isinstance(anchor.get(key), str) and anchor.get(key) for key in ("identifier", "label", "label_contains")):
+                    raise ValueError(f"states[{index}].navigation.anchors[{anchor_index}] needs identifier, label, or label_contains")
     return payload
 
 
@@ -84,6 +105,9 @@ def run_state(
         command.extend(["--accessibility-command", str(accessibility_command)])
     else:
         command.extend(["--accessibility-json", str(state["accessibility_json"])])
+    navigation = state.get("navigation")
+    if navigation is not None:
+        command.extend(["--navigation-json", json.dumps(navigation, ensure_ascii=False, separators=(",", ":"))])
     started = time.monotonic()
     log_path = state_dir / "capture-plan.log"
     try:

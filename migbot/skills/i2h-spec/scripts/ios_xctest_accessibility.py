@@ -33,7 +33,8 @@ final class I2HAccessibilityCaptureTests: XCTestCase {
         app.launchArguments = ["--uitesting"]
         app.launch()
         let page = environment["TEST_RUNNER_I2H_PAGE_ID"] ?? environment["I2H_PAGE_ID"] ?? ""
-        guard app.waitForExistence(timeout: 10), navigate(app: app, page: page) else {
+        let navigationJSON = environment["TEST_RUNNER_I2H_NAVIGATION_JSON"] ?? environment["I2H_NAVIGATION_JSON"] ?? ""
+        guard app.waitForExistence(timeout: 10), navigate(app: app, page: page, navigationJSON: navigationJSON) else {
             throw NSError(domain: "i2h.accessibility", code: 1, userInfo: [NSLocalizedDescriptionKey: "target app/page did not become ready"])
         }
         let bundleID = environment["TEST_RUNNER_I2H_BUNDLE_ID"] ?? environment["I2H_BUNDLE_ID"] ?? ""
@@ -71,7 +72,16 @@ final class I2HAccessibilityCaptureTests: XCTestCase {
         }
     }
 
-    @MainActor private func navigate(app: XCUIApplication, page: String) -> Bool {
+    @MainActor private func navigate(app: XCUIApplication, page: String, navigationJSON: String) -> Bool {
+        if !navigationJSON.isEmpty,
+           let data = navigationJSON.data(using: .utf8),
+           let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let steps = payload["steps"] as? [[String: Any]] {
+            for step in steps {
+                guard perform(step: step, app: app) else { return false }
+            }
+            return waitForAnchor(payload["anchors"] as? [[String: Any]], app: app)
+        }
         switch page {
         case "page_0001_RootView", "page_0002_HomeView":
             return app.buttons["prepareRecipe"].waitForExistence(timeout: 10)
@@ -92,6 +102,52 @@ final class I2HAccessibilityCaptureTests: XCTestCase {
         default:
             return app.exists
         }
+    }
+
+    @MainActor private func perform(step: [String: Any], app: XCUIApplication) -> Bool {
+        let action = step["action"] as? String ?? ""
+        if action == "wait" { return true }
+        if action == "swipe_up" { app.swipeUp(); return true }
+        if action == "swipe_down" { app.swipeDown(); return true }
+        guard let target = step["target"] as? [String: Any], let element = find(target: target, app: app) else { return false }
+        if let swipes = step["reveal_swipes"] as? Int {
+            for _ in 0..<max(0, min(swipes, 5)) { if element.isHittable { break }; app.swipeUp() }
+        }
+        guard element.waitForExistence(timeout: 8) else { return false }
+        if action == "type_text" {
+            guard element.isHittable, let text = step["text"] as? String else { return false }
+            element.tap(); element.typeText(text); return true
+        }
+        guard action == "tap" else { return false }
+        element.tap(); return true
+    }
+
+    @MainActor private func waitForAnchor(_ anchors: [[String: Any]]?, app: XCUIApplication) -> Bool {
+        guard let anchors else { return true }
+        for anchor in anchors {
+            guard let element = find(target: anchor, app: app), element.waitForExistence(timeout: 8) else { return false }
+            if (anchor["hittable"] as? Bool) == true, !element.isHittable { return false }
+        }
+        return true
+    }
+
+    @MainActor private func find(target: [String: Any], app: XCUIApplication) -> XCUIElement? {
+        let kind = target["element"] as? String ?? "any"
+        let query: XCUIElementQuery
+        switch kind {
+        case "button": query = app.buttons
+        case "tab_button": query = app.tabBars.buttons
+        case "static_text": query = app.staticTexts
+        case "text_field": query = app.textFields
+        case "search_field": query = app.searchFields
+        case "navigation_bar": query = app.navigationBars
+        case "switch": query = app.switches
+        default: query = app.descendants(matching: .any)
+        }
+        if let identifier = target["identifier"] as? String { return query.matching(identifier: identifier).firstMatch }
+        if let label = target["label"] as? String { return query.matching(NSPredicate(format: "label == %@", label)).firstMatch }
+        if let label = target["label_contains"] as? String { return query.matching(NSPredicate(format: "label CONTAINS %@", label)).firstMatch }
+        return nil
     }
 }
 '''
