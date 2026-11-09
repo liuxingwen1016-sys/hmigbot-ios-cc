@@ -130,6 +130,28 @@ class VisualAcceptanceTests(unittest.TestCase):
         self.assertEqual(result['state_count'], 1)
         self.assertTrue(result['visual_blocked_reasons'])
 
+    def test_report_requires_target_page_state_binding(self):
+        result = report([{
+            'page_id': 'p', 'state_id': 's',
+            'source': {'page_id': 'p', 'state_id': 's', 'nodes': []},
+            'target': {'nodes': [{'id': 'home', 'role': 'text', 'label': 'Home'}]},
+        }])
+        self.assertEqual(result['status'], 'visual_blocked')
+        self.assertEqual(result['results'][0]['failure_findings'][0]['code'], 'TARGET_PAGE_STATE_UNBOUND')
+
+    def test_report_rejects_duplicate_target_evidence_for_different_pages(self):
+        target = {
+            'page_id': 'p1', 'state_id': 'normal',
+            'nodes': [{'id': 'title', 'role': 'text', 'label': 'Same', 'frame': [0, 0, 10, 10]}],
+        }
+        result = report([
+            {'source': {'page_id': 'p1', 'state_id': 'normal', 'nodes': target['nodes']}, 'target': target},
+            {'source': {'page_id': 'p2', 'state_id': 'normal', 'nodes': target['nodes']},
+             'target': {**target, 'page_id': 'p2'}},
+        ])
+        self.assertEqual(result['status'], 'visual_blocked')
+        self.assertEqual(result['results'][1]['failure_findings'][-1]['code'], 'DUPLICATE_TARGET_EVIDENCE')
+
 
 if __name__ == '__main__':
     unittest.main()
