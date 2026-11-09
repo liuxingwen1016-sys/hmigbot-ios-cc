@@ -51,6 +51,18 @@ HAP SHA256 因签名过程不同而不同，源代码树和资源树逐文件一
 
 `main_ui_optimize` 的 30 个 i2h 优化文件已应用到 `codex` 源侧，包含 UI 证据协议、风格触发、资源 delta、repair triage、视觉 rubric、stale bundle 拒绝和 stage-1 契约修复。随后重新运行 `codex-adapter/scripts/convert.py` 生成 Codex 产物。
 
-## 限制
+## 真实运行验收
 
-本次对比隔离的是 Claude→Codex 适配和构建/静态验证效果。CuikeFinal 的既有 HarmonyOS 实现被作为 Claude 参考基线复制到两个派生工程，以避免把“模型生成差异”和“插件形态差异”混在同一次实验中。未在本轮重新执行 Simulator 截图、真机安装、相机/OCR、通知、服务卡片或实况窗验证，因此这些功能仍沿用基线报告中的 PARTIAL/BLOCKED 状态。
+- Claude 基线报告记录的模型为 `deepseek-flash`，不使用 `deepseek-v4-pro`。
+- Codex 侧按 GPT-6.1、高思考深度配置执行适配与验收。
+- 本机没有连接 HarmonyOS 真机，使用 DevEco Mate 90 Pro 模拟器，HarmonyOS 7.0.0 / API 26，HDC `127.0.0.1:5555`。
+- 两个 HAP 均完成安装和启动，`aa start -b com.example.cuiketemp -a EntryAbility` 成功。
+- 实际运行了 Home、豆档案 Tab、豆详情导航，并导出 UI tree。
+- 归一化后 app subtree hash 一致。
+  - Home `51f14d466a9fca3265709b5b55bbfd7384f0c65d0d2da5f0213ce19b3f4d83e5`
+  - 豆档案 `2e60e016ab740cb71e5f7474134b3fa484acb19b62155811ffae2c5ebb3d1650`
+  - 豆详情 `d318886e52489941f74d1752e22161466cdfe7b689be5f713b016165d4cf6c76`
+
+## 尚未完成的流水线门禁
+
+这次真实运行验收不等于完整 spec→plan→execute→verify 通过。两套派生工程的 `stage5-status.json` 仍为 `BLOCKED`，`ui-delivery-gate-repaired.json` 仍为 `BLOCKED`。原因是本轮没有重新启动 Claude/Codex 模型 agent 生成新一轮 spec/plan/execute 产物，而是使用已经验证的 `CuikeFinal` 实现作为共同参考。真实安装和运行结果证明了产物可启动和关键导航可执行，但不能把它表述为两套 agent 独立完成了全流水线。
