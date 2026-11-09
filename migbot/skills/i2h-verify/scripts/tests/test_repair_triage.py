@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from repair_triage import repair_priority, triage
+from repair_triage import _rows, repair_priority, triage
 
 
 class RepairTriageTests(unittest.TestCase):
@@ -30,6 +30,10 @@ class RepairTriageTests(unittest.TestCase):
         )
         self.assertEqual(result["findings"][0]["impact"]["scope"], "associated")
         self.assertEqual(result["findings"][0]["impact"]["associated_plan_items"], ["page-1"])
+
+    def test_plan_items_projection_is_supported(self):
+        rows = _rows({"plan_items": {"page-1": {"page_ids": ["p1"]}}}, "plan")
+        self.assertEqual(rows, [{"id": "page-1", "page_ids": ["p1"]}])
 
 
 if __name__ == "__main__":

@@ -25,6 +25,13 @@ def _rows(value: Any, label: str) -> list[dict[str, Any]]:
     if isinstance(value, list):
         return [item for item in value if isinstance(item, dict)]
     if isinstance(value, dict):
+        plan_items = value.get("plan_items")
+        if isinstance(plan_items, dict):
+            return [
+                {"id": ident, **item}
+                for ident, item in plan_items.items()
+                if isinstance(item, dict)
+            ]
         for key in ("findings", "issues", "comparisons", "checks"):
             rows = value.get(key)
             if isinstance(rows, list):
