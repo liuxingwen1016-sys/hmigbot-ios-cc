@@ -21,6 +21,12 @@ class OutputContractPromptTests(unittest.TestCase):
         self.assertIn("不要用容易被 ArkUI 字体裁剪的单字符 `+`/`-`", prompt)
         self.assertIn("增加和减少会改变正确的值", prompt)
 
+    def test_converter_prompt_preserves_source_icon_assets(self):
+        prompt = (ROOT / "references/agent-prompts/1-converter.md").read_text(encoding="utf-8")
+        self.assertIn("图标和图片是 UI 事实", prompt)
+        self.assertIn("禁止把有源资源或线稿图标降级为 emoji", prompt)
+        self.assertIn("asset mapping", prompt)
+
     def test_skill_requires_output_contract_before_build(self):
         skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn("ui-delivery-approved.json", skill)
