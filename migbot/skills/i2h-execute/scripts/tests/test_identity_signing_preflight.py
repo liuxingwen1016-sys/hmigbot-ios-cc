@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 import sys
-sys.path.insert(0, '/tmp/identity-signing-preflight')
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import identity_signing_preflight as gate
 
 class Tests(unittest.TestCase):
@@ -39,6 +39,19 @@ class Tests(unittest.TestCase):
         finally:
             gate.shutil.which,gate.subprocess.run=old_which,old_run
         self.assertEqual(out['identity_status'],'PASS')
+        self.assertTrue(out['signed_install_allowed'])
+
+    def test_template_match_allows_diagnostic_signed_install_but_stays_pending(self):
+        td,root,profile=self.make_project('com.example.cuiketemp')
+        self.addCleanup(td.cleanup)
+        old_which,old_run=gate.shutil.which,gate.subprocess.run
+        gate.shutil.which=lambda _: '/usr/bin/security'
+        gate.subprocess.run=lambda *a,**k: type('R',(),{'returncode':0,'stdout':json.dumps({'bundle-info':{'bundle-name':'com.example.cuiketemp'}}),'stderr':''})()
+        try:
+            out=gate.evaluate(root,source_id='com.cuike.brew')
+        finally:
+            gate.shutil.which,gate.subprocess.run=old_which,old_run
+        self.assertEqual(out['identity_status'],'identity_signing_pending')
         self.assertTrue(out['signed_install_allowed'])
     def test_source_bundle_id_from_info_plist(self):
         td,root,profile=self.make_project()

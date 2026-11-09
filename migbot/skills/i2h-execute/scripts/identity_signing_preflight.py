@@ -113,12 +113,18 @@ def evaluate(
     if target_id and target_id.startswith("com.example."):
         issues.append("target bundleName is still a template example identity")
 
-    status = "PASS" if target_id and profile_id and target_id == profile_id and not target_id.startswith("com.example.") else "identity_signing_pending"
+    profile_matches_target = bool(target_id and profile_id and target_id == profile_id)
+    status = "PASS" if profile_matches_target and not target_id.startswith("com.example.") else "identity_signing_pending"
     return {
         "schema_version": SCHEMA_VERSION,
         "gate": "i2h-execute.identity-signing-preflight",
         "identity_status": status,
-        "signed_install_allowed": status == "PASS",
+        # A matching local profile can still produce a signed diagnostic build
+        # even when the name is a template or differs from iOS.  Keep the
+        # identity gate pending, but allow runtime UI/function evidence from
+        # that exact signed target.  The final verify gate must still fail the
+        # template identity until a production profile is provisioned.
+        "signed_install_allowed": profile_matches_target,
         "unsigned_compile_allowed": True,
         "source_bundle_id": source_id,
         "target_bundle_name": target_id,
