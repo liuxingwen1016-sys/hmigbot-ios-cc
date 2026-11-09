@@ -1603,3 +1603,8 @@ fi
 ## 可选资源增量协议
 
 `scripts/resource_delta.py` 提供 task-owned OpenHarmony 资源增量的初始化、提交和原子合并。它通过 preimage hash 和锁拒绝并发冲突，默认不替换 `sweep_resources.py`，只有明确声明资源 scope 的任务才可使用。
+### Stage 0.4 identity/signing preflight
+
+Before changing `AppScope/app.json5`, run `scripts/identity_signing_preflight.py`. It reads the source CFBundleIdentifier when `--source-root` is supplied, the target `bundleName`, and the signing profile's `bundle-info.bundle-name` via `security cms -D`. Write the result to `spec/execution/stage0-environment.json`.
+
+`identity_status=PASS` requires all available identities to match and the target bundle name to be non-template. When the local profile is still bound to a template bundle, keep the deployable template identity for unsigned compilation and report `identity_signing_pending`. Signed install and device verification are blocked until a matching profile is provisioned. Never change the target bundle name to the iOS identifier without updating the signing profile as one atomic operation.
