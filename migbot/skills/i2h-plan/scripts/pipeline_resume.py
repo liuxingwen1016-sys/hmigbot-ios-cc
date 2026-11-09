@@ -32,6 +32,7 @@ for _pipeline_dir in _PIPELINE_DIRS:
 
 from marker_contract import (  # type: ignore[import-not-found]
     STAGE_PATH_ALIASES,
+    file_sha256,
     normalize_hash,
     read_marker,
     resolve_stage,
@@ -41,6 +42,16 @@ import ui_state_ownership  # type: ignore[import-not-found]
 import ui_delivery  # type: ignore[import-not-found]
 
 STAGES = ("i2h-spec", "i2h-plan", "i2h-execute", "i2h-verify", "i2h-retrospect")
+
+# Plan owns these two handoff documents and may append decisions or normalize
+# the feature index after i2h-spec has written its marker.  Their mutation is
+# safe to acknowledge only after the content-addressed i2h-plan marker and
+# schema-2 delivery have both passed.  Any other spec artifact mutation keeps
+# the fail-closed i2h-spec resume behavior.
+_PLAN_HANDOFF_ARTIFACTS = frozenset({
+    "spec/baseline/feature-index.md",
+    "spec/decision-ledger.md",
+})
 
 
 def _read_json(path: Path) -> dict[str, Any] | None:
@@ -140,6 +151,26 @@ def _validate_marker_artifacts(root: Path, stage: str, marker: dict[str, Any]) -
         if not any("retrospect-report" in name and name.endswith(".md") for name in names):
             return ["marker_required_retrospect_report_missing"]
     return []
+
+
+def _spec_handoff_mismatches(root: Path) -> list[str]:
+    """Return spec marker artifacts changed by the completed plan handoff."""
+    marker_path = root / "spec/baseline/spec-complete.txt"
+    payload = _read_json(marker_path)
+    if not payload:
+        return []
+    mismatches: list[str] = []
+    for item in payload.get("artifacts", []):
+        if not isinstance(item, dict):
+            continue
+        relative = item.get("path")
+        expected = normalize_hash(item.get("sha256"))
+        if not isinstance(relative, str) or not expected:
+            continue
+        path = root / relative
+        if path.is_file() and normalize_hash(file_sha256(path)) != expected:
+            mismatches.append(relative)
+    return sorted(mismatches)
 
 
 def validate_delivery(root: Path, input_hash: str | None) -> dict[str, Any]:
@@ -310,6 +341,27 @@ def pipeline_status(root: str | Path, *, allow_legacy: bool = True) -> dict[str,
             checks["report"] = _report(root, stage)
         complete = all(bool(item.get("valid", item.get("complete", False))) for item in checks.values())
         stages.append({"stage": stage, "complete": complete, "checks": checks})
+
+    # i2h-plan legitimately appends decision-ledger entries and can normalize
+    # feature-index handoff text after the spec marker was written.  Once the
+    # plan marker and delivery contract pass, do not send /i2h-run back to the
+    # expensive LLM-driven spec stage for those two known handoff mutations.
+    # Preserve the mismatch as an auditable warning.  Source/spec mutations
+    # outside this allow-list remain fail-closed and still resume at i2h-spec.
+    spec_row, plan_row = stages[0], stages[1]
+    handoff_mismatches = _spec_handoff_mismatches(root)
+    if (
+        not spec_row["complete"]
+        and plan_row["complete"]
+        and handoff_mismatches
+        and set(handoff_mismatches) <= _PLAN_HANDOFF_ARTIFACTS
+        and set(spec_row["checks"]["marker"].get("errors", [])) <= {"artifact_hash_mismatch"}
+    ):
+        marker_check = spec_row["checks"]["marker"]
+        marker_check.setdefault("warnings", []).append("spec_handoff_artifact_changed_after_plan")
+        marker_check["handoff_mismatches"] = handoff_mismatches
+        marker_check["handoff_only"] = True
+        spec_row["complete"] = True
     resume = next((item["stage"] for item in stages if not item["complete"]), "complete")
     return {
         "schema_version": 1,

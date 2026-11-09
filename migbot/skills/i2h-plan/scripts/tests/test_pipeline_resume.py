@@ -86,6 +86,33 @@ class PipelineResumeTests(unittest.TestCase):
         self.assertEqual(result['resume_stage'], 'i2h-spec')
         self.assertIn('marker_content_hash_mismatch', result['stages'][0]['checks']['marker']['errors'])
 
+    def test_plan_handoff_mutations_do_not_regress_to_spec(self):
+        # i2h-plan appends decisions and may normalize feature-index after the
+        # i2h-spec marker was written.  Once the plan marker and delivery
+        # contract pass, resume must continue at execute while retaining an
+        # auditable warning about the changed handoff artifacts.
+        self.marker('spec/baseline/spec-complete.txt', 'i2h-spec', [
+            'spec/.i2h/resources-inventory.json',
+            'spec/baseline/feature-index.md',
+            'spec/decision-ledger.md',
+        ])
+        self.delivery()
+        self.marker('spec/baseline/plans/complete.txt', 'i2h-plan', ['spec/baseline/ui-delivery-approved.json'])
+        (self.root / 'spec/baseline/feature-index.md').write_text('plan normalized\n', encoding='utf-8')
+        (self.root / 'spec/decision-ledger.md').write_text('D-001 plan handoff\n', encoding='utf-8')
+
+        result = pipeline_resume.pipeline_status(self.root)
+        self.assertEqual(result['resume_stage'], 'i2h-execute', result)
+        spec = result['stages'][0]
+        self.assertTrue(spec['complete'])
+        marker = spec['checks']['marker']
+        self.assertTrue(marker['handoff_only'])
+        self.assertIn('spec_handoff_artifact_changed_after_plan', marker['warnings'])
+        self.assertEqual(set(marker['handoff_mismatches']), {
+            'spec/baseline/feature-index.md',
+            'spec/decision-ledger.md',
+        })
+
     def test_legacy_path_is_reported_but_schema2_marker_is_accepted_in_compat_mode(self):
         # A legacy *path* can be consumed when its marker is still
         # content-addressed.  Plain-text/schema-1 markers remain diagnostic
