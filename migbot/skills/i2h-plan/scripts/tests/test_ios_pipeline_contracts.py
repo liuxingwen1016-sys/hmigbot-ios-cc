@@ -104,6 +104,20 @@ class IOSPipelineContractTest(unittest.TestCase):
         self.assertEqual([row["kind"] for row in obligations["interactive_controls"]], ["picker", "toggle", "button"])
         self.assertTrue(obligations["has_form"])
 
+    def test_delivery_derives_immersive_safearea_from_source(self):
+        (self.root / "Views/FullScreenView.swift").write_text(
+            'import SwiftUI\nstruct FullScreenView: View {\n'
+            '  var body: some View { Color.black.ignoresSafeArea() }\n}\n',
+            encoding="utf-8",
+        )
+        output = self.root / "spec/.i2h/resources-inventory.json"
+        ui_evidence.run(str(self.root), str(output), str(self.root / "spec/baseline/res-index"))
+        inventory = ui_delivery.draft(self.root, self.root / "draft.json")
+        unit = next(item for item in inventory["units"] if item["component"] == "ios.FullScreenView")
+        self.assertTrue(unit["needs_immersive_safearea"])
+        self.assertEqual(unit["immersive_safearea"]["evidence"][0]["kind"], "ignoresSafeArea")
+        self.assertEqual(ui_delivery.validate(self.root, inventory)["status"], "validated")
+
     def test_delivery_draft_validates_and_ownership_is_explicit(self):
         output = self.root / "spec/.i2h/resources-inventory.json"
         ui_evidence.run(str(self.root), str(output), str(self.root / "spec/baseline/res-index"))

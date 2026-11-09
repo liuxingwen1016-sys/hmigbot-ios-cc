@@ -17,7 +17,15 @@ from pathlib import Path
 from typing import Any
 
 
-TOOL_VERSION = "i2h-ui-delivery/1.0"
+TOOL_VERSION = "i2h-ui-delivery/1.1"
+
+
+_IMMERSIVE_SOURCE_PATTERNS: tuple[tuple[str, str], ...] = (
+    ("ignoresSafeArea", r"\.ignoresSafeArea\s*\("),
+    ("safeAreaInset", r"\.safeAreaInset\s*\("),
+    ("statusBar", r"\.statusBar\s*\("),
+    ("fullScreenCover", r"\.fullScreenCover\s*\("),
+)
 
 
 def digest(value: bytes) -> str:
@@ -128,6 +136,41 @@ def _presentation_hints(source_root: Path, views: list[dict[str, Any]]) -> dict[
     return hints
 
 
+def _immersive_hint(source_root: Path, view: dict[str, Any], presentation: dict[str, Any]) -> dict[str, Any]:
+    """Derive a reviewable safe-area requirement from SwiftUI source.
+
+    i2h has no Android ``meta.json`` to reuse for iOS projects.  Keep the
+    decision conservative and source-backed so full-screen backgrounds,
+    safe-area modifiers and full-screen destinations cannot silently lose
+    their foreground inset contract during conversion.  A page with no
+    matching source evidence is explicitly marked ``false`` and remains
+    eligible for the normal routed-page shell.
+    """
+    source_file = str(view.get("file_path", ""))
+    path = (source_root / source_file).resolve()
+    try:
+        text = path.read_text(encoding="utf-8") if path.is_file() else ""
+    except (OSError, UnicodeDecodeError):
+        text = ""
+    evidence: list[dict[str, Any]] = []
+    for kind, pattern in _IMMERSIVE_SOURCE_PATTERNS:
+        match = re.search(pattern, text)
+        if match:
+            evidence.append({
+                "kind": kind,
+                "file": source_file,
+                "line": text.count("\n", 0, match.start()) + 1,
+            })
+    if presentation.get("source") == ".fullScreenCover":
+        evidence.append({"kind": "hosted_fullScreenCover", "file": presentation.get("host_source"), "line": presentation.get("source_line")})
+    required = bool(evidence)
+    return {
+        "required": required,
+        "evidence": evidence,
+        "policy": "source-backed-ios-safearea-v1",
+    }
+
+
 def views_from_evidence(root: Path) -> list[dict[str, Any]]:
     path = evidence_path(root)
     if path.is_file():
@@ -189,16 +232,32 @@ def draft(project_root: str | Path, out: str | Path) -> dict[str, Any]:
             "source": "navigation_or_tab",
             "harmony_mapping": "NavDestination",
         })
+        source_obligations = view.get("ui_obligations", {})
+        source_presentations = (
+            source_obligations.get("presentations", [])
+            if isinstance(source_obligations, dict)
+            else []
+        )
+        presentation_contract = {
+            "source": hint["source"],
+            "harmony_mapping": hint["harmony_mapping"],
+            **({"host_source": hint["host_source"], "source_line": hint["source_line"]} if hint.get("host_source") else {}),
+        }
+        if source_presentations:
+            # Keep the modifier facts next to the presentation mapping.  The
+            # same rows remain in source_obligations for compatibility, while
+            # this field lets execute gates validate the host file without
+            # reconstructing SwiftUI syntax from a prompt.
+            presentation_contract["source_obligations"] = source_presentations
+        immersive = _immersive_hint(source_root, view, hint)
         units.append({
             "unit_id": f"ios.{index:04d}.{slug}",
             "page_id": page_id,
             "component": component,
             "presentation_role": hint["presentation_role"],
-            "presentation": {
-                "source": hint["source"],
-                "harmony_mapping": hint["harmony_mapping"],
-                **({"host_source": hint["host_source"], "source_line": hint["source_line"]} if hint.get("host_source") else {}),
-            },
+            "presentation": presentation_contract,
+            "needs_immersive_safearea": immersive["required"],
+            "immersive_safearea": immersive,
             "required": True,
             "required_states": [{"state_id": "default", "arrival_mode": "preview", "responsibility": "content", "source_refs": [source_ref(source_root, source_file)]}],
             "source_refs": [source_ref(source_root, source_file)],
@@ -302,6 +361,16 @@ def validate(project_root: str | Path, inventory: dict[str, Any]) -> dict[str, A
                     errors.append({"code": "FULLSCREEN_MAPPING_MISMATCH", "unit_id": unit_id})
                 if source == "shared_component" and mapping != "embedded_builder":
                     errors.append({"code": "EMBEDDED_MAPPING_MISMATCH", "unit_id": unit_id})
+                modifier_rows = presentation.get("source_obligations", [])
+                if modifier_rows is not None and not isinstance(modifier_rows, list):
+                    errors.append({"code": "PRESENTATION_OBLIGATIONS_INVALID", "unit_id": unit_id})
+                for row in modifier_rows if isinstance(modifier_rows, list) else []:
+                    if not isinstance(row, dict):
+                        errors.append({"code": "PRESENTATION_OBLIGATION_INVALID", "unit_id": unit_id})
+                        continue
+                    kind = str(row.get("kind", ""))
+                    if kind not in {"sheet", "full_screen_cover", "alert", "confirmation_dialog", "popover", "context_menu"}:
+                        errors.append({"code": "PRESENTATION_KIND_INVALID", "unit_id": unit_id, "kind": kind})
         for ref in unit.get("source_refs", []):
             if not isinstance(ref, dict) or not ref.get("file"):
                 errors.append({"code": "SOURCE_REF_INVALID", "unit_id": unit_id})

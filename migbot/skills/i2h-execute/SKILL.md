@@ -1219,8 +1219,26 @@ python3 .claude/skills/i2h-execute/scripts/ui_obligation_gate.py \
 ```
 
 该门禁检查固定底部主动作没有落入 `Scroll`、Form Picker 没有被 chip 替代、toolbar
-search 没有退化成首屏内联输入框，以及 Chart 仍保留折线和数据点结构。失败时必须修复
-产物或保留具体 finding，不能把 prompt 中已声明的 source obligation 当成已实现。
+search 没有退化成首屏内联输入框、Chart 仍保留折线和数据点结构，且源码声明的
+`.sheet`/`.fullScreenCover` 已绑定到 `bindSheet`/`bindContentCover` 或完整的
+`presentation_fallback` 宿主标记。它也会拒绝以 `★`、`✓`、`→`、`+`、`−` 等
+Unicode/emoji 字符串替代源资源图标，除非文件带有 `symbol_fidelity: approved asset=...`
+映射证据。失败时必须修复产物或保留具体 finding，不能把 prompt 中已声明的 source
+obligation 当成已实现。
+
+如果批准的 iOS UI delivery unit 含有 `needs_immersive_safearea: true`，在写入
+Stage 5 marker 前还必须运行沉浸式安全区四层闭环门禁：
+
+```bash
+python3 .claude/skills/i2h-execute/scripts/immersive_safearea_gate.py \
+  --project-root . \
+  --output-json spec/execution/immersive-safearea-gate.json
+```
+
+门禁会调用 `arkts-structural-closure/scripts/check-fullscreen-immersive-safearea.sh`，
+并要求 L1 `setWindowLayoutFullScreen`、L2 根容器 `expandSafeArea`、L3 全屏页前景
+安全区响应全部有证据。缺少 receipt、receipt 与当前 delivery 不匹配或任一层失败时，
+必须保持 Stage 5 BLOCKED，不能通过手写 JSON 或迁移报告声明覆盖。
 
 创建 `spec/execution/stage5-complete.txt` 作为 **schema-2 JSON marker**。
 在 `spec/migration-report.md` 和

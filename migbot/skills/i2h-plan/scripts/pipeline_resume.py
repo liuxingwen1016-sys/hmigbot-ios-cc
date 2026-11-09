@@ -259,6 +259,53 @@ def validate_delivery(root: Path, input_hash: str | None) -> dict[str, Any]:
     return result
 
 
+def validate_immersive_gate(root: Path, inventory: dict[str, Any] | None) -> dict[str, Any]:
+    """Require a fresh L1/L2/L3 receipt when source evidence demands it."""
+    units = inventory.get("units", []) if isinstance(inventory, dict) else []
+    required = [
+        str(unit.get("unit_id"))
+        for unit in units
+        if isinstance(unit, dict) and unit.get("needs_immersive_safearea") is True
+    ]
+    path = root / "spec/execution/immersive-safearea-gate.json"
+    result: dict[str, Any] = {
+        "complete": not required,
+        "required_units": required,
+        "path": path.relative_to(root).as_posix(),
+        "errors": [],
+        "warnings": [],
+    }
+    if not required:
+        result["status"] = "NOT_REQUIRED"
+        return result
+    if not path.is_file():
+        result["status"] = "MISSING"
+        result["errors"].append("immersive_safearea_gate_missing")
+        result["complete"] = False
+        return result
+    receipt = _read_json(path)
+    if receipt is None:
+        result["status"] = "INVALID"
+        result["errors"].append("immersive_safearea_gate_invalid_json")
+        return result
+    result["receipt"] = receipt
+    result["status"] = receipt.get("status")
+    if receipt.get("status") != "PASS":
+        result["errors"].append("immersive_safearea_gate_not_pass")
+    receipt_units = sorted(str(item) for item in receipt.get("required_units", []))
+    if receipt_units != sorted(required):
+        result["errors"].append("immersive_safearea_gate_scope_stale")
+    layers = receipt.get("layers")
+    if not isinstance(layers, dict) or any(not isinstance(layers.get(layer), dict) or layers[layer].get("ok") is not True for layer in ("L1", "L2", "L3")):
+        result["errors"].append("immersive_safearea_gate_layers_incomplete")
+    inventory_path = _delivery_path(root)
+    expected_hash = file_sha256(inventory_path) if inventory_path and inventory_path.is_file() else None
+    if expected_hash and receipt.get("inventory_sha256") != expected_hash:
+        result["errors"].append("immersive_safearea_gate_inventory_stale")
+    result["complete"] = not result["errors"]
+    return result
+
+
 def _verify_report(root: Path) -> dict[str, Any]:
     result = {"complete": False, "path": None, "errors": [], "warnings": []}
     candidates = (root / "spec/verify-report.md", root / "spec/verify/verify-report.md", root / "spec/verify/report.md")
@@ -334,6 +381,7 @@ def pipeline_status(root: str | Path, *, allow_legacy: bool = True) -> dict[str,
             checks["report"] = _report(root, stage)
             delivery = _delivery_path(root)
             checks["ownership"] = _ownership_receipt(root, _read_json(delivery) if delivery else None)
+            checks["immersive_safearea"] = validate_immersive_gate(root, _read_json(delivery) if delivery else None)
         elif stage == "i2h-verify":
             # verify-report.md is the report itself, not a JSON marker.
             checks["report"] = _verify_report(root)

@@ -149,6 +149,28 @@ class PipelineResumeTests(unittest.TestCase):
         self.assertIn('schema2_delivery_ownership', result['errors'])
         self.assertEqual(result['ownership']['status'], 'FAIL')
 
+    def test_execute_requires_fresh_immersive_safearea_receipt(self):
+        self.delivery()
+        path = self.root / 'spec/baseline/ui-delivery-approved.json'
+        payload = json.loads(path.read_text(encoding='utf-8'))
+        payload['units'][0]['needs_immersive_safearea'] = True
+        path.write_text(json.dumps(payload), encoding='utf-8')
+        result = pipeline_resume.validate_immersive_gate(self.root, payload)
+        self.assertFalse(result['complete'])
+        self.assertIn('immersive_safearea_gate_missing', result['errors'])
+
+        receipt = self.root / 'spec/execution/immersive-safearea-gate.json'
+        receipt.parent.mkdir(parents=True, exist_ok=True)
+        import hashlib
+        receipt.write_text(json.dumps({
+            'status': 'PASS',
+            'required_units': ['home'],
+            'inventory_sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+            'layers': {layer: {'ok': True} for layer in ('L1', 'L2', 'L3')},
+        }), encoding='utf-8')
+        result = pipeline_resume.validate_immersive_gate(self.root, payload)
+        self.assertTrue(result['complete'], result)
+
     def test_delivery_allows_default_content_per_page(self):
         units = [
             {
