@@ -110,6 +110,17 @@ UIViewRepresentable 等复用视图写入 `components[]`，两者不能混作页
 key 由 source tree hash、tool version 和 references/templates hash 组成。页面或
 feature worker 必须先读取索引切片，禁止再次 Read 整个 Swift 项目。
 
+#### iOS 专属 UI 风格触发（按命中加载）
+
+在页面交付脚手架生成后，可对当前只读 iOS 源运行：
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT:-.claude}/skills/i2h-spec/scripts/ios_style_triggers.py" \
+  <IOS_SOURCE_ROOT> --output spec/ref/ios-style-triggers.json
+```
+
+该产物只记录源码锚点、现有 ArkUI Skill 建议、候选原生 API 和回退路径。它不会全局加载玻璃、Popover、Context Menu 等样式 Skill，也不会把 API 26 能力当成当前项目可用能力。Plan 只消费命中的 `suggested_skills`，无命中项保持不触发。
+
 页面分析使用 `pipeline_workers.run_bounded`，默认 4 个 worker，每批 3–5 页。每个
 worker 写入 `spec/.i2h/checkpoints/pages/` 下的独立 checkpoint 和临时目录，失败时只
 重试该 worker。主线程只做稳定排序、合并和门禁，不能因为单个模型请求异常退回整批
