@@ -665,7 +665,7 @@ export struct ${ui.component_name} {
 
 ### Step 3.4: 生成入口文件和配置
 
-`spec/baseline/ui-delivery-approved.json` 中每个 unit 的 `output.file` 与 `output.symbol` 是交付契约。生成器必须按该路径和符号落盘，不能用 `pages/Index.ets` 替代规格指定的根页面。模板若要求 `Index.ets` 作为 `EntryAbility` 入口，则 `Index.ets` 只负责导入并转发 `RootView`，实际根组件仍位于 `pages/RootView.ets`。在构建前检查 approved units 的 output 文件和符号均存在，路径不一致时阻断执行。
+`spec/baseline/ui-delivery-approved.json` 中每个 unit 的 `output.file` 与 `output.symbol` 是交付契约。生成器必须按该路径和符号落盘，不能用 `pages/Index.ets` 替代规格指定的根页面。模板若要求 `Index.ets` 作为 `EntryAbility` 入口，则实际根组件仍位于 `pages/RootView.ets`。`Index.ets` 可以只转发 `RootView`，也可以承载全工程唯一的 `WindowModel`/avoid-area 安全区宿主，但不得把安全区测量、前景 inset 或模态状态拆成多个互相覆盖的入口。沉浸式工程禁止为了满足“纯转发”而丢失 Layer 3 前景避让。在构建前检查 approved units 的 output 文件和符号均存在，路径不一致时阻断执行。
 
 ```typescript
 // 生成 Index.ets

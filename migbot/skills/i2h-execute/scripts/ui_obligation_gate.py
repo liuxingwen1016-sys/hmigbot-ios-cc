@@ -160,6 +160,98 @@ def _check_presentation_fidelity(
     return errors
 
 
+def _check_presentation_lifecycle(
+    source: str,
+    unit: dict[str, Any],
+    relative: str,
+    generated_sources=None,
+) -> list[dict[str, str]]:
+    """Reject eager sheet-to-cover transitions that ArkUI can drop."""
+    rows = _presentation_rows(unit)
+    kinds = {str(row.get("kind", "")) for row in rows}
+    if not {"sheet", "full_screen_cover"}.issubset(kinds):
+        return []
+    combined = "\n".join([source, *(generated_sources or [])])
+    if not re.search(r"\bonDisappear\s*[:=(]|\bonDismiss\b", combined):
+        return [{
+            "code": "presentation_transition_dismissal_missing",
+            "unit_id": str(unit.get("unit_id", "")),
+            "detail": f"{relative}: sheet→full-screen transition requires an explicit post-dismiss callback",
+        }]
+    eager = re.search(
+        r"(?:close(?:Recipe|Sheet|Modal)|dismiss(?:Recipe|Sheet|Modal))\s*\([^)]*\)\s*(?::\s*[\w<>,\[\] |]+)?\s*\{(?P<body>.*?)\}",
+        combined,
+        flags=re.DOTALL,
+    )
+    if eager and re.search(r"\b(?:showBrew|showCover|showContentCover|fullScreen)\s*=\s*true\b", eager.group("body")):
+        return [{
+            "code": "presentation_transition_eager",
+            "unit_id": str(unit.get("unit_id", "")),
+            "detail": f"{relative}: close handler opens full-screen content before sheet dismissal; move it to the host onDisappear callback",
+        }]
+    return []
+
+
+def _check_foreground_safearea(
+    source: str,
+    unit: dict[str, Any],
+    relative: str,
+    generated_sources=None,
+) -> list[dict[str, str]]:
+    """Require page-level insets when the root deliberately expands edge-to-edge."""
+    combined = "\n".join([source, *(generated_sources or [])])
+    if not re.search(r"\.expandSafeArea\s*\(", combined):
+        return []
+    top_bar_labels = ("偏好设置", "添加咖啡豆", "豆档案", "风味手记", "冲煮台")
+    if not any(label in source for label in top_bar_labels):
+        return []
+    if re.search(r"safeAreaPadding|windowTopPadding|WindowModel|ImmersiveScaffold", source):
+        return []
+    return [{
+        "code": "foreground_safearea_missing",
+        "unit_id": str(unit.get("unit_id", "")),
+        "detail": f"{relative}: root expands into system bars but this interactive top bar has no page-level safe-area inset",
+    }]
+
+
+def _style_trigger_ids(root: Path) -> set[str]:
+    path = root / "spec/ref/ios-style-triggers.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return set()
+    triggers = data.get("triggers", []) if isinstance(data, dict) else []
+    return {str(item.get("trigger_id")) for item in triggers if isinstance(item, dict) and item.get("trigger_id")}
+
+
+def _check_style_fidelity(root: Path, generated_sources: list[str]) -> list[dict[str, str]]:
+    """Keep high-signal iOS geometry and floating chrome from degrading silently."""
+    trigger_ids = _style_trigger_ids(root)
+    errors: list[dict[str, str]] = []
+    if "floating_tabbar" in trigger_ids:
+        tab_hosts = [source for source in generated_sources if re.search(r"\bTabs\s*\(", source)]
+        has_floating_host = any(
+            re.search(r"\b(?:borderRadius|shadow)\s*\(", source)
+            and re.search(r"\b(?:position|offset|floating|customTab|tabBar)\b", source)
+            for source in tab_hosts
+        )
+        if tab_hosts and not has_floating_host:
+            errors.append({
+                "code": "floating_tabbar_native_only",
+                "unit_id": "style.floating_tabbar",
+                "detail": "source floating TabView requires a floating/custom tab host with radius/shadow geometry",
+            })
+    if "custom_shape_geometry" in trigger_ids:
+        bag_hosts = [source for source in generated_sources if re.search(r"\b(?:BeanBag|BagShape|bagWidth|bagHeight)\b", source)]
+        if bag_hosts and not any(re.search(r"\b(?:Path|Canvas|Shape|drawPath|bezier)\b", source) for source in bag_hosts):
+            errors.append({
+                "code": "custom_shape_geometry_missing",
+                "unit_id": "style.custom_shape_geometry",
+                "detail": "source custom Shape/Path must remain a target Path/Canvas/Shape, not a rounded rectangle placeholder",
+            })
+    return errors
+
+
 def _check_symbol_fidelity(source: str, unit: dict[str, Any], relative: str) -> list[dict[str, str]]:
     """Reject isolated Unicode/emoji glyphs used as visual icon substitutes."""
     if _SYMBOL_FIDELITY_MARKER.search(source):
@@ -259,6 +351,8 @@ def _check_unit(root: Path, unit: dict[str, Any], generated_sources=None) -> lis
         if chart.get("height") is not None and not _contains_numeric_literal(source, chart["height"]):
             errors.append({"code": "chart_height_missing", "unit_id": unit_id, "detail": str(chart["height"])})
     errors.extend(_check_presentation_fidelity(source, unit, relative, generated_sources))
+    errors.extend(_check_presentation_lifecycle(source, unit, relative, generated_sources))
+    errors.extend(_check_foreground_safearea(source, unit, relative, generated_sources))
     errors.extend(_check_symbol_fidelity(source, unit, relative))
     return errors
 
@@ -298,6 +392,7 @@ def evaluate(root: Path | str, inventory: Path | str) -> dict[str, Any]:
     for unit in units:
         if isinstance(unit, dict):
             errors.extend(_check_unit(root, unit, generated_sources))
+    errors.extend(_check_style_fidelity(root, generated_sources))
     return {
         "schema_version": 1,
         "gate": "i2h-execute.ui-obligations",

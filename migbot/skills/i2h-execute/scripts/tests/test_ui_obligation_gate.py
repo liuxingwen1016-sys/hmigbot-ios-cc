@@ -101,6 +101,46 @@ class UiObligationGateTests(unittest.TestCase):
         result = self.run_gate("Column() { Text('Scan') }.bindContentCover(this.showScan)", obligations)
         self.assertEqual(result["status"], "PASS")
 
+    def test_sheet_to_cover_transition_cannot_open_cover_from_close_handler(self):
+        obligations = {
+            "presentations": [
+                {"kind": "sheet", "source_pattern": ".sheet"},
+                {"kind": "full_screen_cover", "source_pattern": ".fullScreenCover"},
+            ]
+        }
+        source = (
+            "Column() { Text('Root') }"
+            ".bindSheet(this.showRecipe, this.recipeSheet(), { onDisappear: () => {} })"
+            ".bindContentCover(this.showBrew, this.brewCover())"
+        )
+        eager_router = "closeRecipe() { this.recipe = null; this.showBrew = true; }"
+        result = self.run_gate(source + eager_router, obligations)
+        self.assertEqual(result["status"], "FAIL")
+        self.assertIn("presentation_transition_eager", {row["code"] for row in result["errors"]})
+
+        deferred_router = "closeRecipe() { this.recipe = null; }"
+        result = self.run_gate(source + deferred_router, obligations)
+        self.assertEqual(result["status"], "PASS")
+
+    def test_expanded_root_requires_foreground_top_bar_inset(self):
+        obligations = {}
+        bad = (
+            "Column() { Row() { Text('萃刻'); Text('偏好设置').onClick(() => {}) }"
+            ".padding({ top: 10 }) }"
+            ".expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP])"
+        )
+        result = self.run_gate(bad, obligations)
+        self.assertEqual(result["status"], "FAIL")
+        self.assertIn("foreground_safearea_missing", {row["code"] for row in result["errors"]})
+
+        good = (
+            "Column() { Row() { Text('萃刻'); Text('偏好设置').onClick(() => {}) }"
+            ".safeAreaPadding({ top: 24 }) }"
+            ".expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP])"
+        )
+        result = self.run_gate(good, obligations)
+        self.assertEqual(result["status"], "PASS")
+
     def test_hosted_presentation_can_use_centralized_binding_file(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -129,6 +169,30 @@ class UiObligationGateTests(unittest.TestCase):
         self.assertEqual(result["status"], "FAIL")
         result = self.run_gate("// symbol_fidelity: approved asset=app.media.plus\nText('+')", {})
         self.assertEqual(result["status"], "PASS")
+
+    def test_style_triggers_reject_native_only_tab_and_rounded_bag(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            output = root / "entry/src/main/ets/pages/RootView.ets"
+            output.parent.mkdir(parents=True)
+            output.write_text("Tabs() { TabContent() { BeanBag() } }", encoding="utf-8")
+            trigger_path = root / "spec/ref/ios-style-triggers.json"
+            trigger_path.parent.mkdir(parents=True)
+            trigger_path.write_text(json.dumps({"triggers": [
+                {"trigger_id": "floating_tabbar"},
+                {"trigger_id": "custom_shape_geometry"},
+            ]}), encoding="utf-8")
+            inventory = root / "spec/baseline/ui-delivery-approved.json"
+            inventory.parent.mkdir(parents=True)
+            inventory.write_text(json.dumps({"units": [{
+                "unit_id": "root",
+                "output": {"file": "entry/src/main/ets/pages/RootView.ets"},
+                "source_obligations": {},
+            }]}), encoding="utf-8")
+            result = evaluate(root, inventory)
+            codes = {row["code"] for row in result["errors"]}
+            self.assertIn("floating_tabbar_native_only", codes)
+            self.assertIn("custom_shape_geometry_missing", codes)
 
 
 if __name__ == "__main__":
