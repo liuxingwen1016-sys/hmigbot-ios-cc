@@ -194,6 +194,44 @@ class UiObligationGateTests(unittest.TestCase):
             self.assertIn("floating_tabbar_native_only", codes)
             self.assertIn("custom_shape_geometry_missing", codes)
 
+    def test_runtime_state_and_database_contracts_are_fail_closed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            output = root / "entry/src/main/ets/pages/RootView.ets"
+            output.parent.mkdir(parents=True)
+            output.write_text(
+                """@ComponentV2 export struct RootView {
+  private router: AppRouter = AppRouter.shared;
+  build() { Stack() {}.bindSheet(this.router.recipe !== null, this.recipeSheet()) }
+}""",
+                encoding="utf-8",
+            )
+            database = root / "entry/src/main/ets/database/DbHelper.ets"
+            database.parent.mkdir(parents=True)
+            database.write_text(
+                """import { relationalStore } from '@kit.ArkData';
+async count(table: string): Promise<number> {
+  const resultSet = await store.query(predicates, ['id']);
+  return resultSet.rowCount;
+}
+await store.executeSql('CREATE TABLE IF NOT EXISTS library_metadata (key TEXT PRIMARY KEY)');
+""",
+                encoding="utf-8",
+            )
+            inventory = root / "spec/baseline/ui-delivery-approved.json"
+            inventory.parent.mkdir(parents=True)
+            inventory.write_text(json.dumps({"units": [{
+                "unit_id": "root",
+                "output": {"file": "entry/src/main/ets/pages/RootView.ets"},
+                "source_obligations": {},
+            }]}), encoding="utf-8")
+            result = evaluate(root, inventory)
+            codes = {row["code"] for row in result["errors"]}
+            self.assertIn("observable_state_owner_missing", codes)
+            self.assertIn("presentation_state_derived_binding", codes)
+            self.assertIn("database_count_assumes_id", codes)
+            self.assertIn("database_migration_missing", codes)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1226,6 +1226,14 @@ Unicode/emoji 字符串替代源资源图标，除非文件带有 `symbol_fideli
 映射证据。失败时必须修复产物或保留具体 finding，不能把 prompt 中已声明的 source
 obligation 当成已实现。
 
+同一 UI 事实门禁还会扫描全局路由所有权与关系型数据库契约。`RootView` 不能把
+`@ObservedV2` 路由单例降级成未装饰的 `private router`，模态绑定不能直接使用
+`this.router.foo !== null` 等派生表达式；数据库不能把通用 `count(table)` 写死为
+`id` 列，也不能只有 `CREATE TABLE IF NOT EXISTS` 而没有升级迁移。出现
+`observable_state_owner_missing`、`presentation_state_derived_binding`、
+`database_count_assumes_id` 或 `database_migration_missing` 时，Stage 5 必须保持
+BLOCKED，直到生成代码和真实冷启动/覆盖升级路径都有对应修复证据。
+
 如果批准的 iOS UI delivery unit 含有 `needs_immersive_safearea: true`，在写入
 Stage 5 marker 前还必须运行沉浸式安全区四层闭环门禁：
 

@@ -252,6 +252,45 @@ def _check_style_fidelity(root: Path, generated_sources: list[str]) -> list[dict
     return errors
 
 
+def _check_state_and_persistence_contract(generated_sources: list[str]) -> list[dict[str, str]]:
+    """Catch two cross-platform runtime traps before a HAP is accepted."""
+    errors: list[dict[str, str]] = []
+    root_hosts = [source for source in generated_sources if re.search(r"\b(?:struct|class)\s+RootView\b", source)]
+    for source in root_hosts:
+        if re.search(r"\bprivate\s+(?:readonly\s+)?router\s*:\s*\w+", source) and not re.search(
+            r"@(?:Local|State|ObjectLink|Provide|Consume)\s+router\b", source
+        ):
+            errors.append({
+                "code": "observable_state_owner_missing",
+                "unit_id": "runtime.RootView",
+                "detail": "RootView router state must use an ArkUI observation decorator so route changes invalidate the host",
+            })
+        for match in re.finditer(r"\.bind(?:Sheet|ContentCover)\(\s*(this\.router\.[^,)]*)", source):
+            errors.append({
+                "code": "presentation_state_derived_binding",
+                "unit_id": "runtime.RootView",
+                "detail": f"modal binding uses derived router expression {match.group(1)!r}; bind an observable local/link state instead",
+            })
+    database_sources = [
+        source for source in generated_sources
+        if "relationalStore" in source and "CREATE TABLE IF NOT EXISTS" in source
+    ]
+    for source in database_sources:
+        if re.search(r"async\s+count\s*\([^)]*table[^)]*\).*?query\([^\n]*\[\s*['\"]id['\"]\s*\]", source, flags=re.DOTALL):
+            errors.append({
+                "code": "database_count_assumes_id",
+                "unit_id": "runtime.database",
+                "detail": "generic table count queries a hard-coded id column; metadata tables may use key or another primary key",
+            })
+        if not re.search(r"ALTER\s+TABLE|onUpgrade|\bmigrat(?:e|ion)\b|user_version", source, flags=re.IGNORECASE):
+            errors.append({
+                "code": "database_migration_missing",
+                "unit_id": "runtime.database",
+                "detail": "relationalStore schema is created but no upgrade/migration path is declared",
+            })
+    return errors
+
+
 def _check_symbol_fidelity(source: str, unit: dict[str, Any], relative: str) -> list[dict[str, str]]:
     """Reject isolated Unicode/emoji glyphs used as visual icon substitutes."""
     if _SYMBOL_FIDELITY_MARKER.search(source):
@@ -393,6 +432,7 @@ def evaluate(root: Path | str, inventory: Path | str) -> dict[str, Any]:
         if isinstance(unit, dict):
             errors.extend(_check_unit(root, unit, generated_sources))
     errors.extend(_check_style_fidelity(root, generated_sources))
+    errors.extend(_check_state_and_persistence_contract(generated_sources))
     return {
         "schema_version": 1,
         "gate": "i2h-execute.ui-obligations",

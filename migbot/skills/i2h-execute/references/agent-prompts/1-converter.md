@@ -94,6 +94,8 @@ Read: <ios_file> 的 imports
    - 标记由持久化数据、异步任务或计时器驱动的字段，以及页面在写入完成后必须立即反映的派生状态。
    - 记录页面是否位于 `Navigation`、`NavDestination`、Tab 或其他可缓存的路由容器内。路由容器中的页面不能只依赖首次构造时的快照。
    - 周期任务必须幂等。通知、提醒、服务卡片或后台同步在每秒 tick 中不得重复 cancel/publish；以业务状态键（例如 `beanID + endAt + preference`）缓存最近一次调度，只有键变化、权限变化或显式取消时才调用系统 API。运行时探针连续观察 10 秒时，日志中不得出现每秒重复的 `Read result failed`/重复发布错误。
+   - 全局路由、模态状态和持久化仓库必须是 ArkUI 可观察所有者。`@ObservedV2`/`@Trace` 单例不能只以 `private router` 或 `private store` 字段挂在 `RootView` 上，根宿主要用 `@Local`/`@ObjectLink`/等价观察装饰器持有它们。`bindSheet`/`bindContentCover` 的首个 state 参数不能是 `this.router.foo !== null` 这类派生表达式，必须绑定可观察的本地/link 状态，并在关闭回调中双向回写。
+   - 关系型数据库必须同时覆盖首装和升级。`CREATE TABLE IF NOT EXISTS` 不能替代 schema migration。为新增列、旧表结构和 `schema_version` 提供幂等升级路径（如 `ALTER TABLE ... ADD COLUMN` 前的列探测或版本迁移），并让通用 `count(table)` 使用表实际主键或 `COUNT(*)`，禁止假定所有表都有 `id` 列。至少验证覆盖升级后冷启动、二次冷启动和已有数据读取。
 
 ### Step 2: 读取运行时快照（如有）
 
