@@ -15,6 +15,19 @@ from pathlib import Path
 from typing import Any
 
 
+_SYMBOL_SUBSTITUTES = frozenset("★☆✓→+−☼◔↗")
+_SYMBOL_FIDELITY_MARKER = re.compile(r"symbol_fidelity\s*:\s*approved\b[^\n]*\basset\s*=", re.IGNORECASE)
+_PRESENTATION_FALLBACK_KEYS = (
+    "owner",
+    "state",
+    "scrim",
+    "corner",
+    "detent",
+    "dismissal",
+    "safe_area",
+)
+
+
 def _read(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -82,12 +95,197 @@ def _contains_numeric_literal(source: str, expected: Any) -> bool:
     return False
 
 
-def _check_unit(root: Path, unit: dict[str, Any]) -> list[dict[str, str]]:
+def _presentation_rows(unit: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return source modifiers owned by this generated host unit.
+
+    A destination unit sourced from ``.sheet { DestinationView() }`` is not
+    itself the owner of the modal binding.  The host declaration's
+    ``source_obligations.presentations`` rows are therefore the authoritative
+    rows for this gate.
+    """
+    obligations = unit.get("source_obligations") or {}
+    rows = obligations.get("presentations", []) if isinstance(obligations, dict) else []
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def _has_presentation_fallback(source: str) -> bool:
+    """Check the explicit, reviewable custom-overlay contract.
+
+    Native ``bindSheet``/``bindContentCover`` is preferred.  A custom overlay
+    is accepted only when one bounded marker declares the owner, state,
+    scrim, corner/detent geometry, dismissal path and safe-area responsibility.
+    This prevents an arbitrary ``pageKey`` overlay from silently replacing a
+    source presentation while keeping valid API-compatible fallbacks possible.
+    """
+    marker = re.search(r"presentation_fallback\s*[:=]", source, flags=re.IGNORECASE)
+    if not marker:
+        return False
+    window = source[marker.start(): marker.start() + 1200]
+    return all(re.search(rf"\b{re.escape(key)}\s*[:=]", window, flags=re.IGNORECASE) for key in _PRESENTATION_FALLBACK_KEYS)
+
+
+def _check_presentation_fidelity(
+    source: str,
+    unit: dict[str, Any],
+    relative: str,
+    generated_sources=None,
+) -> list[dict[str, str]]:
+    errors: list[dict[str, str]] = []
+    unit_id = str(unit.get("unit_id", ""))
+    for row in _presentation_rows(unit):
+        kind = str(row.get("kind", ""))
+        if kind not in {"sheet", "full_screen_cover"}:
+            continue
+        binding = "bindSheet" if kind == "sheet" else "bindContentCover"
+        if re.search(rf"\b{binding}\s*(?:<|\(|=)", source):
+            continue
+        if _has_presentation_fallback(source):
+            continue
+        # A routed root often delegates modal ownership to Index/RootHost
+        # instead of the page file named by the source declaration.  Accept a
+        # single centralized binding or complete fallback marker in the
+        # generated surface, while still failing when the project has no
+        # implementation for the declared presentation kind.
+        if generated_sources and any(
+            re.search(rf"\b{binding}\s*(?:<|\(|=)", candidate)
+            or _has_presentation_fallback(candidate)
+            for candidate in generated_sources
+        ):
+            continue
+        errors.append({
+            "code": "presentation_binding_missing",
+            "unit_id": unit_id,
+            "detail": f"{relative}: expected {binding} or a complete presentation_fallback marker",
+        })
+    return errors
+
+
+def _check_presentation_lifecycle(
+    source: str,
+    unit: dict[str, Any],
+    relative: str,
+    generated_sources=None,
+) -> list[dict[str, str]]:
+    """Reject eager sheet-to-cover transitions that ArkUI can drop."""
+    rows = _presentation_rows(unit)
+    kinds = {str(row.get("kind", "")) for row in rows}
+    if not {"sheet", "full_screen_cover"}.issubset(kinds):
+        return []
+    combined = "\n".join([source, *(generated_sources or [])])
+    if not re.search(r"\bonDisappear\s*[:=(]|\bonDismiss\b", combined):
+        return [{
+            "code": "presentation_transition_dismissal_missing",
+            "unit_id": str(unit.get("unit_id", "")),
+            "detail": f"{relative}: sheet→full-screen transition requires an explicit post-dismiss callback",
+        }]
+    eager = re.search(
+        r"(?:close(?:Recipe|Sheet|Modal)|dismiss(?:Recipe|Sheet|Modal))\s*\([^)]*\)\s*(?::\s*[\w<>,\[\] |]+)?\s*\{(?P<body>.*?)\}",
+        combined,
+        flags=re.DOTALL,
+    )
+    if eager and re.search(r"\b(?:showBrew|showCover|showContentCover|fullScreen)\s*=\s*true\b", eager.group("body")):
+        return [{
+            "code": "presentation_transition_eager",
+            "unit_id": str(unit.get("unit_id", "")),
+            "detail": f"{relative}: close handler opens full-screen content before sheet dismissal; move it to the host onDisappear callback",
+        }]
+    return []
+
+
+def _check_foreground_safearea(
+    source: str,
+    unit: dict[str, Any],
+    relative: str,
+    generated_sources=None,
+) -> list[dict[str, str]]:
+    """Require page-level insets when the root deliberately expands edge-to-edge."""
+    combined = "\n".join([source, *(generated_sources or [])])
+    if not re.search(r"\.expandSafeArea\s*\(", combined):
+        return []
+    top_bar_labels = ("偏好设置", "添加咖啡豆", "豆档案", "风味手记", "冲煮台")
+    if not any(label in source for label in top_bar_labels):
+        return []
+    if re.search(r"safeAreaPadding|windowTopPadding|WindowModel|ImmersiveScaffold", source):
+        return []
+    return [{
+        "code": "foreground_safearea_missing",
+        "unit_id": str(unit.get("unit_id", "")),
+        "detail": f"{relative}: root expands into system bars but this interactive top bar has no page-level safe-area inset",
+    }]
+
+
+def _style_trigger_ids(root: Path) -> set[str]:
+    path = root / "spec/ref/ios-style-triggers.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return set()
+    triggers = data.get("triggers", []) if isinstance(data, dict) else []
+    return {str(item.get("trigger_id")) for item in triggers if isinstance(item, dict) and item.get("trigger_id")}
+
+
+def _check_style_fidelity(root: Path, generated_sources: list[str]) -> list[dict[str, str]]:
+    """Keep high-signal iOS geometry and floating chrome from degrading silently."""
+    trigger_ids = _style_trigger_ids(root)
+    errors: list[dict[str, str]] = []
+    if "floating_tabbar" in trigger_ids:
+        tab_hosts = [source for source in generated_sources if re.search(r"\bTabs\s*\(", source)]
+        has_floating_host = any(
+            re.search(r"\b(?:borderRadius|shadow)\s*\(", source)
+            and re.search(r"\b(?:position|offset|floating|customTab|tabBar)\b", source)
+            for source in tab_hosts
+        )
+        if tab_hosts and not has_floating_host:
+            errors.append({
+                "code": "floating_tabbar_native_only",
+                "unit_id": "style.floating_tabbar",
+                "detail": "source floating TabView requires a floating/custom tab host with radius/shadow geometry",
+            })
+    if "custom_shape_geometry" in trigger_ids:
+        bag_hosts = [source for source in generated_sources if re.search(r"\b(?:BeanBag|BagShape|bagWidth|bagHeight)\b", source)]
+        if bag_hosts and not any(re.search(r"\b(?:Path|Canvas|Shape|drawPath|bezier)\b", source) for source in bag_hosts):
+            errors.append({
+                "code": "custom_shape_geometry_missing",
+                "unit_id": "style.custom_shape_geometry",
+                "detail": "source custom Shape/Path must remain a target Path/Canvas/Shape, not a rounded rectangle placeholder",
+            })
+    return errors
+
+
+def _check_symbol_fidelity(source: str, unit: dict[str, Any], relative: str) -> list[dict[str, str]]:
+    """Reject isolated Unicode/emoji glyphs used as visual icon substitutes."""
+    if _SYMBOL_FIDELITY_MARKER.search(source):
+        return []
+    errors: list[dict[str, str]] = []
+    unit_id = str(unit.get("unit_id", ""))
+    # Restrict detection to string literals.  This avoids treating arithmetic
+    # plus/minus or operators in normal ArkTS expressions as visual glyphs.
+    for match in re.finditer(r"(['\"])(?P<value>(?:\\.|(?!\1).)*)\1", source, flags=re.DOTALL):
+        value = match.group("value")
+        hits = [symbol for symbol in _SYMBOL_SUBSTITUTES if symbol in value]
+        # '+' and '−' are common in ordinary copy, so only reject them when
+        # they are the whole literal.  The other glyphs are icon-shaped and
+        # are rejected whenever they appear in a literal.
+        hits = [symbol for symbol in hits if symbol not in {"+", "−"} or value.strip() == symbol]
+        if not hits:
+            continue
+        for symbol in sorted(set(hits)):
+            errors.append({
+                "code": "unicode_symbol_substitute",
+                "unit_id": unit_id,
+                "detail": f"{relative}: literal {symbol!r} requires a mapped asset/SF Symbol or symbol_fidelity approval",
+            })
+    return errors
+
+
+def _check_unit(root: Path, unit: dict[str, Any], generated_sources=None) -> list[dict[str, str]]:
     output = unit.get("output") or {}
     relative = output.get("file")
     obligations = unit.get("source_obligations") or {}
-    if not isinstance(relative, str) or not obligations:
+    if not isinstance(relative, str):
         return []
+    if not isinstance(obligations, dict):
+        obligations = {}
     path = root / relative
     if not path.is_file():
         return [{"code": "output_missing", "unit_id": unit.get("unit_id", ""), "detail": relative}]
@@ -131,6 +329,16 @@ def _check_unit(root: Path, unit: dict[str, Any]) -> list[dict[str, str]]:
     if obligations.get("searchable") and obligations.get("searchable_placement") == "toolbar":
         if re.search(r"\bTextInput\s*\(", source):
             errors.append({"code": "toolbar_search_inline_input", "unit_id": unit_id, "detail": relative})
+        # ArkUI Search is still an inline control unless the generated page
+        # gives it an explicit toolbar host or an expansion/focus state.  A
+        # prompt-only rule previously let a permanent Search() push the first
+        # screen down even though the iOS searchable modifier was toolbar
+        # collapsed on initial render.
+        if re.search(r"\bSearch\s*\(", source) and not re.search(
+            r"\b(?:Toolbar|toolbar)\b|\b(?:searchExpanded|showSearch|searchVisible|isSearchExpanded)\b",
+            source,
+        ):
+            errors.append({"code": "toolbar_search_inline_input", "unit_id": unit_id, "detail": relative})
         if not re.search(r"search|Search|toolbar|Toolbar", source):
             errors.append({"code": "toolbar_search_missing", "unit_id": unit_id, "detail": relative})
 
@@ -142,6 +350,10 @@ def _check_unit(root: Path, unit: dict[str, Any]) -> list[dict[str, str]]:
             errors.append({"code": "chart_line_points_missing", "unit_id": unit_id, "detail": relative})
         if chart.get("height") is not None and not _contains_numeric_literal(source, chart["height"]):
             errors.append({"code": "chart_height_missing", "unit_id": unit_id, "detail": str(chart["height"])})
+    errors.extend(_check_presentation_fidelity(source, unit, relative, generated_sources))
+    errors.extend(_check_presentation_lifecycle(source, unit, relative, generated_sources))
+    errors.extend(_check_foreground_safearea(source, unit, relative, generated_sources))
+    errors.extend(_check_symbol_fidelity(source, unit, relative))
     return errors
 
 
@@ -152,9 +364,35 @@ def evaluate(root: Path | str, inventory: Path | str) -> dict[str, Any]:
         inventory_path = root / inventory_path
     data = _read(inventory_path)
     errors: list[dict[str, str]] = []
-    for unit in data.get("units", []):
+    units = [unit for unit in data.get("units", []) if isinstance(unit, dict)]
+    generated_sources: list[str] = []
+    for unit in units:
+        relative = (unit.get("output") or {}).get("file")
+        if isinstance(relative, str):
+            path = root / relative
+            if path.is_file():
+                generated_sources.append(path.read_text(encoding="utf-8"))
+    # The delivery inventory normally lists page outputs, while modal
+    # ownership may live in an unlisted entry/root host.  Include generated
+    # ArkTS files under the app source tree so centralized bindings are still
+    # verified without requiring an inventory rewrite.
+    known_paths = {
+        (unit.get("output") or {}).get("file")
+        for unit in units
+        if isinstance((unit.get("output") or {}).get("file"), str)
+    }
+    for path in sorted((root / "entry/src/main/ets").rglob("*.ets")):
+        relative = path.relative_to(root).as_posix()
+        if relative in known_paths:
+            continue
+        try:
+            generated_sources.append(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError):
+            continue
+    for unit in units:
         if isinstance(unit, dict):
-            errors.extend(_check_unit(root, unit))
+            errors.extend(_check_unit(root, unit, generated_sources))
+    errors.extend(_check_style_fidelity(root, generated_sources))
     return {
         "schema_version": 1,
         "gate": "i2h-execute.ui-obligations",

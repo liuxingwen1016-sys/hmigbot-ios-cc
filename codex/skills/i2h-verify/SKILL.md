@@ -156,9 +156,10 @@ CHECK-1/2 的具体规则见 [静态分析与 App 身份](references/static-and-
 
 3. **HarmonyOS 端截图**：
    - 确保应用已安装：`hdc install <hap>`
-   - 启动应用：`hdc shell aa start -a EntryAbility -b <bundle>`
+   - 每个页面状态开始前先执行 `hdc shell aa force-stop <bundle>`，再用 `hdc shell aa start -a EntryAbility -b <bundle> --ps page <page-key>` 启动。不能复用上一页面进程，否则 `UIAbility.onCreate` 不会重新读取页面参数。
    - 截图：`hdc shell snapshot_display -f /data/local/tmp/<page>.png`
    - 传输：`hdc file recv /data/local/tmp/<page>.png <local>`
+   - 同时导出 UI tree，并核对根节点和稳定页面标识与请求的 `<page-key>` 一致。若请求的是 `library` 但树中仍出现 Home 的稳定标识，或不同 page-key 产生相同 UI-tree 哈希，必须记为 `PAGE_STATE_MISMATCH`，丢弃该截图，不得按目标页面文件名保存。
 
 4. **图像相似度对比**：
    - 使用 Python PIL + imagehash

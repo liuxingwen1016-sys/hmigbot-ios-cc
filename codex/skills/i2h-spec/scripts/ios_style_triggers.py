@@ -19,6 +19,19 @@ SCHEMA = "i2h-ios-style-triggers/1"
 
 RULES: tuple[dict[str, Any], ...] = (
     {
+        "id": "custom_shape_geometry",
+        "patterns": (
+            r"\b(?:struct|enum|class)\s+\w+\s*:\s*(?:InsettableShape|Shape)\b",
+            r"\bPath\s*(?:\{|\()",
+            r"\bCanvas\s*\{",
+            r"\.path\s*\(",
+        ),
+        "reference": "ios-custom-shape-geometry",
+        "suggested_skills": ["arkts-component-builder", "arkts-ui-alignment"],
+        "native_api_candidates": ["Path", "Canvas", "Shape"],
+        "fallback": "custom_shape_path_with_source_geometry",
+    },
+    {
         "id": "floating_tabbar",
         "patterns": (r"\bTabView\s*\(",),
         "reference": "ios-floating-tabbar",
@@ -57,6 +70,14 @@ RULES: tuple[dict[str, Any], ...] = (
         "suggested_skills": ["arkts-component-builder", "arkts-ui-alignment"],
         "native_api_candidates": ["Slider"],
         "fallback": "native_slider_with_source_value_and_enabled_state",
+    },
+    {
+        "id": "lazy_grid",
+        "patterns": (r"\bLazyVGrid\s*\(", r"\bLazyHGrid\s*\("),
+        "reference": "ios-lazy-grid",
+        "suggested_skills": ["arkts-component-builder", "arkts-ui-alignment"],
+        "native_api_candidates": ["Grid", "GridItem"],
+        "fallback": "native_grid_with_source_columns_spacing_and_adaptive_minimum",
     },
     {
         "id": "glass_switch",

@@ -32,6 +32,29 @@ class IOSStyleTriggerTests(unittest.TestCase):
         self.assertTrue(row["source_anchor"]["sha256"])
         self.assertTrue(row["fallback"])
 
+    def test_custom_shape_preserves_geometry_trigger(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "BeanBag.swift").write_text(
+                """
+                struct BagShape: Shape {
+                    func path(in rect: CGRect) -> Path {
+                        Path { path in path.addCurve(to: .zero) }
+                    }
+                }
+                struct BagView: View {
+                    var body: some View { Canvas { context, size in } }
+                }
+                """,
+                encoding="utf-8",
+            )
+            result = detect(root)
+        row = next(item for item in result["triggers"] if item["trigger_id"] == "custom_shape_geometry")
+        self.assertEqual(row["reference"], "ios-custom-shape-geometry")
+        self.assertEqual(row["fallback"], "custom_shape_path_with_source_geometry")
+        self.assertEqual(row["native_api_candidates"], ["Path", "Canvas", "Shape"])
+        self.assertGreaterEqual(len(row["source_anchor"]["lines"]), 3)
+
 
 if __name__ == "__main__":
     unittest.main()

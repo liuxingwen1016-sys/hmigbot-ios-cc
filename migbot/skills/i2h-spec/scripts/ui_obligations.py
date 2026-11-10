@@ -118,6 +118,20 @@ def parse_ui_obligations(text: str, *, line_offset: int = 0) -> dict[str, Any]:
         if item.get("kind") == "picker" and item.get("label")
     ]
     has_scroll = any(name in containers for name in ("ScrollView", "List", "LazyVStack", "LazyHStack", "LazyVGrid"))
+    grid = None
+    grid_match = re.search(r"\b(LazyVGrid|LazyHGrid)\s*\(", text)
+    if grid_match:
+        grid_kind = "lazy_v_grid" if grid_match.group(1) == "LazyVGrid" else "lazy_h_grid"
+        spacing_match = re.search(r"\bspacing\s*:\s*([0-9.]+)", text[grid_match.start():])
+        adaptive_match = re.search(r"\.adaptive\s*\(\s*minimum\s*:\s*([0-9.]+)", text[grid_match.start():])
+        fixed_count = len(re.findall(r"\bGridItem\s*\(", text[grid_match.start():]))
+        grid = {
+            "kind": grid_kind,
+            "line": _line(text, grid_match.start()) + line_offset,
+            "spacing": float(spacing_match.group(1)) if spacing_match else None,
+            "adaptive_minimum": float(adaptive_match.group(1)) if adaptive_match else None,
+            "fixed_item_count": fixed_count,
+        }
     chart = None
     if re.search(r"\bChart\s*\(", text):
         y_domain = re.search(r"chartYScale\s*\(\s*domain\s*:\s*([^\)]+)", text)
@@ -129,7 +143,8 @@ def parse_ui_obligations(text: str, *, line_offset: int = 0) -> dict[str, Any]:
         }
     searchable = bool(re.search(r"\.searchable\s*\(", text))
     presentation_patterns = (
-        ("sheet", r"\.(sheet|fullScreenCover)\s*\("),
+        ("sheet", r"\.sheet\s*\("),
+        ("full_screen_cover", r"\.fullScreenCover\s*\("),
         ("alert", r"\.alert\s*\("),
         ("confirmation_dialog", r"\.confirmationDialog\s*\("),
         ("popover", r"\.popover\s*\("),
@@ -199,6 +214,16 @@ def parse_ui_obligations(text: str, *, line_offset: int = 0) -> dict[str, Any]:
             seen_embedded.add(key)
             embedded_views.append(item)
 
+    bottom_anchor_patterns = (
+        r"\.safeAreaInset\s*\(\s*edge\s*:\s*\.bottom",
+        r"\.overlay\s*\(\s*alignment\s*:\s*\.bottom",
+        r"\.frame\s*\([^\n]*alignment\s*:\s*\.bottom",
+    )
+    fixed_bottom_action_required = bool(
+        primary_ids
+        and any(re.search(pattern, text) for pattern in bottom_anchor_patterns)
+    )
+
     return {
         "interactive_controls": controls,
         "accessibility_identifiers": identifiers,
@@ -207,12 +232,13 @@ def parse_ui_obligations(text: str, *, line_offset: int = 0) -> dict[str, Any]:
         "has_scroll": has_scroll,
         "has_overlay": "overlay" in containers,
         "primary_action_ids": primary_ids,
-        "fixed_bottom_action_required": bool(has_scroll and primary_ids),
+        "fixed_bottom_action_required": fixed_bottom_action_required,
         "form_picker_labels": form_pickers,
         "compact_picker_rows_required": bool("Form" in containers and form_pickers),
         "searchable": searchable,
         "searchable_placement": "toolbar" if searchable else None,
         "chart": chart,
+        "grid": grid,
         "presentations": presentations,
         "conditional_states": conditional_states,
         "state_markers": state_markers,

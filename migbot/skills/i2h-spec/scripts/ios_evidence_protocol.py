@@ -84,7 +84,7 @@ def _identity(value: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("evidence identity missing: " + ", ".join(missing))
     if value["platform"] not in PLATFORMS:
         raise ValueError("unsupported evidence platform: " + str(value["platform"]))
-    for key in ("source_sha256", "build_sha256", "screenshot_sha256", "ui_json_sha256", "foreground_receipt_sha256"):
+    for key in ("source_sha256", "build_sha256", "screenshot_sha256", "ui_json_sha256", "foreground_receipt_sha256", "foreground_ack_sha256"):
         if value.get(key) is not None and (not isinstance(value[key], str) or len(value[key]) != 64):
             raise ValueError(f"invalid identity hash: {key}")
     if value["platform"] == "ios" and not isinstance(value.get("device_udid"), str):
@@ -104,9 +104,9 @@ def validate_manifest(path: Path | str, current: dict[str, Any] | None = None) -
         if not isinstance(artifacts, dict):
             raise ValueError("capture artifacts must be an object")
         issues: list[dict[str, Any]] = []
-        for name in ("screenshot", "ui_json", "foreground_receipt"):
+        for name in ("screenshot", "ui_json", "foreground_receipt", "foreground_ack"):
             item = artifacts.get(name)
-            if item is None and name == "foreground_receipt":
+            if item is None and name in {"foreground_receipt", "foreground_ack"}:
                 continue
             if not isinstance(item, dict) or not isinstance(item.get("path"), str):
                 issues.append({"rule": "artifact_missing", "artifact": name})

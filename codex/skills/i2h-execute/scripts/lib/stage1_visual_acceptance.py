@@ -7,6 +7,7 @@ and geometry checks pass.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -191,6 +192,31 @@ def _screenshot_score(source: dict, target: dict) -> dict | None:
         return {'available': False, 'auxiliary': True}
 
 
+def _target_binding(data: dict) -> tuple[str | None, str | None]:
+    """Return only target-supplied page/state metadata.
+
+    A case filename or the caller's expected page must not be allowed to
+    masquerade as runtime evidence.  The Harmony capture wrapper therefore
+    has to bind its own page/state fields before this gate can accept it.
+    """
+    page, state = _page_state(data)
+    return page, state
+
+
+def _target_fingerprint(data: dict) -> str:
+    """Hash stable UI semantics while ignoring volatile device identifiers."""
+    rows = []
+    for node in _index(data):
+        rows.append({
+            'role': node.get('role'),
+            'label': node.get('label'),
+            'identifier': node.get('identifier'),
+            'frame': node.get('frame'),
+        })
+    payload = json.dumps(rows, ensure_ascii=False, sort_keys=True, separators=(',', ':'))
+    return hashlib.sha256(payload.encode('utf-8')).hexdigest()
+
+
 def accept(source: dict | str | Path, target: dict | str | Path, *, geometry_tolerance: float = 4.0) -> dict:
     source_data, target_data = _evidence_payload(source), _evidence_payload(target)
     source_page, source_state = _page_state(source_data)
@@ -312,6 +338,7 @@ def accept(source: dict | str | Path, target: dict | str | Path, *, geometry_tol
 
 def report(cases: list[dict], *, geometry_tolerance: float = 4.0) -> dict:
     results = []
+    seen_targets: dict[str, tuple[str | None, str | None]] = {}
     for case in cases:
         source = next((case.get(key) for key in ('source', 'ios', 'baseline') if case.get(key) is not None), None)
         target = next((case.get(key) for key in ('target', 'harmony', 'execute') if case.get(key) is not None), None)
@@ -320,12 +347,36 @@ def report(cases: list[dict], *, geometry_tolerance: float = 4.0) -> dict:
         else:
             source_data = _evidence_payload(source)
             target_data = _evidence_payload(target)
-            for key in ('page_id', 'state_id'):
-                if source_data.get(key) is None and case.get(key) is not None:
-                    source_data[key] = case[key]
-                if target_data.get(key) is None and case.get(key) is not None:
-                    target_data[key] = case[key]
-            row = accept(source_data, target_data, geometry_tolerance=geometry_tolerance)
+            if source_data.get('page_id') is None and case.get('page_id') is not None:
+                source_data['page_id'] = case['page_id']
+            if source_data.get('state_id') is None and case.get('state_id') is not None:
+                source_data['state_id'] = case['state_id']
+            target_page, target_state = _target_binding(target_data)
+            if target_page is None or target_state is None:
+                row = {
+                    'page_id': source_data.get('page_id'),
+                    'state_id': source_data.get('state_id', source_data.get('state')),
+                    'status': 'BLOCKED',
+                    'failure_findings': [{
+                        'code': 'TARGET_PAGE_STATE_UNBOUND',
+                        'root_cause': 'information_gap',
+                        'detail': 'Harmony UI evidence must carry its own page_id and state_id',
+                    }],
+                }
+            else:
+                row = accept(source_data, target_data, geometry_tolerance=geometry_tolerance)
+                fingerprint = _target_fingerprint(target_data)
+                previous = seen_targets.get(fingerprint)
+                current = (target_page, target_state)
+                if previous is not None and previous != current:
+                    row['status'] = 'BLOCKED'
+                    row.setdefault('failure_findings', []).append({
+                        'code': 'DUPLICATE_TARGET_EVIDENCE',
+                        'root_cause': 'information_gap',
+                        'detail': f'target evidence fingerprint already bound to {previous[0]}/{previous[1]}',
+                    })
+                else:
+                    seen_targets[fingerprint] = current
             row.setdefault('page_id', source_data.get('page_id'))
             row.setdefault('state_id', source_data.get('state_id', source_data.get('state')))
             results.append(row)

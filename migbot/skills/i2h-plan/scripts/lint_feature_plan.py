@@ -14,6 +14,7 @@ Exit codes:
 
 import sys
 import os
+import json
 import re
 from pathlib import Path
 from typing import List, Dict, Optional, Set
@@ -68,7 +69,12 @@ class FeaturePlanLinter:
         # 6. FV 任务校验
         self._check_fv_tasks()
 
-        # 7. 输出结果
+        # 7. iOS immersive/safe-area binding follows source-derived delivery
+        # metadata.  Keep this check conditional so older Android/hand-authored
+        # plans without a schema-2 inventory retain compatibility.
+        self._check_immersive_binding()
+
+        # 8. 输出结果
         self._print_results()
 
         return len(self.errors) == 0
@@ -554,6 +560,44 @@ class FeaturePlanLinter:
                     file='feature-plan.md',
                     suggestion="添加 suggested_agents: [hmos-builder]"
                 )
+
+    def _check_immersive_binding(self):
+        """Require the immersive skill and receipt gate for source evidence."""
+        candidates = (
+            self.project_root / "spec/baseline/ui-delivery-approved.json",
+            self.project_root / "spec/baseline/plans/stage1-ui-delivery.json",
+            self.project_root / "spec/baseline/plans/ui-delivery-approved.json",
+        )
+        inventory_path = next((path for path in candidates if path.is_file()), None)
+        if inventory_path is None:
+            return
+        try:
+            payload = json.loads(inventory_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return
+        units = payload.get("units", []) if isinstance(payload, dict) else []
+        required = [
+            str(unit.get("unit_id"))
+            for unit in units
+            if isinstance(unit, dict) and unit.get("needs_immersive_safearea") is True
+        ]
+        if not required:
+            return
+        content = self.feature_plan_path.read_text(encoding="utf-8")
+        if "arkts-immersive-safearea" not in content:
+            self._add_error(
+                "skills",
+                "iOS delivery 含 needs_immersive_safearea，但 plan 未绑定 arkts-immersive-safearea",
+                file="feature-plan.md",
+                suggestion="在相关 Slice/FV-1 中添加 suggested_skills: [arkts-immersive-safearea]",
+            )
+        if "immersive_safearea_gate" not in content and "immersive-safearea-gate" not in content:
+            self._add_error(
+                "gates",
+                "iOS immersive 页缺少 execute immersive-safearea receipt gate",
+                file="feature-plan.md",
+                suggestion="加入 immersive_safearea_gate.py，并将 spec/execution/immersive-safearea-gate.json 作为 Stage 5 前置产物",
+            )
 
     def _add_error(self, category: str, message: str, file: Optional[str] = None,
                    line: Optional[int] = None, suggestion: Optional[str] = None):

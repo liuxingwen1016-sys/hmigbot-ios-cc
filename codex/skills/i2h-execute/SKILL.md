@@ -662,7 +662,7 @@ export struct ${ui.component_name} {
 
 ### Step 3.4: 生成入口文件和配置
 
-`spec/baseline/ui-delivery-approved.json` 中每个 unit 的 `output.file` 与 `output.symbol` 是交付契约。生成器必须按该路径和符号落盘，不能用 `pages/Index.ets` 替代规格指定的根页面。模板若要求 `Index.ets` 作为 `EntryAbility` 入口，则 `Index.ets` 只负责导入并转发 `RootView`，实际根组件仍位于 `pages/RootView.ets`。在构建前检查 approved units 的 output 文件和符号均存在，路径不一致时阻断执行。
+`spec/baseline/ui-delivery-approved.json` 中每个 unit 的 `output.file` 与 `output.symbol` 是交付契约。生成器必须按该路径和符号落盘，不能用 `pages/Index.ets` 替代规格指定的根页面。模板若要求 `Index.ets` 作为 `EntryAbility` 入口，则实际根组件仍位于 `pages/RootView.ets`。`Index.ets` 可以只转发 `RootView`，也可以承载全工程唯一的 `WindowModel`/avoid-area 安全区宿主，但不得把安全区测量、前景 inset 或模态状态拆成多个互相覆盖的入口。沉浸式工程禁止为了满足“纯转发”而丢失 Layer 3 前景避让。在构建前检查 approved units 的 output 文件和符号均存在，路径不一致时阻断执行。
 
 ```typescript
 // 生成 Index.ets
@@ -1213,8 +1213,26 @@ python3 .agents/skills/i2h-execute/scripts/ui_obligation_gate.py \
 ```
 
 该门禁检查固定底部主动作没有落入 `Scroll`、Form Picker 没有被 chip 替代、toolbar
-search 没有退化成首屏内联输入框，以及 Chart 仍保留折线和数据点结构。失败时必须修复
-产物或保留具体 finding，不能把 prompt 中已声明的 source obligation 当成已实现。
+search 没有退化成首屏内联输入框、Chart 仍保留折线和数据点结构，且源码声明的
+`.sheet`/`.fullScreenCover` 已绑定到 `bindSheet`/`bindContentCover` 或完整的
+`presentation_fallback` 宿主标记。它也会拒绝以 `★`、`✓`、`→`、`+`、`−` 等
+Unicode/emoji 字符串替代源资源图标，除非文件带有 `symbol_fidelity: approved asset=...`
+映射证据。失败时必须修复产物或保留具体 finding，不能把 prompt 中已声明的 source
+obligation 当成已实现。
+
+如果批准的 iOS UI delivery unit 含有 `needs_immersive_safearea: true`，在写入
+Stage 5 marker 前还必须运行沉浸式安全区四层闭环门禁：
+
+```bash
+python3 .agents/skills/i2h-execute/scripts/immersive_safearea_gate.py \
+  --project-root . \
+  --output-json spec/execution/immersive-safearea-gate.json
+```
+
+门禁会调用 `arkts-structural-closure/scripts/check-fullscreen-immersive-safearea.sh`，
+并要求 L1 `setWindowLayoutFullScreen`、L2 根容器 `expandSafeArea`、L3 全屏页前景
+安全区响应全部有证据。缺少 receipt、receipt 与当前 delivery 不匹配或任一层失败时，
+必须保持 Stage 5 BLOCKED，不能通过手写 JSON 或迁移报告声明覆盖。
 
 创建 `spec/execution/stage5-complete.txt` 作为 **schema-2 JSON marker**。
 在 `spec/migration-report.md` 和
@@ -1597,3 +1615,8 @@ fi
 ## 可选资源增量协议
 
 `scripts/resource_delta.py` 提供 task-owned OpenHarmony 资源增量的初始化、提交和原子合并。它通过 preimage hash 和锁拒绝并发冲突，默认不替换 `sweep_resources.py`，只有明确声明资源 scope 的任务才可使用。
+### Stage 0.4 identity/signing preflight
+
+Before changing `AppScope/app.json5`, run `scripts/identity_signing_preflight.py`. It reads the source CFBundleIdentifier when `--source-root` is supplied, the target `bundleName`, and the signing profile's `bundle-info.bundle-name` via `security cms -D`. Write the result to `spec/execution/stage0-environment.json`.
+
+`identity_status=PASS` requires all available identities to match and the target bundle name to be non-template. When the local profile is still bound to a template bundle, keep the deployable template identity and report `identity_signing_pending`. If the target and local profile names match exactly, a signed diagnostic install is allowed for runtime UI/function evidence, while the identity gate remains pending. Signed install stays blocked when target/profile names differ. Never change the target bundle name to the iOS identifier without updating the signing profile as one atomic operation.

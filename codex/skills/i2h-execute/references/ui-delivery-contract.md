@@ -27,6 +27,10 @@ draft 会从源码 modifier 生成可审查的 `presentation` 提示。`.sheet()
 `presentation_role=hosted_destination` 和 `harmony_mapping=bindSheet`，
 `.fullScreenCover()` 使用 `bindContentCover`，共享声明使用
 `presentation_role=embedded`。主线程仍需依据完整源码确认宿主和正式路由。
+宿主单元的 `source_obligations.presentations` 保留 `.sheet`/`.fullScreenCover` 的源码事实，
+供 execute 门禁检查生成文件是否真的使用 `bindSheet`/`bindContentCover`。目标 SDK 不支持
+原生绑定时，必须在宿主文件写入完整的 `presentation_fallback` 标记，声明 owner、state、
+scrim、corner、detent、dismissal 和 safe_area，不能只用 pageKey 或普通导航页代替模态层。
 嵌入单元增加 integration={host_file,host_builder,child_symbol}。
 
 每单元的 owned_ui_roles、每状态的 responsibility 明确 shell/content/overlay/behavior；

@@ -40,6 +40,24 @@ def _entry_path(root: Path, src_entry: str) -> Path:
     return root / "entry/src/main" / value
 
 
+def _vision_sources(root: Path) -> tuple[str, list[str]]:
+    """Read the generated F101 surface once and return its source files.
+
+    Checking only for a file named ``OCRService.ets`` allowed a parser for
+    caller-supplied strings, plus a fake viewfinder, to be reported as a
+    complete camera/OCR migration.  The source-backed contract requires the
+    actual page/service API chain to be present.
+    """
+    paths = sorted((root / "entry/src/main/ets").rglob("*.ets"))
+    rows: list[str] = []
+    for path in paths:
+        try:
+            rows.append(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError):
+            continue
+    return "\n".join(rows), [path.relative_to(root).as_posix() for path in paths]
+
+
 def evaluate(root: Path | str) -> dict[str, Any]:
     root = Path(root).expanduser().resolve()
     module_path = root / "entry/src/main/module.json5"
@@ -53,15 +71,34 @@ def evaluate(root: Path | str) -> dict[str, Any]:
     abilities = [item for item in module.get("abilities", []) if isinstance(item, dict)]
     entry = next((item for item in abilities if item.get("name") == "EntryAbility"), {})
 
+    vision_text, vision_files = _vision_sources(root)
     camera_source = root / "entry/src/main/ets/pages/LiveScannerView.ets"
     ocr_source = root / "entry/src/main/ets/services/OCRService.ets"
     permissions = module.get("requestPermissions", [])
     camera_permission = any(isinstance(item, dict) and item.get("name") == "ohos.permission.CAMERA" for item in permissions)
-    camera_pass = camera_permission and camera_source.is_file() and ocr_source.is_file()
+    camera_api = "cameraPicker" in vision_text and "abilityAccessCtrl" in vision_text
+    album_api = "PhotoViewPicker" in vision_text
+    ocr_api = "recognizeText" in vision_text
+    has_sample_asset = any(
+        path.is_file() and path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}
+        and any(token in path.stem.lower() for token in ("sample", "bean"))
+        for path in (root / "entry/src/main/resources").rglob("*")
+    ) if (root / "entry/src/main/resources").is_dir() else False
+    fixture_free = "sampleText()" not in vision_text and "sample_text" not in vision_text
+    camera_pass = (
+        camera_permission and camera_source.is_file() and ocr_source.is_file()
+        and camera_api and album_api and ocr_api and has_sample_asset and fixture_free
+    )
     findings.append({"capability": "F101_CAMERA_OCR", "status": "PASS" if camera_pass else "BLOCKED", "checks": {
         "camera_permission": camera_permission,
         "live_scanner_source": camera_source.is_file(),
         "ocr_source": ocr_source.is_file(),
+        "camera_picker_api": camera_api,
+        "photo_view_picker_api": album_api,
+        "recognize_text_api": ocr_api,
+        "sample_image_asset": has_sample_asset,
+        "fixture_free": fixture_free,
+        "source_files": vision_files,
     }})
 
     form = _extension(module, "form")

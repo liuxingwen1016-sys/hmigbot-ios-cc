@@ -32,6 +32,7 @@ for _pipeline_dir in _PIPELINE_DIRS:
 
 from marker_contract import (  # type: ignore[import-not-found]
     STAGE_PATH_ALIASES,
+    file_sha256,
     normalize_hash,
     read_marker,
     resolve_stage,
@@ -41,6 +42,16 @@ import ui_state_ownership  # type: ignore[import-not-found]
 import ui_delivery  # type: ignore[import-not-found]
 
 STAGES = ("i2h-spec", "i2h-plan", "i2h-execute", "i2h-verify", "i2h-retrospect")
+
+# Plan owns these two handoff documents and may append decisions or normalize
+# the feature index after i2h-spec has written its marker.  Their mutation is
+# safe to acknowledge only after the content-addressed i2h-plan marker and
+# schema-2 delivery have both passed.  Any other spec artifact mutation keeps
+# the fail-closed i2h-spec resume behavior.
+_PLAN_HANDOFF_ARTIFACTS = frozenset({
+    "spec/baseline/feature-index.md",
+    "spec/decision-ledger.md",
+})
 
 
 def _read_json(path: Path) -> dict[str, Any] | None:
@@ -142,6 +153,26 @@ def _validate_marker_artifacts(root: Path, stage: str, marker: dict[str, Any]) -
     return []
 
 
+def _spec_handoff_mismatches(root: Path) -> list[str]:
+    """Return spec marker artifacts changed by the completed plan handoff."""
+    marker_path = root / "spec/baseline/spec-complete.txt"
+    payload = _read_json(marker_path)
+    if not payload:
+        return []
+    mismatches: list[str] = []
+    for item in payload.get("artifacts", []):
+        if not isinstance(item, dict):
+            continue
+        relative = item.get("path")
+        expected = normalize_hash(item.get("sha256"))
+        if not isinstance(relative, str) or not expected:
+            continue
+        path = root / relative
+        if path.is_file() and normalize_hash(file_sha256(path)) != expected:
+            mismatches.append(relative)
+    return sorted(mismatches)
+
+
 def validate_delivery(root: Path, input_hash: str | None) -> dict[str, Any]:
     """Validate the approved schema-2 inventory used by i2h-execute."""
     path = _delivery_path(root)
@@ -228,6 +259,53 @@ def validate_delivery(root: Path, input_hash: str | None) -> dict[str, Any]:
     return result
 
 
+def validate_immersive_gate(root: Path, inventory: dict[str, Any] | None) -> dict[str, Any]:
+    """Require a fresh L1/L2/L3 receipt when source evidence demands it."""
+    units = inventory.get("units", []) if isinstance(inventory, dict) else []
+    required = [
+        str(unit.get("unit_id"))
+        for unit in units
+        if isinstance(unit, dict) and unit.get("needs_immersive_safearea") is True
+    ]
+    path = root / "spec/execution/immersive-safearea-gate.json"
+    result: dict[str, Any] = {
+        "complete": not required,
+        "required_units": required,
+        "path": path.relative_to(root).as_posix(),
+        "errors": [],
+        "warnings": [],
+    }
+    if not required:
+        result["status"] = "NOT_REQUIRED"
+        return result
+    if not path.is_file():
+        result["status"] = "MISSING"
+        result["errors"].append("immersive_safearea_gate_missing")
+        result["complete"] = False
+        return result
+    receipt = _read_json(path)
+    if receipt is None:
+        result["status"] = "INVALID"
+        result["errors"].append("immersive_safearea_gate_invalid_json")
+        return result
+    result["receipt"] = receipt
+    result["status"] = receipt.get("status")
+    if receipt.get("status") != "PASS":
+        result["errors"].append("immersive_safearea_gate_not_pass")
+    receipt_units = sorted(str(item) for item in receipt.get("required_units", []))
+    if receipt_units != sorted(required):
+        result["errors"].append("immersive_safearea_gate_scope_stale")
+    layers = receipt.get("layers")
+    if not isinstance(layers, dict) or any(not isinstance(layers.get(layer), dict) or layers[layer].get("ok") is not True for layer in ("L1", "L2", "L3")):
+        result["errors"].append("immersive_safearea_gate_layers_incomplete")
+    inventory_path = _delivery_path(root)
+    expected_hash = file_sha256(inventory_path) if inventory_path and inventory_path.is_file() else None
+    if expected_hash and receipt.get("inventory_sha256") != expected_hash:
+        result["errors"].append("immersive_safearea_gate_inventory_stale")
+    result["complete"] = not result["errors"]
+    return result
+
+
 def _verify_report(root: Path) -> dict[str, Any]:
     result = {"complete": False, "path": None, "errors": [], "warnings": []}
     candidates = (root / "spec/verify-report.md", root / "spec/verify/verify-report.md", root / "spec/verify/report.md")
@@ -303,6 +381,7 @@ def pipeline_status(root: str | Path, *, allow_legacy: bool = True) -> dict[str,
             checks["report"] = _report(root, stage)
             delivery = _delivery_path(root)
             checks["ownership"] = _ownership_receipt(root, _read_json(delivery) if delivery else None)
+            checks["immersive_safearea"] = validate_immersive_gate(root, _read_json(delivery) if delivery else None)
         elif stage == "i2h-verify":
             # verify-report.md is the report itself, not a JSON marker.
             checks["report"] = _verify_report(root)
@@ -310,6 +389,27 @@ def pipeline_status(root: str | Path, *, allow_legacy: bool = True) -> dict[str,
             checks["report"] = _report(root, stage)
         complete = all(bool(item.get("valid", item.get("complete", False))) for item in checks.values())
         stages.append({"stage": stage, "complete": complete, "checks": checks})
+
+    # i2h-plan legitimately appends decision-ledger entries and can normalize
+    # feature-index handoff text after the spec marker was written.  Once the
+    # plan marker and delivery contract pass, do not send $i2h-run back to the
+    # expensive LLM-driven spec stage for those two known handoff mutations.
+    # Preserve the mismatch as an auditable warning.  Source/spec mutations
+    # outside this allow-list remain fail-closed and still resume at i2h-spec.
+    spec_row, plan_row = stages[0], stages[1]
+    handoff_mismatches = _spec_handoff_mismatches(root)
+    if (
+        not spec_row["complete"]
+        and plan_row["complete"]
+        and handoff_mismatches
+        and set(handoff_mismatches) <= _PLAN_HANDOFF_ARTIFACTS
+        and set(spec_row["checks"]["marker"].get("errors", [])) <= {"artifact_hash_mismatch"}
+    ):
+        marker_check = spec_row["checks"]["marker"]
+        marker_check.setdefault("warnings", []).append("spec_handoff_artifact_changed_after_plan")
+        marker_check["handoff_mismatches"] = handoff_mismatches
+        marker_check["handoff_only"] = True
+        spec_row["complete"] = True
     resume = next((item["stage"] for item in stages if not item["complete"]), "complete")
     return {
         "schema_version": 1,

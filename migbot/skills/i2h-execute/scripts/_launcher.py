@@ -63,13 +63,5 @@ def dispatch(tool: str, argv: list[str] | None = None, fallback=None) -> int:
     if fallback is None:
         sys.stderr.write(f"no bundled binary for {platform.system()}-{platform.machine()} and no Python fallback for {tool}\n")
         return 2
-    try:
-        result = fallback(argv)
-    except Exception as exc:
-        # CLI entry points must preserve the pipeline's blocked/error exit
-        # contract even when the Python fallback raises on stale evidence.
-        # The caller still receives the diagnostic on stderr, while the
-        # wrapper returns 2 instead of leaking an uncaught traceback as 1.
-        sys.stderr.write(f"{tool} fallback failed: {exc}\n")
-        return 2
+    result = fallback(argv)
     return int(result or 0)

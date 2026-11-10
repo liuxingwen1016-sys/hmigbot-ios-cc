@@ -72,6 +72,47 @@ class UiEvidenceTests(unittest.TestCase):
         self.assertTrue(obligations['has_form'])
         self.assertFalse(obligations['has_scroll'])
 
+    def test_ui_obligations_capture_lazy_grid_geometry(self):
+        source = '''
+        struct TastingView: View {
+            var body: some View {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 75))], spacing: 12) {
+                    Text("柑橘")
+                }
+            }
+        }
+        '''
+        obligations = parse_ui_obligations(source)
+        self.assertEqual(obligations['grid']['kind'], 'lazy_v_grid')
+        self.assertEqual(obligations['grid']['spacing'], 12.0)
+        self.assertEqual(obligations['grid']['adaptive_minimum'], 75.0)
+        self.assertEqual(obligations['grid']['fixed_item_count'], 1)
+
+    def test_scroll_primary_action_is_not_fixed_without_source_bottom_anchor(self):
+        source = '''
+        struct TastingView: View {
+            var body: some View {
+                ScrollView { PrimaryButton("收好这一杯") { saveTasting() }.accessibilityIdentifier("saveTasting") }
+            }
+        }
+        '''
+        obligations = parse_ui_obligations(source)
+        self.assertEqual(obligations['primary_action_ids'], ['saveTasting'])
+        self.assertFalse(obligations['fixed_bottom_action_required'])
+
+    def test_source_bottom_anchor_requires_explicit_safe_area_or_overlay(self):
+        source = '''
+        struct HomeView: View {
+            var body: some View {
+                ScrollView { Text("content") }
+                    .safeAreaInset(edge: .bottom) { Button("准备这一杯") {}.accessibilityIdentifier("prepareRecipe") }
+            }
+        }
+        '''
+        obligations = parse_ui_obligations(source)
+        self.assertEqual(obligations['primary_action_ids'], ['prepareRecipe'])
+        self.assertTrue(obligations['fixed_bottom_action_required'])
+
     def test_view_evidence_carries_ui_obligations(self):
         self.write('Views/RecipeView.swift', '''
         import SwiftUI
@@ -104,6 +145,19 @@ class UiEvidenceTests(unittest.TestCase):
         self.assertGreaterEqual(len(obligations['conditional_states']), 2)
         self.assertEqual({item['kind'] for item in obligations['state_markers']}, {'loading', 'empty'})
         self.assertEqual([item['name'] for item in obligations['embedded_view_candidates']], ['EmptyStateView', 'RecipeView'])
+
+    def test_ui_obligations_distinguish_full_screen_cover_from_sheet(self):
+        source = '''
+        struct HomeView: View {
+            var body: some View {
+                Text("Home")
+                    .fullScreenCover(isPresented: $showScan) { ScanView() }
+            }
+        }
+        '''
+        obligations = parse_ui_obligations(source)
+        self.assertEqual([item['kind'] for item in obligations['presentations']], ['full_screen_cover'])
+        self.assertEqual(obligations['presentations'][0]['source_pattern'], '.fullScreenCover')
 
     def test_same_file_views_keep_obligations_scoped_to_declaration(self):
         self.write('Views/BeanViews.swift', '''

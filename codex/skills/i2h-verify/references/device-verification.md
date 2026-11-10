@@ -142,6 +142,12 @@ echo "✅ iOS 端截图完成"
 
 #### Step 3: HarmonyOS 端截图
 
+每个 page/state 都必须是独立冷启动证据。先执行 `aa force-stop`，再通过
+`aa start --ps page <page-key>` 传入目标页面参数，等待根组件渲染后导出截图和 UI
+tree。截图文件名不能替代页面绑定证据，UI tree 必须包含与 page-key 对应的稳定标题、
+accessibility id 或路由状态。页面参数未生效、进程复用、或 UI tree 哈希与已采集页面重复时，
+状态为 `PAGE_STATE_MISMATCH`，该页面保持 BLOCKED。
+
 ```bash
 echo "📱 HarmonyOS 端截图采集中..."
 

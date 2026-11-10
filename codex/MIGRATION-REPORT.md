@@ -157,10 +157,10 @@
 | 规则 | 族 | 命中次数 |
 |---|---|---|
 | R1-brand-bare | rewrite | 42 |
-| D2-i2h-slash-command | divergence | 39 |
+| D2-i2h-slash-command | divergence | 40 |
 | R1-skill-rename | rewrite | 38 |
+| R1-skills-dir | rewrite | 35 |
 | R1-brand-cc | rewrite | 34 |
-| R1-skills-dir | rewrite | 33 |
 | R5-agent-prompt-path | rewrite | 23 |
 | R1-dot-claude-home | rewrite | 21 |
 | R2-paren-backticked | rewrite | 21 |

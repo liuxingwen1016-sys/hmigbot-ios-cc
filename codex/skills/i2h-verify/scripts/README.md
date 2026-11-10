@@ -120,12 +120,41 @@ python3 compare_screenshots.py ios_screenshots/ harmonyos_screenshots/ -o result
 
 # 自定义哈希大小
 python3 compare_screenshots.py ios_screenshots/ harmonyos_screenshots/ --hash-size 32
+
+# 使用证据绑定的应用内容区域，同时保留全屏指标
+python3 compare_screenshots.py ios_screenshots/ harmonyos_screenshots/ \
+  --regions-manifest content-regions.json --json -o comparison_results.json
 ```
 
 **算法**:
 - 感知哈希 (Perceptual Hash)
 - 汉明距离计算
 - 相似度阈值：≥95% 高度匹配，≥85% 良好，<85% 差异较大
+- `--regions-manifest` 使用 `i2h-visual-regions/1` 清单为每页指定 iOS/Harmony
+  的应用内容矩形，并校验两张截图的 SHA-256。输出同时保留 `avg_similarity`
+  全屏原始指标和 `content_avg_similarity` 应用内容指标。清单缺页、矩形越界或
+  截图哈希不一致时 content gate 失败，不能用裁剪结果掩盖全屏差异。
+
+清单最小形态如下。矩形坐标使用各自截图的像素坐标，系统栏矩形只作为报告元数据，
+不会从原始全屏指标中删除。
+
+```json
+{
+  "schema": "i2h-visual-regions/1",
+  "pages": {
+    "Home": {
+      "source_content_rect": [0, 120, 1206, 2380],
+      "target_content_rect": [0, 96, 1280, 2520],
+      "source_system_chrome_rects": [[0, 0, 1206, 120]],
+      "target_system_chrome_rects": [[0, 0, 1280, 96]],
+      "evidence": {
+        "source_screenshot_sha256": "...",
+        "target_screenshot_sha256": "..."
+      }
+    }
+  }
+}
+```
 
 **依赖**:
 - Pillow

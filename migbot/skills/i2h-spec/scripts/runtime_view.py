@@ -137,9 +137,11 @@ def normalize(path: Path) -> dict[str, Any]:
         or source.get("accessibility_json_path")
     )
     foreground_receipt_value = source.get("foreground_receipt") or source.get("foreground_receipt_path")
+    foreground_ack_value = source.get("foreground_ack") or source.get("foreground_ack_path")
     screenshot_path = resolve_artifact(path, screenshot_value)
     ui_json_path = resolve_artifact(path, ui_json_value)
     foreground_receipt_path = resolve_artifact(path, foreground_receipt_value)
+    foreground_ack_path = resolve_artifact(path, foreground_ack_value)
     warnings = []
     if not normalized_nodes:
         warnings.append("capture contains no accessibility nodes")
@@ -153,6 +155,8 @@ def normalize(path: Path) -> dict[str, Any]:
         warnings.append("capture accessibility JSON path does not exist")
     if foreground_receipt_value and (not foreground_receipt_path or not foreground_receipt_path.is_file()):
         warnings.append("capture foreground receipt path does not exist")
+    if foreground_ack_value and (not foreground_ack_path or not foreground_ack_path.is_file()):
+        warnings.append("capture foreground acknowledgement path does not exist")
     app = source.get("app", {})
     if not isinstance(app, dict):
         app = {}
@@ -193,6 +197,8 @@ def normalize(path: Path) -> dict[str, Any]:
         "ui_json_sha256": digest(ui_json_path) if ui_json_path and ui_json_path.is_file() else None,
         "foreground_receipt": foreground_receipt_value,
         "foreground_receipt_sha256": digest(foreground_receipt_path) if foreground_receipt_path and foreground_receipt_path.is_file() else None,
+        "foreground_ack": foreground_ack_value,
+        "foreground_ack_sha256": digest(foreground_ack_path) if foreground_ack_path and foreground_ack_path.is_file() else None,
         "nodes": normalized_nodes,
         "warnings": warnings,
         "provenance": {
