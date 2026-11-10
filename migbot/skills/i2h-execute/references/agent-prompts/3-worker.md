@@ -95,8 +95,9 @@ export class DatabaseManager {
 
     this.store = await relationalStore.getRdbStore(context, config);
 
-    // 创建表
+    // 创建表并执行幂等升级。CREATE TABLE IF NOT EXISTS 只覆盖首装，不能替代迁移。
     await this.createTables();
+    await this.migrateSchema();
   }
 
   private async createTables(): Promise<void> {
@@ -109,6 +110,28 @@ export class DatabaseManager {
     `;
     await this.store?.executeSql(sql);
   }
+
+  private async migrateSchema(): Promise<void> {
+    // 迁移步骤必须可重复执行。先探测列/版本，再 ALTER TABLE，不能假设旧表已经是最新结构。
+    // 生产代码应为每个新增列保留默认值，并在 schema_version 更新后再继续读取新列。
+    await this.store?.executeSql(
+      'CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, version INTEGER NOT NULL)'
+    );
+  }
+
+  async count(table: string, keyColumn: string = 'id'): Promise<number> {
+    const predicates = new relationalStore.RdbPredicates(table);
+    const resultSet = await this.store?.query(predicates, [keyColumn]);
+    const count = resultSet?.rowCount ?? 0;
+    resultSet?.close();
+    return count;
+  }
+
+// 迁移实现要求
+// - 对旧表逐列探测并使用 ALTER TABLE ... ADD COLUMN ... DEFAULT ...，重复运行必须安全。
+// - 不要在通用 count(table) 中固定 query(['id'])。library_metadata 这类表可能只有 key 主键，
+//   也可以直接执行 SELECT COUNT(*)，避免二次冷启动因列不存在而误报数据损坏。
+// - execute 阶段必须用旧数据库快照覆盖升级一次，再 force-stop/冷启动一次，确认旧数据仍可读。
 
   async insertBean(bean: BeanRecord): Promise<void> {
     const valueBucket: relationalStore.ValuesBucket = {
