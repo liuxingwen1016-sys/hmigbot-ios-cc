@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from lib.validate_runtime_snapshots import *
 from lib.validate_runtime_snapshots import main
+from lib.stage1_visual_scope import read_snapshot_meta
 from _launcher import dispatch
 import json
 import sys
@@ -31,10 +32,10 @@ def _contains_ios_evidence(argv: list[str]) -> bool:
     for page in pages:
         if not isinstance(page, dict) or not page.get('page_id'):
             continue
-        meta_path = root / 'spec/baseline/ui-snapshots' / str(page['page_id']) / 'meta.json'
+        folder = root / 'spec/baseline/ui-snapshots' / str(page['page_id'])
         try:
-            meta = json.loads(meta_path.read_text(encoding='utf-8'))
-        except (OSError, json.JSONDecodeError):
+            meta = read_snapshot_meta(folder)
+        except (OSError, ValueError):
             continue
         evidence = meta.get('runtime_evidence')
         if isinstance(evidence, dict) and (

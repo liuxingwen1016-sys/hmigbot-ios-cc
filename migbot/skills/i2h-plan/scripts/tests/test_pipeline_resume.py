@@ -51,6 +51,24 @@ class PipelineResumeTests(unittest.TestCase):
                                     'target_input_sha256': self.target if target is None else target,
                                     'units': units}), encoding='utf-8')
 
+    def test_summary_preserves_decision_and_full_receipt(self):
+        self.delivery()
+        command = [sys.executable, '-B', str(HERE / 'pipeline_resume.py'), '--project-root', str(self.root),
+                   '--require-runtime-plan', '--require-visual-and-ut', '--require-behavior']
+        full = subprocess.run(command, capture_output=True, text=True)
+        saved = self.root / 'resume-report.json'
+        compact = subprocess.run([*command, '--summary', '--out', str(saved)], capture_output=True, text=True)
+        self.assertEqual((full.returncode, compact.returncode), (1, 1))
+        detailed, summary = json.loads(full.stdout), json.loads(compact.stdout)
+        self.assertEqual(detailed, json.loads(saved.read_text()))
+        self.assertEqual(summary['resume_stage'], detailed['resume_stage'])
+        self.assertEqual(summary['verification']['unpassed_checks'], detailed['verification']['unpassed_checks'])
+        self.assertEqual(summary['stages'][1]['checks']['delivery']['errors'],
+                         detailed['stages'][1]['checks']['delivery']['errors'])
+        self.assertEqual(summary['stages'][1]['checks']['delivery']['path'],
+                         detailed['stages'][1]['checks']['delivery']['path'])
+        self.assertNotIn('inventory', summary['stages'][1]['checks']['delivery'])
+
     def test_canonical_markers_and_delivery_complete(self):
         self.marker('spec/baseline/spec-complete.txt', 'i2h-spec', ['spec/.i2h/resources-inventory.json'])
         self.delivery()
@@ -75,6 +93,56 @@ class PipelineResumeTests(unittest.TestCase):
         result = pipeline_resume.pipeline_status(self.root)
         self.assertEqual(result['resume_stage'], 'complete', result)
         self.assertTrue(all(row['complete'] for row in result['stages']))
+        self.assertEqual(result['verification']['unpassed_checks'], {
+            'CHECK-1': 'NOT_REPORTED', 'CHECK-2': 'NOT_REPORTED',
+            'CHECK-3': 'NOT_REPORTED', 'CHECK-4': 'NOT_REPORTED', 'CHECK-5': 'NOT_REPORTED',
+        })
+        strict = pipeline_resume.pipeline_status(self.root, require_visual_and_ut=True)
+        self.assertEqual(strict['resume_stage'], 'i2h-verify')
+        self.assertIn('required_verify_checks_not_passed', strict['verification']['errors'])
+        runtime = pipeline_resume.pipeline_status(self.root, require_runtime_plan=True)
+        self.assertEqual(runtime['resume_stage'], 'i2h-plan')
+        scope = runtime['stages'][1]['checks']['delivery']['runtime_scope']
+        self.assertEqual(scope['preview_only_units'], ['home'])
+        self.assertEqual(scope['verification_state_count'], 0)
+        self.assertIn('runtime_verification_states_missing', runtime['stages'][1]['checks']['delivery']['errors'])
+
+    def test_verify_summary_only_counts_unambiguous_results(self):
+        path = self.root / 'spec/verify-report.md'
+        path.write_text('''
+| CHECK-1 | 静态分析 | PASS | 0 errors |
+| CHECK-2 App 身份 | 是 | **PARTIAL** | 未签名 |
+| CHECK-3 | 视觉对齐 | **SKIP** | 暂未运行 |
+| CHECK-4 | 单元测试 | DEFERRED | 等待设备 |
+| CHECK-5 | 行为验证 | SKIP | 未选择 |
+''', encoding='utf-8')
+        result = pipeline_resume.pipeline_status(self.root, require_visual_and_ut=True)['verification']
+        self.assertFalse(result['complete'])
+        self.assertEqual(result['reported_checks']['CHECK-1'], 'PASS')
+        self.assertEqual(result['unpassed_checks'], {
+            'CHECK-2': 'PARTIAL', 'CHECK-3': 'SKIP', 'CHECK-4': 'DEFERRED', 'CHECK-5': 'SKIP',
+        })
+        path.write_text('\n'.join(f'| CHECK-{index} | Check | PASS |' for index in range(1, 5)), encoding='utf-8')
+        result = pipeline_resume.pipeline_status(self.root, require_visual_and_ut=True)['verification']
+        self.assertTrue(result['complete'])
+        self.assertEqual(result['unpassed_checks'], {'CHECK-5': 'NOT_REPORTED'})
+        behavior = pipeline_resume.pipeline_status(
+            self.root, require_visual_and_ut=True, require_behavior=True,
+        )['verification']
+        self.assertFalse(behavior['complete'])
+        self.assertIn('CHECK-5', behavior['required_checks'])
+        with path.open('a', encoding='utf-8') as stream:
+            stream.write('\n| CHECK-5 | 行为验证 | PASS |\n')
+        behavior = pipeline_resume.pipeline_status(
+            self.root, require_visual_and_ut=True, require_behavior=True,
+        )['verification']
+        self.assertFalse(behavior['complete'])
+        self.assertIn('behavior_receipt_missing', behavior['errors'])
+        with path.open('a', encoding='utf-8') as stream:
+            stream.write('\n| CHECK-3 | 视觉对齐 | FAIL-functional |\n')
+        result = pipeline_resume.pipeline_status(self.root, require_visual_and_ut=True)['verification']
+        self.assertFalse(result['complete'])
+        self.assertEqual(result['unpassed_checks']['CHECK-3'], 'CONFLICT')
 
     def test_hash_tampering_blocks_resume(self):
         self.marker('spec/baseline/spec-complete.txt', 'i2h-spec', ['spec/.i2h/resources-inventory.json'])
@@ -112,6 +180,9 @@ class PipelineResumeTests(unittest.TestCase):
             'spec/baseline/feature-index.md',
             'spec/decision-ledger.md',
         })
+        strict = pipeline_resume.pipeline_status(self.root, require_runtime_plan=True)
+        self.assertEqual(strict['resume_stage'], 'i2h-plan')
+        self.assertTrue(strict['stages'][0]['complete'])
 
     def test_legacy_path_is_reported_but_schema2_marker_is_accepted_in_compat_mode(self):
         # A legacy *path* can be consumed when its marker is still
@@ -148,6 +219,62 @@ class PipelineResumeTests(unittest.TestCase):
         result = pipeline_resume.validate_delivery(self.root, self.target)
         self.assertIn('schema2_delivery_ownership', result['errors'])
         self.assertEqual(result['ownership']['status'], 'FAIL')
+
+    def test_runtime_plan_accepts_formal_arrival_and_verification_state(self):
+        self.delivery()
+        path = self.root / 'spec/baseline/ui-delivery-approved.json'
+        payload = json.loads(path.read_text(encoding='utf-8'))
+        payload['units'][0]['required_states'][0]['arrival_mode'] = 'formal'
+        payload['units'][0]['page_id'] = 'home-page'
+        payload['verification_states'] = [
+            {'verification_id': 'home-pair', 'owner': 'home', 'page_id': 'home-page', 'state_id': 'home'},
+        ]
+        path.write_text(json.dumps(payload), encoding='utf-8')
+        result = pipeline_resume.validate_delivery(self.root, self.target, require_runtime_plan=True)
+        self.assertTrue(result['complete'], result)
+        self.assertEqual(result['runtime_scope'], {'verification_state_count': 1, 'preview_only_units': []})
+
+        payload['verification_states'][0]['owner'] = 'different-unit'
+        path.write_text(json.dumps(payload), encoding='utf-8')
+        broken = pipeline_resume.validate_delivery(self.root, self.target, require_runtime_plan=True)
+        self.assertFalse(broken['complete'])
+        self.assertEqual(broken['runtime_scope']['unbound_verification_rows'], [0])
+        self.assertEqual(broken['runtime_scope']['missing_visual_states'],
+                         [{'page_id': 'home-page', 'state_id': 'home'}])
+
+    def test_runtime_plan_requires_host_slot_before_execute(self):
+        self.delivery()
+        path = self.root / 'spec/baseline/ui-delivery-approved.json'
+        payload = json.loads(path.read_text(encoding='utf-8'))
+        unit = payload['units'][0]
+        unit['required_states'][0]['arrival_mode'] = 'formal'
+        unit['page_id'] = 'home-page'
+        unit['presentation_role'] = 'hosted_destination'
+        unit['output']['symbol'] = 'Home'
+        payload['verification_states'] = [
+            {'verification_id': 'home-pair', 'owner': 'home', 'page_id': 'home-page', 'state_id': 'home'},
+        ]
+        path.write_text(json.dumps(payload), encoding='utf-8')
+        missing = pipeline_resume.validate_delivery(self.root, self.target, require_runtime_plan=True)
+        self.assertIn('required_host_slots_missing', missing['errors'])
+        self.assertEqual(missing['runtime_scope']['missing_host_slots'], [unit['unit_id']])
+        unit['integration'] = {'host_file': 'entry/src/main/ets/Root.ets', 'host_builder': 'Root.home',
+                               'child_symbol': unit['output']['symbol']}
+        path.write_text(json.dumps(payload), encoding='utf-8')
+        valid = pipeline_resume.validate_delivery(self.root, self.target, require_runtime_plan=True)
+        self.assertNotIn('required_host_slots_missing', valid['errors'])
+
+        second = {'host_file': 'entry/src/main/ets/Other.ets', 'host_builder': 'Other.home',
+                  'child_symbol': unit['output']['symbol'], 'mount': 'bindSheet'}
+        unit['integration'] = [unit['integration'], second]
+        path.write_text(json.dumps(payload), encoding='utf-8')
+        valid = pipeline_resume.validate_delivery(self.root, self.target, require_runtime_plan=True)
+        self.assertTrue(valid['complete'], valid)
+
+        second['host_builder'] = ''
+        path.write_text(json.dumps(payload), encoding='utf-8')
+        invalid = pipeline_resume.validate_delivery(self.root, self.target, require_runtime_plan=True)
+        self.assertIn('required_host_slots_missing', invalid['errors'])
 
     def test_execute_requires_fresh_immersive_safearea_receipt(self):
         self.delivery()
@@ -222,6 +349,8 @@ class PipelineResumeTests(unittest.TestCase):
         shutil.copy2(HERE / 'pipeline_resume.py', script)
         shutil.copy2(HERE / 'ui_state_ownership.py', ownership)
         shutil.copy2(HERE / 'ui_delivery.py', delivery)
+        for module in ('acceptance_plan.py', 'generate_execute_coverage.py'):
+            shutil.copy2(HERE / module, script.parent / module)
         shutil.copy2(HERE.parents[2] / 'bin/scripts/pipeline/marker_contract.py', marker)
         result = subprocess.run(
             [sys.executable, str(script), '--project-root', str(project)],

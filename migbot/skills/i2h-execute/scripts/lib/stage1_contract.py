@@ -1,6 +1,6 @@
 """Contract normalization and deterministic source fingerprints for Stage 1."""
 from __future__ import annotations
-import hashlib, json
+import hashlib, json, os
 from pathlib import Path
 from typing import Any
 
@@ -14,10 +14,26 @@ def digest(path_or_bytes: Path | str | bytes) -> str:
 
 
 def source_digest(root: Path | str) -> str:
-    root = Path(root)
+    """Fingerprint production source and package inputs, excluding receipts and build output."""
+    root = Path(root).resolve()
+    excluded = {'.claude', '.git', '.hvigor', '.migbot', '.preview', 'build', 'node_modules', 'oh_modules', 'spec'}
+    configs = {'build-profile.json5', 'hvigorfile.ts', 'local.properties', 'oh-package-lock.json5', 'oh-package.json5'}
+    files = []
+    for directory, folders, names in os.walk(root):
+        folders[:] = [name for name in folders if name not in excluded and not name.startswith('.')]
+        path = Path(directory)
+        parts = path.relative_to(root).parts
+        in_package = bool(parts and parts[0] in {'AppScope', 'hvigor'})
+        in_module = any(parts[i:i + 2] == ('src', 'main') for i in range(len(parts) - 1))
+        for name in names:
+            file = path / name
+            if in_package or in_module or name in configs or file.suffix == '.ets':
+                if not file.resolve().is_relative_to(root):
+                    raise ValueError(f'build input escapes project root: {file}')
+                if file.is_file():
+                    files.append(file)
     h = hashlib.sha256()
-    files = sorted(p for p in root.rglob("*.ets") if p.is_file() and ".git" not in p.parts)
-    for p in files:
+    for p in sorted(files):
         rel = p.relative_to(root).as_posix().encode()
         data = p.read_bytes()
         h.update(len(rel).to_bytes(8, "big")); h.update(rel)

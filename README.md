@@ -56,6 +56,10 @@ Prerequisites are Python 3.8+, Claude Code, an iOS project containing an `.xcode
 
 After installation, `/i2h-init` and `/i2h-run` are the intended workflow entry points. `/i2h-build` uses the installed `i2h-tool` helper; device and DevEco checks remain explicit runtime prerequisites.
 
+Use `/i2h-verify behavior` for the first functional check and `/i2h-verify recheck` for a targeted
+retest after a repair. Both retain the initial scenario scope and all current acceptance criteria.
+Use `/i2h-verify full` to run the standard Verify stage. See the [native UITest receipt contract](migbot/skills/i2h-verify/references/check5-behavior-verify.md).
+
 ## Repository layout
 
 ```text

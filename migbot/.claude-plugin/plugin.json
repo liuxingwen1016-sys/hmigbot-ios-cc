@@ -1,7 +1,7 @@
 {
   "name": "hmigbot-ios",
   "description": "iOS-to-ArkTS (HarmonyOS) migration toolkit for Claude Code. Ships i2h pipeline skills, iOS analysis skills, agents and /i2h-init + /i2h-build + /i2h-run commands (English + Chinese variants).",
-  "version": "1.0.0-alpha",
+  "version": "1.0.0-alpha.1",
   "author": {
     "name": "iOS Migration Team"
   },

@@ -15,6 +15,9 @@ import sys
 import json
 import shutil
 import argparse
+import hashlib
+import subprocess
+import tempfile
 from pathlib import Path
 
 
@@ -42,6 +45,95 @@ ARKTS_SKILLS_PREFIX = 'arkts-'
 
 # 排除的 ArkTS skills（Android 特定）
 EXCLUDE_ARKTS_SKILLS = {'arkts-ad'}
+
+EXECUTE_SKILL = 'i2h-execute'
+UI_GATE_ENTRIES = {
+    'capability_gate.py': ('--project-root', '--output-json'),
+    'ui_stage1_gate.py': ('--project-root', '--output-json'),
+    'ui_delivery_gate.py': ('--project-root', '--output-json'),
+    'ui_dispatch.py': ('prepare', 'complete', 'reuse-metadata'),
+    'stage1_acceptance.py': ('--project-root', '--kind', '--build-receipt'),
+    'stage1_visual_scope.py': ('--project-root', '--out'),
+    'stage1_visual_report.py': ('--scope', 'assemble'),
+    'ui_relationships.py': ('--comparison-id', '--harmony-tree'),
+}
+UI_GATE_FILES = {
+    *UI_GATE_ENTRIES,
+    '_launcher.py',
+    'ui_delivery_inputs.py',
+    'lib/__init__.py',
+    'lib/ios_stage1_scope.py',
+    'lib/ios_stage1_acceptance.py',
+    'lib/ios_stage1_progress.py',
+    'lib/ios_stage1_summary.py',
+    'lib/ios_stage1_visual_gate.py',
+    'lib/ios_ui_delivery_gate.py',
+    'lib/ios_ui_dispatch.py',
+    'lib/ios_ui_relationships.py',
+    'lib/stage1_contract.py',
+    'lib/stage1_reachability.py',
+    'lib/stage1_visual_scope.py',
+    'lib/stage1_visual_report.py',
+    'lib/stage1_visual_acceptance.py',
+    'lib/stage1_wiring_checks.py',
+    'lib/ui_stage1_gate.py',
+    'lib/ui_delivery_inputs_ios.py',
+}
+
+
+def stage_execute_skill(source: Path, target: Path) -> None:
+    """Verify a project-local copy before replacing the installed skill."""
+    scripts = source / 'scripts'
+
+    def exclude(directory, names):
+        ignored = {'__pycache__'}
+        if Path(directory) == scripts:
+            ignored.add('bin')  # obsolete shared Android Nuitka distribution
+        return ignored.intersection(names)
+
+    shutil.copytree(source, target, ignore=exclude)
+    staged = target / 'scripts'
+    manifest = json.loads((staged / 'ui-delivery-runtime.json').read_text(encoding='utf-8'))
+    checksums = manifest.get('sha256') if isinstance(manifest, dict) else None
+    if not isinstance(checksums, dict) or manifest.get('schema_version') != 1 or set(checksums) != UI_GATE_FILES:
+        raise ValueError('invalid UI delivery runtime manifest')
+    for name, expected in checksums.items():
+        if hashlib.sha256((staged / name).read_bytes()).hexdigest() != expected:
+            raise ValueError(f'UI delivery runtime checksum mismatch: {name}')
+    for entry, expected_help in UI_GATE_ENTRIES.items():
+        result = subprocess.run(
+            [sys.executable, '-E', '-B', '-X', 'utf8', str(staged / entry), '--help'],
+            cwd=target, capture_output=True, text=True, encoding='utf-8', timeout=20,
+        )
+        if result.returncode or any(flag not in result.stdout for flag in expected_help):
+            raise ValueError(f'UI delivery runtime preflight failed for {entry}: {result.stderr.strip()}')
+    with tempfile.TemporaryDirectory(dir=target.parent) as temporary:
+        for kind in ('summary', 'next'):
+            result = subprocess.run(
+                [sys.executable, '-E', '-B', '-X', 'utf8', str(staged / 'stage1_acceptance.py'),
+                 '--project-root', temporary, '--kind', kind],
+                cwd=target, capture_output=True, text=True, encoding='utf-8', timeout=20,
+            )
+            try:
+                report = json.loads(result.stdout)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f'UI Stage-1 {kind} runtime preflight failed: {result.stderr.strip()}') from exc
+            if (result.returncode != 2 or not isinstance(report, dict)
+                    or report.get('policy_gate') != f'execute.stage1-{kind}'
+                    or report.get('status') != 'BLOCKED' or report.get('stage1_complete') is not False):
+                raise ValueError(f'UI Stage-1 {kind} runtime preflight must report an incomplete project')
+
+
+def replace_execute_skill(staged: Path, installed: Path) -> None:
+    previous = staged.parent / 'previous-execute'
+    if installed.exists() or installed.is_symlink():
+        installed.replace(previous)
+    try:
+        staged.replace(installed)
+    except OSError:
+        if previous.exists() or previous.is_symlink():
+            previous.replace(installed)
+        raise
 
 
 def should_install_skill(skill_name: str) -> bool:
@@ -78,6 +170,17 @@ def install_migbot(project_path: str, ios_path: str = None, repo_root: str = Non
     else:
         repo_root = Path(repo_root).expanduser().resolve()
 
+    with tempfile.TemporaryDirectory(prefix='.i2h-package-', dir=project_root) as stage:
+        checked_skill = Path(stage) / EXECUTE_SKILL
+        try:
+            stage_execute_skill(repo_root / 'migbot' / 'skills' / EXECUTE_SKILL, checked_skill)
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            print(f'package_error: {exc}', file=sys.stderr)
+            sys.exit(3)
+        _install_project(project_root, ios_path, repo_root, language, checked_skill)
+
+
+def _install_project(project_root, ios_path, repo_root, language, checked_skill):
     # 检测是否是升级安装
     is_upgrade = (project_root / ".migbot" / "config.json").exists()
     skills_src = repo_root / "migbot" / "skills"
@@ -117,7 +220,7 @@ def install_migbot(project_path: str, ios_path: str = None, repo_root: str = Non
         skills_dir = claude_dir / "skills"
         if skills_dir.exists():
             for skill in skills_dir.iterdir():
-                if skill.is_dir() and (skill.name in owned_skill_names
+                if skill.name != EXECUTE_SKILL and skill.is_dir() and (skill.name in owned_skill_names
                                        or skill.name.startswith(("a2h-", "android-"))):
                     shutil.rmtree(skill)
 
@@ -161,9 +264,12 @@ def install_migbot(project_path: str, ios_path: str = None, repo_root: str = Non
                 # 使用过滤函数判断是否安装
                 if should_install_skill(skill_dir.name):
                     dst = skills_dst / skill_dir.name
-                    if dst.exists():
-                        shutil.rmtree(dst)
-                    shutil.copytree(skill_dir, dst)
+                    if skill_dir.name == EXECUTE_SKILL:
+                        replace_execute_skill(checked_skill, dst)
+                    else:
+                        if dst.exists():
+                            shutil.rmtree(dst)
+                        shutil.copytree(skill_dir, dst)
                     copied_count += 1
                     if not is_upgrade:
                         print(f"   ✅ {skill_dir.name}")

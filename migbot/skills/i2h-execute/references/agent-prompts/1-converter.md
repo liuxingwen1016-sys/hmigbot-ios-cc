@@ -27,6 +27,8 @@
 }
 ```
 
+完整 iOS 运行时迁移还会提供 `ui_dispatch.py prepare` 生成的派发提示和冻结 packet。按 packet 里的状态逐一读取图像、Accessibility 树和源码锚点。仅在实际读取后写入 `image_observations` 和 `input_applications`，使用 packet 给出的 ID。按 [UI 交付契约](../ui-delivery-contract.md) 写转换报告并立即执行 `ui_dispatch.py complete`。缺证据或输出时保留原始失败回执。
+
 
 ## 执行步骤
 
@@ -71,12 +73,14 @@ Read: <ios_file> 的 imports
 6. **展示语义和宿主层级**:
    - 先读取 ui-delivery unit 的 `source_obligations`。其中 `interactive_controls`、`accessibility_identifiers`、`has_form`、`has_scroll` 和 `has_overlay` 是源代码清单，必须逐项在 ArkUI 产物中保留语义。它们不能替代 iOS runtime evidence，但不能被转换过程丢弃。
    - 当 `fixed_bottom_action_required=true` 时，`primary_action_ids` 中的动作必须放在 `Scroll` 同级的固定底部区域，并在首屏 accessibility dump 中可见。禁止把这些动作只放在 `Scroll` 内容末尾。
+   - 当有 `runner_action_ids` 时，在对应的用户可操作控件上使用实际 `.id(...)`，并保留源无障碍名称。
    - 当 `compact_picker_rows_required=true` 时，逐项为 `form_picker_labels` 生成紧凑选择行，保留当前值、chevron 和稳定 id。禁止用 TagPill 或 chip grid 替代 Form Picker。
    - 当 `searchable=true` 且 `searchable_placement=toolbar` 时，搜索入口应保持工具栏/折叠语义，不能额外插入首屏内联搜索框。
    - 当 `chart` 非空时，保留 `y_domain`、`x_axis_hidden` 和 `height` 的源几何约束，不能把 Chart 降级成无轴的装饰矩形。
    - 逐项读取页面规格中的 `presentation`、`source_navigation` 和 `harmony_mapping`，先决定页面是根 Tab、NavigationLink/全屏路由，还是宿主拥有的 `.sheet()`/`.fullScreenCover()`。
    - `ui-delivery-approved.json` 中 unit 的 `output.file` 与 `output.symbol` 是交付契约，必须按原路径和符号写入。根页面即使由 `EntryAbility` 通过 `pages/Index.ets` 启动，也要把实际根组件写到规格指定的 `pages/RootView.ets`。`Index.ets` 可以只做兼容入口转发，也可以作为全工程唯一的 `WindowModel`/avoid-area 安全区宿主，但不得把 `Index.ets` 当作 RootView 的替代产物或让各页面重复测量系统栏。不得仅修改 inventory 来掩盖 output 路径不一致。
    - iOS `.sheet()` 必须转换为宿主拥有的模态层，优先使用 `bindSheet($$state, builder, options)`。在目标 API 26 上必须用真机 smoke 验证打开、取消、保存和程序化关闭都能生效。如果 `bindSheet` 的 `isShow=false` 不关闭、系统关闭 X 无法隐藏，或关闭后留下空白层，改用根宿主的自绘 overlay 作为等价实现，并把 sheet 内容、遮罩、关闭回写和安全区一起放在同一宿主层。iOS `.fullScreenCover()` 必须转换为 `bindContentCover` 或规格明确且可关闭的全屏容器。禁止把这两类页面默认登记为 `NavDestination`，也不能保留已知失效的原生绑定作为唯一实现。
+   - 同一个 ArkUI 组件只绑定一个 `bindSheet`。多个由根协调的 sheet 分别绑定到不同、稳定挂载的组件节点，或者通过一个 sheet 宿主和互斥状态选择内容。独立的布尔状态无法修复在同一组件上串接 `bindSheet` 的覆盖问题。运行时逐个打开各 sheet，不能用最后一个绑定成功推导其他入口可达。
    - 跨模态转场必须保留 iOS 的生命周期顺序。若源 `.sheet(..., onDismiss:)` 的回调会打开 `.fullScreenCover`，sheet 内容的关闭动作只能清除 sheet state，不能在 `close*`/`dismiss*` 路由方法中提前写入 cover state。把 cover 的打开动作放在宿主 `bindSheet` 的 `onDisappear`（或等价的完成回调）中，确保 sheet 已经卸载后再触发 full-screen。生成后必须用真实设备验证“开始冲煮 → sheet 消失 → BrewView 出现”和“冷启动 pending → resume → BrewView 出现”两条路径。
    - 只有 iOS `NavigationLink`、push、独立全屏流程或规格明确的 routed dialog 才能登记 `NavDestination` 和 `NavPathStack` 路由。`pageMap` 只能登记这些真实路由目标，不能把 sheet 页面批量加入。
    - sheet builder 必须挂在拥有状态的根宿主节点上，使用 `$$` 双向绑定，关闭时回写 `false`，并保留 iOS 的取消、保存和确认生命周期。不要把 sheet 内容放到 Navigation 内部再用普通 push 伪装模态。

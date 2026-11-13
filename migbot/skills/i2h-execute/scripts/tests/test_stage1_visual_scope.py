@@ -78,13 +78,19 @@ class RuntimeCaptureScopeTests(unittest.TestCase):
         self.manifest.write_text(json.dumps(manifest), encoding="utf-8")
 
     def test_external_capture_manifest_is_materialized_into_scope(self):
+        destination = self.root / "spec/baseline/ui-snapshots" / self.page_id
+        destination.mkdir(parents=True, exist_ok=True)
+        meta = destination / "meta.json"
+        meta.write_text(json.dumps({"layout_sources": ["Home.swift"]}), encoding="utf-8")
+        frozen_meta = meta.read_bytes()
         scope = build_scope(self.wiring_dir, self.root, self.manifest)
         self.assertEqual(scope["status"], "READY")
         self.assertEqual(scope["runtime_capture"]["status"], "synced")
         baseline = scope["units"][0]["pages"][0]["baseline"]
         self.assertEqual(baseline["evidence_kind"], "ios-accessibility-json")
-        destination = self.root / "spec/baseline/ui-snapshots" / self.page_id
-        self.assertTrue((destination / "meta.json").is_file())
+        self.assertEqual(meta.read_bytes(), frozen_meta)
+        runtime_meta = json.loads((destination / "runtime-meta.json").read_bytes())
+        self.assertEqual(list(runtime_meta["runtime_evidence_by_state"]), ["normal"])
         self.assertTrue((destination / "states/normal/ios-runtime.png").is_file())
 
     def test_project_local_manifest_is_discovered_automatically(self):

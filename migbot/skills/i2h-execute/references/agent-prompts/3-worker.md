@@ -112,22 +112,43 @@ export class DatabaseManager {
   }
 
   private async migrateSchema(): Promise<void> {
-    // 迁移步骤必须可重复执行。先探测列/版本，再 ALTER TABLE，不能假设旧表已经是最新结构。
-    // 生产代码应为每个新增列保留默认值，并在 schema_version 更新后再继续读取新列。
-    await this.store?.executeSql(
-      'CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, version INTEGER NOT NULL)'
-    );
+    const store = this.store;
+    if (!store) {
+      throw new Error('Database is not initialized');
+    }
+    const columns = await store.querySql('PRAGMA table_info(beans)');
+    let hasCreatedAt = false;
+    try {
+      const nameIndex = columns.getColumnIndex('name');
+      while (columns.goToNextRow()) {
+        if (columns.getString(nameIndex) === 'created_at') {
+          hasCreatedAt = true;
+          break;
+        }
+      }
+    } finally {
+      columns.close();
+    }
+    if (!hasCreatedAt) {
+      await store.executeSql('ALTER TABLE beans ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0');
+    }
   }
 
-  async count(table: string, keyColumn: string = 'id'): Promise<number> {
+  async count(table: string): Promise<number> {
     const predicates = new relationalStore.RdbPredicates(table);
-    const resultSet = await this.store?.query(predicates, [keyColumn]);
-    const count = resultSet?.rowCount ?? 0;
-    resultSet?.close();
-    return count;
+    const resultSet = await this.store?.query(predicates);
+    if (!resultSet) {
+      throw new Error('Database is not initialized');
+    }
+    try {
+      return resultSet.rowCount;
+    } finally {
+      resultSet.close();
+    }
   }
 
 // 迁移实现要求
+// - 根据实际旧库字段和源语义选择回填值。示例的 0 仅用于展示升级写法。
 // - 对旧表逐列探测并使用 ALTER TABLE ... ADD COLUMN ... DEFAULT ...，重复运行必须安全。
 // - 不要在通用 count(table) 中固定 query(['id'])。library_metadata 这类表可能只有 key 主键，
 //   也可以直接执行 SELECT COUNT(*)，避免二次冷启动因列不存在而误报数据损坏。
@@ -438,6 +459,14 @@ Read: <ios_project>/Models/User.swift
 - Date → Date
 
 ## 占位符
+
+迁移定时通知时使用经过目标 SDK 和权限验证的系统调度。`NotificationRequest.deliveryTime` 是系统生成的发送时间，未来截止时间用后台代理提醒等实际调度能力。保存调度标识，用于幂等重入和取消。
+
+配方编辑的粉量、粉水比和水温必须立即更新页面读数、总水量及注水说明。`@Local` 绑定普通 `RecipeValues` 时，每次操作替换整个值。采用 `@ObservedV2` 时，对实际变更字段使用 `@Trace`，并实测交互后的派生值。
+
+品鉴星级、口味维度、标签和笔记也遵循同一状态更新规则。保存返回时从同一持久层 revision 刷新列表和汇总。立即可见与冷启动读回是两个独立验收点。
+
+解码 HAP 内 rawfile 图片时使用完整 `RawFileDescriptor` 或原始图片字节。`.fd` 单独传入会丢掉资源区间。分别报告取资源、解码和 OCR 失败。
 - 无
 
 ## 依赖

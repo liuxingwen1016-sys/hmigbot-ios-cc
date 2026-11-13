@@ -12,6 +12,13 @@
 - **kernel 只抄不判**：归属消歧 / hub / 横切 / 定号已由主线程 P0 裁决并随 prompt 内联下发；agent 发现 kernel 与 spec 冲突 → 信封报告，禁自行改判。
 - **返回 = 信封 ≤30 行**：状态 + 计数 + 路径；禁贴产物正文。
 - **派发 prompt 禁复述**模板 / SKILL 已载规则——一行 MUST-Read 指针即可；但任务专属参数（kernel 表 / 清单）不得省略。
+- **按角色读取规格**：主线程 P0 阅读完整索引和逐功能规格。各 writer 优先用随包 `scripts/plan_input_view.py --role ui|base|slice` 读取下表范围，命令从工程根运行并使用当前安装 Skill 的脚本绝对路径。按需读取已分配的逐页/逐功能规格、API 与其他必须文件。若脚本失败或输出标明全文回退，按原路径 Read；如有具体事实缺口或冲突，按出处补读相关章节并在信封说明。P2 仍按完整索引执行覆盖率和接线核对。
+
+| Writer | 规格视图 | 其余事实源 |
+|---|---|---|
+| UI | `--role ui`，页面清单、全局与分批约定、导航和共享组件 | kernel 页面归属表、逐页规格 |
+| Base | `--role base`，共享组件与服务、技术栈。P0 可用 `--shared-feature-id FNNN` 补充已确认的公共能力条目 | `feature-base.md`、资源引用、chain-auth |
+| Slice | `--role slice`，页面、导航和共享组件。若已收到完整且可定位的相应 kernel 事实，可直接使用 | 已分配的 feature 与页面规格、API、wiring_owner_map |
 
 ---
 
@@ -21,7 +28,7 @@
 Agent(
   prompt="生成 spec/baseline/plans/ui-plan.md。MUST 先 Read: i2h-plan/templates/ui-plan-template.md（整文件，分批规则与表格形态以其为准）。
   页面归属表（kernel，只抄不判，含 hub 裁决结果）: {page_owning_map}    # 页 id → 裸 F-ID
-  分批输入: spec/baseline/ui-manifest.md（优先级 / confidence / 依赖三源见模板生成规则）
+  分批输入: 运行随包 plan_input_view.py --role ui（优先级 / confidence / 依赖三源见模板生成规则）并读取对应逐页规格。
   batch_max: {BATCH_MAX}                              # 主线程按宿主取表（SKILL Step 2 规则 2）
   写权: 仅 ui-plan.md。",
   subagent_type="general-purpose")
@@ -71,7 +78,7 @@ Agent(
 ```
 Agent(
   prompt="生成 spec/baseline/plans/base-plan.md。MUST 先 Read: i2h-plan/templates/feature-plan-template.md（整文件，「文件二」段为生成规范）+ i2h-plan/references/skill-binding-rules.md。
-  输入: spec/baseline/feature-base.md + feature-index.md 共享组件/服务；chain-auth 存在时按 SKILL Step 4.3 表注入 Base 侧 data_chain_refs（L0 / L2-L3 行）；每任务写 `parallel_group:`（模板默认分组为待确认项：逐任务核对 feature-base.md 确认不 import 同组产出，否则拆组，判据见模板）
+  输入: spec/baseline/feature-base.md + plan_input_view.py --role base（P0 公共能力 F-ID: {shared_feature_ids}）；chain-auth 存在时按 SKILL Step 4.3 表注入 Base 侧 data_chain_refs（L0 / L2-L3 行）；每任务写 `parallel_group:`（模板默认分组为待确认项：逐任务核对 feature-base.md 确认不 import 同组产出，否则拆组，判据见模板）
   写权: 仅 base-plan.md；如产生 P-B 占位 → 行全文写入信封带回，禁直写 registry。",
   subagent_type="general-purpose")
 ```
@@ -120,6 +127,7 @@ Agent(
   slice 清单（kernel 定号，只抄）: {slice_list}       # Slice N ↔ F-ID ↔ spec 路径 ↔ depends_on
   页面归属表: {page_owning_map}
   对接点归属映射: {wiring_owner_map}                  # cross_slice_edits 的 owner 与 resolve_by 依据
+  读取清单指定的功能与页面规格；若需核对全局页面关系，运行 plan_input_view.py --role slice。功能号、依赖、页归属使用已裁决的 kernel。
   写权: plans/slices/slice-NN-<fid>.md（每文件恰写一次）+ placeholder-registry.md 直写（Step 4.1 原文执行）。",
   subagent_type="general-purpose")
 ```

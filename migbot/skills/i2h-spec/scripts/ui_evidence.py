@@ -23,8 +23,10 @@ from pathlib import Path
 from typing import Any, Iterable
 
 try:
+    from ios_style_triggers import detect as detect_style_triggers
     from source_index import build_index, classify_view_surface
 except ImportError:  # pragma: no cover - package/installed-tree fallback
+    from .ios_style_triggers import detect as detect_style_triggers  # type: ignore
     from .source_index import build_index, classify_view_surface  # type: ignore
 
 try:
@@ -377,13 +379,21 @@ def run(
     # Stable handoff consumed by execute/resource-facts.  Keep it separate
     # from the human-facing inventory so downstream scripts can verify the
     # exact source snapshot without parsing the large evidence document.
-    atomic_json(output_path.parent / "target-input.json", {
+    receipt = {
         "schema_version": 1,
         "target_input_sha256": target_hash,
         "source": "ios-static-evidence",
         "runtime_required": runtime_required,
         "inventory": str(output_path),
-    })
+    }
+    spec_dir = output_path.parent.parent
+    if output_path.parent.name == ".i2h" and spec_dir.name == "spec":
+        style_path = spec_dir / "ref/ios-style-triggers.json"
+        style = detect_style_triggers(root)
+        style["target_input_sha256"] = target_hash
+        atomic_json(style_path, style)
+        receipt["style_triggers_sha256"] = sha256_file(style_path)
+    atomic_json(output_path.parent / "target-input.json", receipt)
     if res_index:
         index = build_res_index(inventory, pages, target_hash, runtime_required)
         destination = Path(res_index)

@@ -40,8 +40,12 @@ from marker_contract import (  # type: ignore[import-not-found]
 )
 import ui_state_ownership  # type: ignore[import-not-found]
 import ui_delivery  # type: ignore[import-not-found]
+from acceptance_plan import BEHAVIOR_REPORT, replay_behavior
 
 STAGES = ("i2h-spec", "i2h-plan", "i2h-execute", "i2h-verify", "i2h-retrospect")
+VERIFY_CHECKS = tuple(f"CHECK-{index}" for index in range(1, 6))
+_CHECK_ROW = re.compile(r"^(CHECK-[1-5])(?:\s|$)")
+_CHECK_RESULT = re.compile(r"^(?:PASS|FAIL(?:-VISUAL|-FUNCTIONAL)?|PARTIAL|DEFERRED|SKIP|WARN|ERROR)$")
 
 # Plan owns these two handoff documents and may append decisions or normalize
 # the feature index after i2h-spec has written its marker.  Their mutation is
@@ -173,7 +177,7 @@ def _spec_handoff_mismatches(root: Path) -> list[str]:
     return sorted(mismatches)
 
 
-def validate_delivery(root: Path, input_hash: str | None) -> dict[str, Any]:
+def validate_delivery(root: Path, input_hash: str | None, *, require_runtime_plan: bool = False) -> dict[str, Any]:
     """Validate the approved schema-2 inventory used by i2h-execute."""
     path = _delivery_path(root)
     result: dict[str, Any] = {
@@ -255,6 +259,46 @@ def validate_delivery(root: Path, input_hash: str | None) -> dict[str, Any]:
         result["contract"] = contract.get("validation", {})
         if contract.get("status") != "validated":
             result["errors"].append("schema2_delivery_contract")
+    verification_states = data.get("verification_states")
+    verification_count = 0
+    if isinstance(verification_states, list):
+        verification_count = sum(isinstance(state, dict) and bool(state) for state in verification_states)
+    preview_only_units = []
+    missing_host_slots = []
+    for unit in units if isinstance(units, list) else []:
+        if not isinstance(unit, dict) or unit.get("required") is False:
+            continue
+        if unit.get("presentation_role") in {"embedded", "hosted_destination"}:
+            integration = unit.get("integration")
+            slots = integration if isinstance(integration, list) else [integration]
+            output = unit.get("output")
+            if (not isinstance(output, dict) or not output.get("symbol") or not slots
+                    or any(not isinstance(slot, dict) or not slot.get("host_file") or not slot.get("host_builder")
+                           or slot.get("child_symbol") != output.get("symbol") for slot in slots)):
+                missing_host_slots.append(str(unit.get("unit_id", "")))
+        states = unit.get("required_states")
+        if not isinstance(states, list) or not any(
+            isinstance(state, dict) and state.get("arrival_mode") in {"formal", "behavior"}
+            for state in states
+        ):
+            preview_only_units.append(str(unit.get("unit_id", "")))
+    result["runtime_scope"] = {
+        "verification_state_count": verification_count,
+        "preview_only_units": preview_only_units,
+    }
+    if require_runtime_plan and not verification_count:
+        result["errors"].append("runtime_verification_states_missing")
+    if require_runtime_plan and isinstance(verification_states, list) and verification_states and isinstance(units, list):
+        gaps = ui_delivery.visual_binding_gaps(units, verification_states)
+        for key, rows in gaps.items():
+            if rows:
+                result["runtime_scope"][key] = rows
+                result["errors"].append(key)
+    if require_runtime_plan and preview_only_units:
+        result["errors"].append("required_units_without_runtime_arrival")
+    if require_runtime_plan and missing_host_slots:
+        result["errors"].append("required_host_slots_missing")
+        result["runtime_scope"]["missing_host_slots"] = missing_host_slots
     result["complete"] = not result["errors"]
     return result
 
@@ -306,8 +350,31 @@ def validate_immersive_gate(root: Path, inventory: dict[str, Any] | None) -> dic
     return result
 
 
-def _verify_report(root: Path) -> dict[str, Any]:
-    result = {"complete": False, "path": None, "errors": [], "warnings": []}
+def _verify_summary(text: str) -> dict[str, str]:
+    checks: dict[str, str] = {}
+    for line in text.splitlines():
+        if not line.lstrip().startswith("|"):
+            continue
+        cells = [cell.strip().strip("*` ").upper() for cell in line.strip().strip("|").split("|")]
+        label = _CHECK_ROW.match(cells[0])
+        if not label or len(cells) < 3:
+            continue
+        status = cells[2]
+        if _CHECK_RESULT.fullmatch(status):
+            check = label[1]
+            checks[check] = status if checks.get(check, status) == status else "CONFLICT"
+    return checks
+
+
+def _verify_report(root: Path, require_visual_and_ut: bool, require_behavior: bool = False) -> dict[str, Any]:
+    required = VERIFY_CHECKS[:4] if require_visual_and_ut else ()
+    if require_behavior:
+        required += ("CHECK-5",)
+    result = {
+        "complete": False, "path": None, "errors": [], "warnings": [],
+        "required_checks": list(required), "reported_checks": {},
+        "unpassed_checks": dict.fromkeys(VERIFY_CHECKS, "NOT_REPORTED"),
+    }
     candidates = (root / "spec/verify-report.md", root / "spec/verify/verify-report.md", root / "spec/verify/report.md")
     path = next((candidate for candidate in candidates if candidate.is_file()), None)
     if path is None:
@@ -319,6 +386,31 @@ def _verify_report(root: Path) -> dict[str, Any]:
         result["errors"].append("verify_check1_missing")
     if not re.search(r"(?:PASS|DEFERRED|SKIP|PARTIAL)", text, re.I):
         result["errors"].append("verify_status_missing")
+    checks = _verify_summary(text)
+    result["reported_checks"] = checks
+    result["unpassed_checks"] = {
+        check: checks.get(check, "NOT_REPORTED") for check in VERIFY_CHECKS if checks.get(check) != "PASS"
+    }
+    if any(check in result["unpassed_checks"] for check in required):
+        result["errors"].append("required_verify_checks_not_passed")
+    if require_behavior and checks.get("CHECK-5") == "PASS":
+        evidence = root / BEHAVIOR_REPORT
+        evidence_error = None
+        if not evidence.is_file():
+            evidence_error = "behavior_receipt_missing"
+        elif f"behavior-summary-sha256: {file_sha256(evidence)}" not in text.splitlines():
+            evidence_error = "behavior_receipt_unbound"
+        else:
+            try:
+                report = _read_json(evidence)
+                if replay_behavior(root, report) != report:
+                    evidence_error = "behavior_receipt_stale"
+            except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+                evidence_error = "behavior_receipt_invalid"
+                result["behavior_diagnostic"] = str(exc)
+        if evidence_error:
+            result["errors"].append(evidence_error)
+            result["unpassed_checks"]["CHECK-5"] = "UNVERIFIED"
     result["complete"] = not result["errors"]
     return result
 
@@ -347,7 +439,9 @@ def _report(root: Path, stage: str) -> dict[str, Any]:
     return result
 
 
-def pipeline_status(root: str | Path, *, allow_legacy: bool = True) -> dict[str, Any]:
+def pipeline_status(root: str | Path, *, allow_legacy: bool = True,
+                    require_visual_and_ut: bool = False, require_runtime_plan: bool = False,
+                    require_behavior: bool = False) -> dict[str, Any]:
     root = Path(root).expanduser().resolve()
     input_hash = target_input_hash(root)
     stages: list[dict[str, Any]] = []
@@ -376,7 +470,7 @@ def pipeline_status(root: str | Path, *, allow_legacy: bool = True) -> dict[str,
                     marker.setdefault("errors", []).extend(required_errors)
         checks: dict[str, Any] = {"marker": marker}
         if stage == "i2h-plan":
-            checks["delivery"] = validate_delivery(root, input_hash)
+            checks["delivery"] = validate_delivery(root, input_hash, require_runtime_plan=require_runtime_plan)
         elif stage == "i2h-execute":
             checks["report"] = _report(root, stage)
             delivery = _delivery_path(root)
@@ -384,7 +478,7 @@ def pipeline_status(root: str | Path, *, allow_legacy: bool = True) -> dict[str,
             checks["immersive_safearea"] = validate_immersive_gate(root, _read_json(delivery) if delivery else None)
         elif stage == "i2h-verify":
             # verify-report.md is the report itself, not a JSON marker.
-            checks["report"] = _verify_report(root)
+            checks["report"] = _verify_report(root, require_visual_and_ut, require_behavior)
         elif stage == "i2h-retrospect":
             checks["report"] = _report(root, stage)
         complete = all(bool(item.get("valid", item.get("complete", False))) for item in checks.values())
@@ -400,7 +494,7 @@ def pipeline_status(root: str | Path, *, allow_legacy: bool = True) -> dict[str,
     handoff_mismatches = _spec_handoff_mismatches(root)
     if (
         not spec_row["complete"]
-        and plan_row["complete"]
+        and plan_row["checks"]["marker"]["valid"]
         and handoff_mismatches
         and set(handoff_mismatches) <= _PLAN_HANDOFF_ARTIFACTS
         and set(spec_row["checks"]["marker"].get("errors", [])) <= {"artifact_hash_mismatch"}
@@ -417,6 +511,7 @@ def pipeline_status(root: str | Path, *, allow_legacy: bool = True) -> dict[str,
         "project_root": str(root),
         "target_input_sha256": input_hash,
         "resume_stage": resume,
+        "verification": stages[3]["checks"]["report"],
         "stages": stages,
         "legacy_paths": {
             stage: [path for group in groups[1:] for path in group]
@@ -426,20 +521,64 @@ def pipeline_status(root: str | Path, *, allow_legacy: bool = True) -> dict[str,
     }
 
 
+def status_summary(result: dict[str, Any], report_path: Path | None = None) -> dict[str, Any]:
+    check_fields = ("valid", "complete", "status", "path", "paths", "legacy", "missing", "errors", "warnings",
+                    "required_checks", "reported_checks", "unpassed_checks", "handoff_only", "handoff_mismatches")
+    stages = []
+    for stage in result["stages"]:
+        checks = {name: {field: check[field] for field in check_fields if field in check}
+                  for name, check in stage["checks"].items()}
+        stages.append({"stage": stage["stage"], "complete": stage["complete"], "checks": checks})
+    summary = {field: result[field] for field in ("schema_version", "status", "project_root",
+                                                  "target_input_sha256", "resume_stage", "legacy_paths")}
+    summary.update({"view": "summary", "verification": stages[3]["checks"]["report"], "stages": stages})
+    if report_path is not None:
+        summary["report_path"] = str(report_path)
+    return summary
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-root", default=".")
     parser.add_argument("--out")
+    parser.add_argument("--summary", action="store_true",
+                        help="print a compact decision view; --out still receives the full report")
     parser.add_argument("--strict", action="store_true", help="do not accept legacy marker schemas")
+    parser.add_argument("--require-visual-and-ut", action="store_true",
+                        help="require report summary PASS for CHECK-1 through CHECK-4")
+    parser.add_argument("--require-runtime-plan", action="store_true",
+                        help="require runtime arrivals and planned verification states before execute")
+    parser.add_argument("--require-behavior", action="store_true",
+                        help="require CHECK-5 PASS with replayable native UITest evidence")
+    parser.add_argument("--timing", choices=("start", "finish"))
+    parser.add_argument("--timing-stage", choices=STAGES[:4])
+    parser.add_argument("--timing-run")
     args = parser.parse_args(argv)
-    result = pipeline_status(args.project_root, allow_legacy=not args.strict)
+    if bool(args.timing) != bool(args.timing_stage) or (args.timing_run and not args.timing):
+        parser.error("use --timing and --timing-stage together")
+    result = pipeline_status(args.project_root, allow_legacy=not args.strict,
+                             require_visual_and_ut=args.require_visual_and_ut,
+                             require_runtime_plan=args.require_runtime_plan,
+                             require_behavior=args.require_behavior)
+    path = None
     if args.out:
         path = Path(args.out)
         if not path.is_absolute():
             path = Path(args.project_root).expanduser().resolve() / path
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps(result, ensure_ascii=False))
+    output = status_summary(result, path) if args.summary else result
+    if args.timing:
+        from pipeline_timing import record
+
+        flags = {"runtime_plan": args.require_runtime_plan, "visual_and_ut": args.require_visual_and_ut,
+                 "behavior": args.require_behavior}
+        try:
+            output["timing"] = record(Path(result["project_root"]), result, flags,
+                                      args.timing, args.timing_stage, args.timing_run)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            parser.exit(2, f"pipeline timing: {exc}\n")
+    print(json.dumps(output, ensure_ascii=False))
     return 0 if result["status"] == "complete" else 1
 
 

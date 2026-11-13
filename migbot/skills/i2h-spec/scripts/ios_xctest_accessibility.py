@@ -24,8 +24,20 @@ PROBE_SOURCE = r'''
 
 // i2h-external-accessibility-probe
 final class I2HAccessibilityCaptureTests: XCTestCase {
+    private struct CaptureState: Decodable {
+        let page_id: String
+        let state_id: String
+        let bundle_id: String
+        let navigation_json: String
+        let output_dir: String
+    }
+
     @MainActor func testI2HAccessibilityCapture() throws {
         let environment = ProcessInfo.processInfo.environment
+        if let batch = environment["TEST_RUNNER_I2H_CAPTURE_BATCH"] ?? environment["I2H_CAPTURE_BATCH"] {
+            try captureBatch(at: URL(fileURLWithPath: batch))
+            return
+        }
         let output = environment["TEST_RUNNER_I2H_UI_JSON_OUT"] ?? environment["I2H_UI_JSON_OUT"]
         guard let output else { return }
 
@@ -34,11 +46,56 @@ final class I2HAccessibilityCaptureTests: XCTestCase {
         app.launch()
         let page = environment["TEST_RUNNER_I2H_PAGE_ID"] ?? environment["I2H_PAGE_ID"] ?? ""
         let navigationJSON = environment["TEST_RUNNER_I2H_NAVIGATION_JSON"] ?? environment["I2H_NAVIGATION_JSON"] ?? ""
-        guard app.waitForExistence(timeout: 10), navigate(app: app, page: page, navigationJSON: navigationJSON) else {
-            throw NSError(domain: "i2h.accessibility", code: 1, userInfo: [NSLocalizedDescriptionKey: "target app/page did not become ready"])
-        }
+        try requireReady(app: app, page: page, navigationJSON: navigationJSON)
         let bundleID = environment["TEST_RUNNER_I2H_BUNDLE_ID"] ?? environment["I2H_BUNDLE_ID"] ?? ""
         let stateID = environment["TEST_RUNNER_I2H_STATE_ID"] ?? environment["I2H_STATE_ID"] ?? "default"
+        try writeAccessibility(app: app, page: page, stateID: stateID, bundleID: bundleID,
+                               to: URL(fileURLWithPath: output))
+        if let receipt = environment["TEST_RUNNER_I2H_FOREGROUND_RECEIPT_OUT"] ?? environment["I2H_FOREGROUND_RECEIPT_OUT"] {
+            try writeForeground(page: page, stateID: stateID, bundleID: bundleID,
+                                to: URL(fileURLWithPath: receipt))
+        }
+        if let acknowledgement = environment["TEST_RUNNER_I2H_FOREGROUND_CAPTURE_ACK_OUT"] ?? environment["I2H_FOREGROUND_CAPTURE_ACK_OUT"] {
+            let timeout = Double(environment["TEST_RUNNER_I2H_FOREGROUND_ACK_TIMEOUT"] ?? environment["I2H_FOREGROUND_ACK_TIMEOUT"] ?? "60") ?? 60
+            try waitForAcknowledgement(at: URL(fileURLWithPath: acknowledgement), timeout: timeout)
+        }
+    }
+
+    @MainActor private func captureBatch(at plan: URL) throws {
+        let states = try JSONDecoder().decode([CaptureState].self, from: Data(contentsOf: plan))
+        for state in states {
+            let output = URL(fileURLWithPath: state.output_dir, isDirectory: true)
+            let app = XCUIApplication(bundleIdentifier: state.bundle_id)
+            app.launchArguments = ["--uitesting"]
+            app.launch()
+            defer { app.terminate() }
+            do {
+                try requireReady(app: app, page: state.page_id, navigationJSON: state.navigation_json)
+                try writeAccessibility(app: app, page: state.page_id, stateID: state.state_id,
+                                       bundleID: state.bundle_id, to: output.appendingPathComponent("ios-accessibility.json"))
+                try writeForeground(page: state.page_id, stateID: state.state_id, bundleID: state.bundle_id,
+                                    to: output.appendingPathComponent("foreground-receipt.json"))
+                try waitForAcknowledgement(at: output.appendingPathComponent("foreground-capture-ack.json"), timeout: 60)
+            } catch {
+                try error.localizedDescription.write(to: output.appendingPathComponent("capture-error.txt"),
+                                                     atomically: true, encoding: .utf8)
+            }
+        }
+    }
+
+    private func waitForAcknowledgement(at path: URL, timeout: Double) throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !FileManager.default.fileExists(atPath: path.path) {
+            if Date() >= deadline {
+                throw NSError(domain: "i2h.accessibility", code: 2,
+                              userInfo: [NSLocalizedDescriptionKey: "foreground screenshot acknowledgement timed out"])
+            }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+    }
+
+    @MainActor private func writeAccessibility(app: XCUIApplication, page: String, stateID: String,
+                                                bundleID: String, to output: URL) throws {
         let payload: [String: Any] = [
             "page_id": page,
             "state_id": stateID,
@@ -46,42 +103,56 @@ final class I2HAccessibilityCaptureTests: XCTestCase {
             "foreground_state": "runningForeground",
             "debug_description": app.debugDescription,
         ]
-        let data = try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted])
-        try data.write(to: URL(fileURLWithPath: output), options: .atomic)
-        if let receipt = environment["TEST_RUNNER_I2H_FOREGROUND_RECEIPT_OUT"] ?? environment["I2H_FOREGROUND_RECEIPT_OUT"] {
-            let receiptPayload: [String: Any] = [
-                "schema": "hmigbot-ios-foreground-receipt/1",
-                "bundle_id": bundleID,
-                "page_id": page,
-                "state_id": stateID,
-                "state": "runningForeground",
-                "ready": true,
-            ]
-            let receiptData = try JSONSerialization.data(withJSONObject: receiptPayload, options: [.prettyPrinted])
-            try receiptData.write(to: URL(fileURLWithPath: receipt), options: .atomic)
+        try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted]).write(to: output, options: .atomic)
+    }
+
+    private func writeForeground(page: String, stateID: String, bundleID: String, to receipt: URL) throws {
+        let payload: [String: Any] = [
+            "schema": "hmigbot-ios-foreground-receipt/1",
+            "bundle_id": bundleID,
+            "page_id": page,
+            "state_id": stateID,
+            "state": "runningForeground",
+            "ready": true,
+        ]
+        try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted]).write(to: receipt, options: .atomic)
+    }
+
+    private func readinessError(_ message: String) -> NSError {
+        NSError(domain: "i2h.accessibility", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
+    }
+
+    @MainActor private func requireReady(app: XCUIApplication, page: String, navigationJSON: String) throws {
+        guard app.waitForExistence(timeout: 10) else {
+            throw readinessError("target app did not launch")
         }
-        if let acknowledgement = environment["TEST_RUNNER_I2H_FOREGROUND_CAPTURE_ACK_OUT"] ?? environment["I2H_FOREGROUND_CAPTURE_ACK_OUT"] {
-            let timeout = Double(environment["TEST_RUNNER_I2H_FOREGROUND_ACK_TIMEOUT"] ?? environment["I2H_FOREGROUND_ACK_TIMEOUT"] ?? "60") ?? 60
-            let deadline = Date().addingTimeInterval(timeout)
-            while !FileManager.default.fileExists(atPath: acknowledgement) {
-                if Date() >= deadline {
-                    throw NSError(domain: "i2h.accessibility", code: 2, userInfo: [NSLocalizedDescriptionKey: "foreground screenshot acknowledgement timed out"])
-                }
-                Thread.sleep(forTimeInterval: 0.05)
+        if navigationJSON.isEmpty {
+            guard navigateFallback(app: app, page: page) else {
+                throw readinessError("target page anchor did not become ready")
             }
+        } else {
+            guard let payload = try? JSONSerialization.jsonObject(with: Data(navigationJSON.utf8)) as? [String: Any],
+                  let steps = payload["steps"] as? [[String: Any]] else {
+                throw readinessError("invalid navigation payload")
+            }
+            for (index, step) in steps.enumerated() {
+                guard perform(step: step, app: app) else {
+                    throw readinessError("navigation step \(index + 1) did not complete")
+                }
+            }
+            guard waitForAnchor(payload["anchors"] as? [[String: Any]], app: app) else {
+                throw readinessError("target page anchor did not become ready")
+            }
+            if (payload["keyboard_visible"] as? Bool) == true {
+                try requireVisibleKeyboard(app: app)
+            }
+        }
+        guard app.state == .runningForeground else {
+            throw readinessError("target app is not in the foreground")
         }
     }
 
-    @MainActor private func navigate(app: XCUIApplication, page: String, navigationJSON: String) -> Bool {
-        if !navigationJSON.isEmpty,
-           let data = navigationJSON.data(using: .utf8),
-           let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let steps = payload["steps"] as? [[String: Any]] {
-            for step in steps {
-                guard perform(step: step, app: app) else { return false }
-            }
-            return waitForAnchor(payload["anchors"] as? [[String: Any]], app: app)
-        }
+    @MainActor private func navigateFallback(app: XCUIApplication, page: String) -> Bool {
         switch page {
         case "page_0001_RootView", "page_0002_HomeView":
             return app.buttons["prepareRecipe"].waitForExistence(timeout: 10)
@@ -102,6 +173,34 @@ final class I2HAccessibilityCaptureTests: XCTestCase {
         default:
             return app.exists
         }
+    }
+
+    @MainActor private func requireVisibleKeyboard(app: XCUIApplication) throws {
+        let keyboard = app.keyboards.firstMatch
+        let deadline = Date().addingTimeInterval(8)
+        var previous: CGRect? = nil
+        var lastObserved: CGRect? = nil
+        var viewport: CGRect? = nil
+        while Date() < deadline {
+            if keyboard.exists {
+                let frame = keyboard.frame
+                let appFrame = app.frame
+                lastObserved = frame
+                viewport = appFrame
+                let visible = frame.intersection(appFrame)
+                if frame.height > 0 && !visible.isNull && visible.height >= frame.height * 0.9 {
+                    if previous == frame { return }
+                    previous = frame
+                } else {
+                    previous = nil
+                }
+            }
+            Thread.sleep(forTimeInterval: 0.15)
+        }
+        if let frame = lastObserved, let appFrame = viewport {
+            throw readinessError("software keyboard did not stabilize inside the app viewport (keyboard=\(frame), viewport=\(appFrame))")
+        }
+        throw readinessError("software keyboard was not observed")
     }
 
     @MainActor private func perform(step: [String: Any], app: XCUIApplication) -> Bool {

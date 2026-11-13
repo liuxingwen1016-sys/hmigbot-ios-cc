@@ -53,6 +53,10 @@ cd /path/to/hmigbot-ios
 
 安装后使用 `/i2h-init` 和 `/i2h-run` 作为主要入口。`/i2h-build` 使用已安装的 `i2h-tool` 辅助程序；设备和 DevEco 检查仍需要真实运行环境。
 
+用 `/i2h-verify behavior` 做首轮功能验证。修复后用 `/i2h-verify recheck` 复测指定场景，
+保留首轮场景和当前 AC 的分母。完整 Verify 使用 `/i2h-verify full`。
+见[原生行为验证命令与回执格式](migbot/skills/i2h-verify/references/check5-behavior-verify.md)。
+
 ## 目录
 
 ```text

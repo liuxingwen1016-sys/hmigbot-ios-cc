@@ -8,6 +8,7 @@ that are cheap to verify without a device.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import re
@@ -17,6 +18,14 @@ from typing import Any
 
 _SYMBOL_SUBSTITUTES = frozenset("★☆✓→+−☼◔↗")
 _SYMBOL_FIDELITY_MARKER = re.compile(r"symbol_fidelity\s*:\s*approved\b[^\n]*\basset\s*=", re.IGNORECASE)
+_ARKTS_TRIVIA = re.compile(
+    r"""(?P<comment>//[^\r\n]*|/\*.*?\*/)|(?P<literal>"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)""",
+    flags=re.DOTALL,
+)
+_GENERIC_COUNT = re.compile(r"\basync\s+count\s*\(([^)]*\btable\w*\b[^)]*)\)\s*(?::\s*[^{};]+)?\s*\{")
+_ID_PROJECTION = re.compile(r"""\.query(?:Sync)?\s*\([^;]*?,\s*\[\s*(['"])id\1\s*\]\s*\)""")
+_BIND_SHEET = re.compile(r"\.\s*bindSheet\s*\(")
+_MODIFIER = re.compile(r"\s*\.\s*(\w+)\s*\(")
 _PRESENTATION_FALLBACK_KEYS = (
     "owner",
     "state",
@@ -214,36 +223,51 @@ def _check_foreground_safearea(
     }]
 
 
-def _style_trigger_ids(root: Path) -> set[str]:
-    path = root / "spec/ref/ios-style-triggers.json"
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        return set()
-    triggers = data.get("triggers", []) if isinstance(data, dict) else []
-    return {str(item.get("trigger_id")) for item in triggers if isinstance(item, dict) and item.get("trigger_id")}
-
-
 def _check_style_fidelity(root: Path, generated_sources: list[str]) -> list[dict[str, str]]:
     """Keep high-signal iOS geometry and floating chrome from degrading silently."""
-    trigger_ids = _style_trigger_ids(root)
+    receipt_path = root / "spec/.i2h/target-input.json"
+    receipt = _read(receipt_path) if receipt_path.is_file() else {}
+    expected = receipt.get("style_triggers_sha256")
+    path = root / "spec/ref/ios-style-triggers.json"
+    try:
+        content = path.read_bytes()
+        data = json.loads(content.decode("utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        if not expected:
+            return []
+        return [{"code": "style_trigger_evidence_missing", "unit_id": "style.evidence",
+                 "detail": "the standard source scan recorded style evidence, but it cannot be read"}]
+    if expected and (
+        not isinstance(data, dict)
+        or hashlib.sha256(content).hexdigest() != expected
+        or data.get("target_input_sha256") != receipt.get("target_input_sha256")
+    ):
+        return [{"code": "style_trigger_evidence_mismatch", "unit_id": "style.evidence",
+                 "detail": "style evidence no longer matches the standard source scan; rerun the scan"}]
+    triggers = data.get("triggers", []) if isinstance(data, dict) else []
+    trigger_ids = {item.get("trigger_id") for item in triggers if isinstance(item, dict)}
+    if not trigger_ids.intersection({"floating_tabbar", "custom_shape_geometry"}):
+        return []
+    code = [_mask_arkts_trivia(source, keep_literals=False) for source in generated_sources]
     errors: list[dict[str, str]] = []
     if "floating_tabbar" in trigger_ids:
-        tab_hosts = [source for source in generated_sources if re.search(r"\bTabs\s*\(", source)]
+        uses_tabs = any(re.search(r"\bTabs\s*\(", source) for source in code)
         has_floating_host = any(
-            re.search(r"\b(?:borderRadius|shadow)\s*\(", source)
-            and re.search(r"\b(?:position|offset|floating|customTab|tabBar)\b", source)
-            for source in tab_hosts
+            re.search(r"\.\s*barFloatingStyle\s*\(", source)
+            or (re.search(r"\b(?:floatingTabBar|customTabBar)\s*\(", source, re.IGNORECASE)
+                and re.search(r"\.\s*(?:borderRadius|shadow)\s*\(", source)
+                and re.search(r"\.\s*(?:position|offset|align)\s*\(", source))
+            for source in code
         )
-        if tab_hosts and not has_floating_host:
+        if uses_tabs and not has_floating_host:
             errors.append({
                 "code": "floating_tabbar_native_only",
                 "unit_id": "style.floating_tabbar",
-                "detail": "source floating TabView requires a floating/custom tab host with radius/shadow geometry",
+                "detail": "source floating TabView requires barFloatingStyle or an explicitly positioned floating/custom tab bar",
             })
     if "custom_shape_geometry" in trigger_ids:
-        bag_hosts = [source for source in generated_sources if re.search(r"\b(?:BeanBag|BagShape|bagWidth|bagHeight)\b", source)]
-        if bag_hosts and not any(re.search(r"\b(?:Path|Canvas|Shape|drawPath|bezier)\b", source) for source in bag_hosts):
+        bag_hosts = [source for source in code if re.search(r"\b(?:BeanBag|BagShape|bagWidth|bagHeight)\b", source)]
+        if bag_hosts and not any(re.search(r"\b(?:Path|Canvas|Shape|drawPath|bezier)\s*\(", source) for source in bag_hosts):
             errors.append({
                 "code": "custom_shape_geometry_missing",
                 "unit_id": "style.custom_shape_geometry",
@@ -252,8 +276,170 @@ def _check_style_fidelity(root: Path, generated_sources: list[str]) -> list[dict
     return errors
 
 
+def _mask_arkts_trivia(source: str, keep_literals: bool) -> str:
+    return _ARKTS_TRIVIA.sub(
+        lambda match: match[0] if keep_literals and match.lastgroup == "literal"
+        else re.sub(r"[^\r\n]", " ", match[0]),
+        source,
+    )
+
+
+def _closing_delimiter(code: str, start: int, opening: str, closing: str) -> int | None:
+    depth = 1
+    for index in range(start, len(code)):
+        depth += (code[index] == opening) - (code[index] == closing)
+        if depth == 0:
+            return index
+    return None
+
+
+def _has_duplicate_sheet_binding(source: str) -> bool:
+    if source.count("bindSheet") < 2:
+        return False
+    code = _mask_arkts_trivia(source, keep_literals=False)
+    for binding in _BIND_SHEET.finditer(code):
+        end = _closing_delimiter(code, binding.end(), "(", ")")
+        while end is not None:
+            modifier = _MODIFIER.match(code, end + 1)
+            if not modifier:
+                break
+            if modifier[1] == "bindSheet":
+                return True
+            end = _closing_delimiter(code, modifier.end(), "(", ")")
+    return False
+
+
+def _count_assumes_id(source: str, code: str) -> bool:
+    for method in _GENERIC_COUNT.finditer(code):
+        end = _closing_delimiter(code, method.end(), "{", "}")
+        if end is None:
+            continue
+        body = source[method.end():end]
+        if _ID_PROJECTION.search(body):
+            return True
+        parameters = source[method.start(1):method.end(1)]
+        default_id = re.search(r"""\b(\w+)\s*(?::\s*string)?\s*=\s*(['"])id\2""", parameters)
+        if default_id and re.search(
+            rf"\.query(?:Sync)?\s*\([^;]*?,\s*\[\s*{re.escape(default_id[1])}\s*\]\s*\)", body
+        ):
+            return True
+    return False
+
+
+def _unobserved_editor_fields(sources: list[str], model_name: str, fields: str) -> set[str]:
+    model_name = re.escape(model_name)
+    definition = re.compile(rf"(?P<observed>@ObservedV2\s*)?(?:export\s+)?class\s+{model_name}\s*\{{")
+    model = next(((source, match) for source in sources if (match := definition.search(source))), None)
+    if model is None:
+        return set()
+    source, match = model
+    end = _closing_delimiter(source, match.end(), "{", "}")
+    traced = set()
+    if match["observed"] and end is not None:
+        traced = set(re.findall(rf"@Trace\s+({fields})\b", source[match.end():end]))
+    unobserved: set[str] = set()
+    for source in sources:
+        for owner in re.findall(rf"@Local\s+(?:private\s+)?(\w+)\s*:\s*{model_name}\b", source):
+            mutation = rf"\bthis\.{re.escape(owner)}\.({fields})\s*(?:\+\+|--|[+\-*/]=|=(?!=))"
+            unobserved.update(set(re.findall(mutation, source)) - traced)
+    return unobserved
+
+
+def _check_editor_mutation(generated_sources: list[str]) -> list[dict[str, str]]:
+    sources = [_mask_arkts_trivia(source, keep_literals=False) for source in generated_sources
+               if "RecipeValues" in source or "TastingValues" in source]
+    issues = []
+    for editor, model_name, fields in (
+        ("recipe", "RecipeValues", "dose|ratio|temperature"),
+        ("tasting", "TastingValues", "rating|acidity|sweetness|body|tags|note"),
+    ):
+        unobserved = _unobserved_editor_fields(sources, model_name, fields)
+        if unobserved:
+            issues.append({
+                "code": f"unobserved_{editor}_value_mutation", "unit_id": f"runtime.{editor}",
+                "detail": f"@Local {editor} values mutate untracked fields {', '.join(sorted(unobserved))}; replace the value or observe those fields",
+            })
+    return issues
+
+
+def _check_packaged_image_input(generated_sources: list[str]) -> list[dict[str, str]]:
+    for source in generated_sources:
+        if "getRawFd" not in source or "createImageSource" not in source:
+            continue
+        code = _mask_arkts_trivia(source, keep_literals=False)
+        descriptors = re.findall(r"\b(\w+)\s*(?::[^=;\n]+)?\s*=\s*(?:await\s+)?(?:[\w.]+\.)?getRawFd\s*\(", code)
+        if any(re.search(rf"\bcreateImageSource\s*\(\s*{re.escape(name)}\s*\.\s*fd\b", code)
+               for name in descriptors):
+            return [{
+                "code": "rawfile_image_descriptor_loses_offset", "unit_id": "runtime.image",
+                "detail": "pass the complete RawFileDescriptor or exact rawfile bytes to createImageSource",
+            }]
+    return []
+
+
+def _fresh_database_duplicate_columns(source: str, code: str) -> set[str]:
+    """Recognize two adjacent, unconditional steps on a fresh database."""
+    issues: set[str] = set()
+    for initial in re.finditer(r"\bif\s*\(\s*(\w+)\s*<\s*1\s*\)\s*\{", code):
+        first_end = _closing_delimiter(code, initial.end(), "{", "}")
+        if first_end is None:
+            continue
+        version = re.escape(initial[1])
+        first = code[initial.end():first_end]
+        if not re.search(rf"\b{version}\s*=\s*1\s*;?\s*$", first):
+            continue
+        following = re.match(rf"\s*if\s*\(\s*{version}\s*<\s*(?:[2-9]|[1-9]\d+)\s*\)\s*\{{", code[first_end + 1:])
+        if following is None:
+            continue
+        next_start = first_end + 1 + following.end()
+        next_end = _closing_delimiter(code, next_start, "{", "}")
+        if next_end is None or re.search(r"\b(?:if|switch|return|throw)\b|[{}?]", first + code[next_start:next_end]):
+            continue
+        created = dict(re.findall(
+            r"\.executesql\s*\(\s*['\"`]\s*create\s+table\s+if\s+not\s+exists\s+(\w+)\s*\(([^;]+?)\)\s*['\"`]\s*\)",
+            source[initial.end():first_end].lower(),
+        ))
+        for table, column in re.findall(
+            r"\.executesql\s*\(\s*['\"`]\s*alter\s+table\s+(\w+)\s+add\s+(?:column\s+)?(\w+)\s+",
+            source[next_start:next_end].lower(),
+        ):
+            if table in created and re.search(rf"(?:^|,)\s*{re.escape(column)}\s+", created[table]):
+                issues.add(f"{table}.{column}")
+    return issues
+
+
+def _check_nav_destination_hosts(sources: list[str]) -> list[dict[str, str]]:
+    """Catch a page emitted bare from a named Navigation destination builder."""
+    masked = [_mask_arkts_trivia(source, keep_literals=False) for source in sources]
+    components: dict[str, str] = {}
+    for code in masked:
+        for definition in re.finditer(r"\bstruct\s+(\w+)\s*\{", code):
+            end = _closing_delimiter(code, definition.end(), "{", "}")
+            if end is not None:
+                components[definition[1]] = code[definition.end():end]
+    missing: set[tuple[str, str]] = set()
+    for code in masked:
+        for builder in re.findall(r"\.navDestination\(\s*this\.(\w+)\s*\)", code):
+            definition = re.search(rf"@Builder\s+(?:private\s+)?{re.escape(builder)}\s*\([^)]*\)\s*\{{", code)
+            if definition is None:
+                continue
+            end = _closing_delimiter(code, definition.end(), "{", "}")
+            if end is None:
+                continue
+            bare = re.fullmatch(r"\s*if\s*\([^)]*\)\s*\{\s*([A-Z]\w*View)\s*\(\s*\)\s*\}\s*", code[definition.end():end])
+            if bare is None or bare[1] not in components:
+                continue
+            if not re.search(r"\bNavDestination\s*\(", components[bare[1]]):
+                missing.add((builder, bare[1]))
+    return [{
+        "code": "navigation_destination_host_missing",
+        "unit_id": "runtime.navigation",
+        "detail": f"{builder} emits {page} without a NavDestination host",
+    } for builder, page in sorted(missing)]
+
+
 def _check_state_and_persistence_contract(generated_sources: list[str]) -> list[dict[str, str]]:
-    """Catch two cross-platform runtime traps before a HAP is accepted."""
+    """Catch high-signal cross-platform runtime traps before a HAP is accepted."""
     errors: list[dict[str, str]] = []
     root_hosts = [source for source in generated_sources if re.search(r"\b(?:struct|class)\s+RootView\b", source)]
     for source in root_hosts:
@@ -271,18 +457,44 @@ def _check_state_and_persistence_contract(generated_sources: list[str]) -> list[
                 "unit_id": "runtime.RootView",
                 "detail": f"modal binding uses derived router expression {match.group(1)!r}; bind an observable local/link state instead",
             })
-    database_sources = [
-        source for source in generated_sources
-        if "relationalStore" in source and "CREATE TABLE IF NOT EXISTS" in source
-    ]
-    for source in database_sources:
-        if re.search(r"async\s+count\s*\([^)]*table[^)]*\).*?query\([^\n]*\[\s*['\"]id['\"]\s*\]", source, flags=re.DOTALL):
+    for source in generated_sources:
+        if _has_duplicate_sheet_binding(source):
+            errors.append({
+                "code": "multiple_sheets_on_same_host",
+                "unit_id": "runtime.presentation",
+                "detail": "a component modifier chain contains multiple bindSheet calls; mount each sheet on a distinct host",
+            })
+        if "deliveryTime" in source and "notificationManager" in source:
+            code = _mask_arkts_trivia(source, keep_literals=False)
+            if (re.search(r"\bnotificationManager\s*\.\s*publish\s*\(", code)
+                and re.search(r"\bdeliveryTime\s*:\s*[\w.\s]*\b(?:plannedEndAt|scheduledAt|triggerAt|dueAt)\b", code)):
+                errors.append({
+                    "code": "notification_deadline_not_scheduled",
+                    "unit_id": "runtime.notification",
+                    "detail": "NotificationRequest.deliveryTime is generated by the system; use a scheduled reminder for a future deadline",
+                })
+        if "relationalStore" not in source:
+            continue
+        source = _mask_arkts_trivia(source, keep_literals=True)
+        if not re.search(r"\bCREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\b", source, flags=re.IGNORECASE):
+            continue
+        code = _mask_arkts_trivia(source, keep_literals=False)
+        if _count_assumes_id(source, code):
             errors.append({
                 "code": "database_count_assumes_id",
                 "unit_id": "runtime.database",
                 "detail": "generic table count queries a hard-coded id column; metadata tables may use key or another primary key",
             })
-        if not re.search(r"ALTER\s+TABLE|onUpgrade|\bmigrat(?:e|ion)\b|user_version", source, flags=re.IGNORECASE):
+        duplicate_columns = _fresh_database_duplicate_columns(source, code)
+        if duplicate_columns:
+            errors.append({
+                "code": "database_fresh_column_added_twice",
+                "unit_id": "runtime.database",
+                "detail": "fresh schema creates and then unconditionally adds the same columns: " + ", ".join(sorted(duplicate_columns)),
+            })
+        migration_sql = re.search(r"""['"`]\s*(?:ALTER\s+TABLE\b|PRAGMA\s+user_version\s*=)""", source, re.IGNORECASE)
+        version_write = re.search(r"\.version\s*=(?!=|>)", code)
+        if not migration_sql and not version_write:
             errors.append({
                 "code": "database_migration_missing",
                 "unit_id": "runtime.database",
@@ -337,6 +549,18 @@ def _check_unit(root: Path, unit: dict[str, Any], generated_sources=None) -> lis
     for value in ids:
         if not _has_id(source, value):
             errors.append({"code": "action_id_missing", "unit_id": unit_id, "detail": value})
+
+    runner_ids = obligations.get("runner_action_ids", [])
+    if not isinstance(runner_ids, list) or any(not isinstance(value, str) or not value for value in runner_ids):
+        errors.append({"code": "runner_action_ids_invalid", "unit_id": unit_id,
+                       "detail": "runner_action_ids must list stable target control IDs"})
+    elif runner_ids:
+        code = _mask_arkts_trivia(source, keep_literals=False)
+        modifiers = list(re.finditer(r"\.\s*id\s*\(", code))
+        for value in dict.fromkeys(runner_ids):
+            literal = re.compile(rf"\s*(['\"]){re.escape(value)}\1\s*\)")
+            if not any(literal.match(source, modifier.end()) for modifier in modifiers):
+                errors.append({"code": "runner_action_id_missing", "unit_id": unit_id, "detail": value})
 
     if obligations.get("fixed_bottom_action_required"):
         ranges = _scroll_body_ranges(source)
@@ -396,7 +620,40 @@ def _check_unit(root: Path, unit: dict[str, Any], generated_sources=None) -> lis
     return errors
 
 
-def evaluate(root: Path | str, inventory: Path | str) -> dict[str, Any]:
+def _configured_sdk_catalog(root: Path) -> Path | None:
+    try:
+        config = _read(root / ".migbot/config.json")
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    hdc = config.get("hdc") if isinstance(config, dict) else None
+    if not isinstance(hdc, str) or not Path(hdc).is_absolute():
+        return None
+    catalog = Path(hdc).resolve().with_name("id_defined.json")
+    return catalog if catalog.is_file() else None
+
+
+def _check_sdk_symbols(sources: list[str], catalog: Path | None) -> dict[str, Any]:
+    if catalog is None:
+        return {"status": "NOT_CHECKED", "unresolved": []}
+    rows = _read(catalog).get("record", [])
+    symbols = {row.get("name") for row in rows if isinstance(row, dict) and row.get("type") == "symbol"}
+    if not symbols:
+        raise ValueError(f"no SDK symbols in {catalog}")
+    required = set()
+    pattern = re.compile(r"\s*(['\"])sys\.symbol\.([\w]+)\1\s*\)")
+    for source in sources:
+        if "sys.symbol." not in source:
+            continue
+        code = _mask_arkts_trivia(source, keep_literals=False)
+        for call in re.finditer(r"\$r\s*\(", code):
+            match = pattern.match(source, call.end())
+            if match:
+                required.add(match[2])
+    missing = sorted(required - symbols)
+    return {"status": "FAIL" if missing else "PASS", "catalog": str(catalog), "unresolved": missing}
+
+
+def evaluate(root: Path | str, inventory: Path | str, *, sdk_symbol_catalog: Path | None = None) -> dict[str, Any]:
     root = Path(root).resolve()
     inventory_path = Path(inventory)
     if not inventory_path.is_absolute():
@@ -433,12 +690,22 @@ def evaluate(root: Path | str, inventory: Path | str) -> dict[str, Any]:
             errors.extend(_check_unit(root, unit, generated_sources))
     errors.extend(_check_style_fidelity(root, generated_sources))
     errors.extend(_check_state_and_persistence_contract(generated_sources))
+    errors.extend(_check_nav_destination_hosts(generated_sources))
+    errors.extend(_check_editor_mutation(generated_sources))
+    errors.extend(_check_packaged_image_input(generated_sources))
+    sdk_symbols = _check_sdk_symbols(generated_sources, sdk_symbol_catalog or _configured_sdk_catalog(root))
+    if sdk_symbols["status"] == "FAIL":
+        errors.append({
+            "code": "sdk_symbols_unresolved", "unit_id": "runtime.symbols",
+            "detail": "symbols absent from the target SDK catalog: " + ", ".join(sdk_symbols["unresolved"]),
+        })
     return {
         "schema_version": 1,
         "gate": "i2h-execute.ui-obligations",
         "status": "PASS" if not errors else "FAIL",
         "inventory": str(inventory_path),
         "checked_units": len(data.get("units", [])),
+        "sdk_symbols": sdk_symbols,
         "errors": errors,
     }
 
@@ -448,8 +715,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--project-root", required=True)
     parser.add_argument("--inventory", default="spec/baseline/ui-delivery-approved.json")
     parser.add_argument("--output-json")
+    parser.add_argument("--sdk-symbol-catalog", type=Path)
     args = parser.parse_args(argv)
-    result = evaluate(args.project_root, args.inventory)
+    result = evaluate(args.project_root, args.inventory, sdk_symbol_catalog=args.sdk_symbol_catalog)
     text = json.dumps(result, ensure_ascii=False, indent=2) + "\n"
     if args.output_json:
         Path(args.output_json).write_text(text, encoding="utf-8")

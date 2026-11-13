@@ -2,6 +2,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from .stage1_visual_scope import RUNTIME_META, read_snapshot_meta
 
 def _digest(path: Path) -> str:
     digest = hashlib.sha256()
@@ -59,14 +60,14 @@ def check(root: Path | str, pages: list[dict], policy='runtime', facts=None) -> 
         page_id = page['page_id']
         state = page.get('state_id') or page.get('state') or 'normal'
         snap=root/'spec/baseline/ui-snapshots'/page_id; mp=snap/'meta.json'
-        if not mp.is_file():
+        if not (mp.is_file() or (snap / RUNTIME_META).is_file()):
             meta={}
             if policy != 'source_only':
                 errors.append(f'{page_id}: meta.json missing')
         else:
             try:
-                meta=json.loads(mp.read_text())
-            except (OSError, json.JSONDecodeError):
+                meta=read_snapshot_meta(snap)
+            except (OSError, ValueError):
                 meta={}
                 if policy != 'source_only':
                     errors.append(f'{page_id}: meta.json invalid')

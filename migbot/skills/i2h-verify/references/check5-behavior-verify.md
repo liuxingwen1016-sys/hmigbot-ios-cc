@@ -1,5 +1,50 @@
 # 行为验证（CHECK-5）
 
+## 已提供原生 UITest runner 的项目
+
+用 `/i2h-verify behavior` 运行首轮功能验证。需要修复时，按失败场景定位并修复，再用
+`/i2h-verify recheck` 指定要复测的场景。两条命令都可汇总项目已有的原生设备回执。
+runner 的每份 `results.json` 必须提供
+`device`、`hap_sha256`、`planned_cases` 及带 `status` 和 `passed_steps` 的 `cases`，
+原始 HarmonyOS UITest 布局和对应回执同目录。首次使用完整范围的 runner 回执。
+原生 runner 优先使用稳定控件 ID。图标或自定义 Button 的文案只暴露在子节点时，
+可复用 `scripts/uitest_action.py` 的 `label_action_center`，从当前原始树找到
+同窗口、可见且包含该文案的实际 Button。定位冲突时保留失败，点击后继续核对目标状态。
+原生 TabBar 将 `selected` 暴露在标签父节点时，可用同一模块的
+`selected_tab_label` 读取真正选中项，再与实际页面到达断言一起判断。
+取树后、截图或按控件触控前，用 `require_focused_app` 确认当前包拥有前台页面。
+遇到其他包、无有效前台或焦点冲突，结束本轮设备操作，保留已完成场景和未跑分母。
+
+```bash
+python3 .claude/skills/i2h-plan/scripts/acceptance_plan.py behavior \
+  --signed-hap path/to/signed.hap --device DEVICE_ID --run path/to/results.json
+```
+
+修复并重新签名后，把首轮回执用于保留场景分母。当前包的场景结果来自本次实跑。
+
+```bash
+python3 .claude/skills/i2h-plan/scripts/acceptance_plan.py behavior \
+  --baseline path/to/first/results.json --case save_rejected \
+  --signed-hap path/to/rebuilt.hap --device DEVICE_ID --run path/to/recheck/results.json
+```
+
+同包同设备的局部复测可按时间顺序重复传 `--run`。合并时各回执须提供相同的
+`runner_sha256`、`fixture_sha256`，以及一致的版本、数据库和采集配置字段。
+`fixture_sha256` 应取实际测试数据和初始化配置的摘要。场景以最后一次计划执行为准，
+缺少执行结果时记 `NOT_RUN`。新版 HAP 的待测项也记 `NOT_RUN`。
+
+汇总写入 `spec/verify/check5/behavior-summary.json`。场景分母包含首轮计划场景和验收绑定
+里的场景，AC 分母取当前完整规格。Plan 完成标记包含有效的 `acceptance-plan.json` 摘要时，
+才按该绑定检查场景是否通过、计划步骤是否存在、原始控件树是否匹配。
+缺少已批准绑定时保留 `NO_BINDING`，证据不足时保留 `UNVERIFIED`。
+退出码 `0` 表示全部场景与 AC 通过，`1` 表示已出报告但存在失败或未完成项，
+`2` 表示输入或工具错误。功能汇总只写自己的报告，完整流水线验收按原 CHECK 执行。
+原 `evaluate` 子命令继续输出 `spec/verify/check5/acceptance-evidence.json`。
+
+选择正式 `--require-behavior` 时，完整验证报告的 CHECK-5 必须为 PASS，并用独立行
+`behavior-summary-sha256: <report_sha256>` 引用行为命令返回的摘要。恢复检查会重算
+该报告的输入。保留本轮签名 HAP 和原始布局证据供复核。重签名后用新包执行并重建报告。
+
 > CHECK-5 是可扩展的行为验证总入口，技术名称为 `arkts-behavior-verify`。子 verifier 可以在自身契约内修改源码，但任何结果都只进入报告，不参与 CHECK-1/2 与已选 CHECK-3/4 的整体判定、页面 verified 回写或外层失败回环。
 
 ## 0. 当前状态：DEFERRED

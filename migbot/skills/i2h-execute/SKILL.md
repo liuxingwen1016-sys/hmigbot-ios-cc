@@ -510,6 +510,10 @@ console.log(`✅ 已加载 ${componentPatterns.length} 个组件模式`)
 
 ### Step 3.2: 按 Feature 生成代码
 
+完整 iOS 运行时迁移使用 [UI 交付契约](references/ui-delivery-contract.md) 管理已批准 schema-2 清单里的页面。主线程先运行 `ui_delivery_inputs.py` 同步并冻结输入，然后为每个必交单元执行 `ui_dispatch.py prepare`。传给页面转换器完整的 `prompt_path` 内容、`dispatch_id`、`packet_sha256` 和该单元的独占输出范围。准备返回 `BLOCKED` 时保留缺项，补齐真实采集或冻结输入后再派发。
+
+页面转换器在共享接线开始前写出原始组件和 `conversion-reports/<unit_id>.json`，然后执行 `ui_dispatch.py complete`。主线程执行 `stage1_acceptance.py --kind g0` 汇总首次归档，按原契约处理失败。完成装配后执行 `stage1_acceptance.py --kind g1`，归档当前源码和正式宿主接线。下面的 Feature 示例负责其他设计产物。冻结清单内的页面只能由其转换器生成，禁止用示例里的通用 `generateUI` 覆盖独占输出或跳过归档。
+
 **对每个 feature 按优先级顺序生成**:
 
 ```typescript
@@ -1209,6 +1213,10 @@ F104 `ohos.ability.shortcuts` metadata 和 `shortcuts.json`。`PARTIAL` 或 `BLO
 保留具体 capability finding，不能写成 Stage 5 PASS。系统宿主行为仍需真机或模拟器证据，
 静态 profile 通过不能替代添加、刷新和点击回路。
 
+F101 以已批准清单的源锚点决定相机方式。iOS 使用 `DataScannerViewController` 时交付应用内
+实时预览、帧 OCR、确认和退出清理。单次拍照路径使用 `cameraPicker`。真机分别核对现场已知文字、
+编辑页回读、取消释放和回退路径。详细验收见 [iOS 视觉与系统能力](references/ios-visual-acceptance.md#f101-camera-and-ocr-capability-closure)。
+
 如果 `spec/baseline/ui-delivery-approved.json` 中包含 `source_obligations`，在写入
 Stage 5 marker 前还必须运行一次确定性的 UI 事实门禁：
 
@@ -1631,6 +1639,6 @@ fi
 `scripts/resource_delta.py` 提供 task-owned OpenHarmony 资源增量的初始化、提交和原子合并。它通过 preimage hash 和锁拒绝并发冲突，默认不替换 `sweep_resources.py`，只有明确声明资源 scope 的任务才可使用。
 ### Stage 0.4 identity/signing preflight
 
-Before changing `AppScope/app.json5`, run `scripts/identity_signing_preflight.py`. It reads the source CFBundleIdentifier when `--source-root` is supplied, the target `bundleName`, and the signing profile's `bundle-info.bundle-name` via `security cms -D`. Write the result to `spec/execution/stage0-environment.json`.
+Before changing `AppScope/app.json5`, run `scripts/identity_signing_preflight.py`. It reads the source CFBundleIdentifier when `--source-root` is supplied, the target `bundleName`, and the signing profile's `bundle-info.bundle-name`. It uses `security cms -D` and falls back to OpenSSL CMS verification when the native decoder cannot read the profile. Profile decoding checks the bundle binding. Build and device receipts establish actual package signing and installation. Write the result to `spec/execution/stage0-environment.json`.
 
 `identity_status=PASS` requires all available identities to match and the target bundle name to be non-template. When the local profile is still bound to a template bundle, keep the deployable template identity and report `identity_signing_pending`. If the target and local profile names match exactly, a signed diagnostic install is allowed for runtime UI/function evidence, while the identity gate remains pending. Signed install stays blocked when target/profile names differ. Never change the target bundle name to the iOS identifier without updating the signing profile as one atomic operation.

@@ -53,6 +53,8 @@ def load_plan(path: Path) -> dict[str, Any]:
         if navigation is not None:
             if not isinstance(navigation, dict) or not isinstance(navigation.get("steps"), list):
                 raise ValueError(f"states[{index}].navigation.steps must be an array")
+            if "keyboard_visible" in navigation and navigation["keyboard_visible"] is not True:
+                raise ValueError(f"states[{index}].navigation.keyboard_visible must be true when set")
             for step_index, step in enumerate(navigation["steps"]):
                 if not isinstance(step, dict) or step.get("action") not in {"tap", "type_text", "swipe_up", "swipe_down", "wait"}:
                     raise ValueError(f"states[{index}].navigation.steps[{step_index}] has an invalid action")
@@ -175,9 +177,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--app-path")
     parser.add_argument("--bundle-id")
     parser.add_argument("--timeout", type=int, default=600)
+    parser.add_argument("--xctest-batch-size", type=int, help="states per shared XCUITest invocation")
+    parser.add_argument("--xctest-target", default="CuikeUITests")
+    parser.add_argument("--xctest-test-source", default="Tests/UITests/CuikeUITests.swift")
+    parser.add_argument("--source-root")
+    parser.add_argument("--configuration-id", default="Debug")
+    parser.add_argument("--scenario-id", default="default")
     args = parser.parse_args(argv)
+    if args.xctest_batch_size is not None and args.xctest_batch_size < 1:
+        parser.error("--xctest-batch-size must be positive")
 
     try:
+        started = time.monotonic()
+        started_at = utc_now()
         plan_path = Path(args.plan).expanduser().resolve()
         plan = load_plan(plan_path)
         output_root = Path(args.output_root).expanduser().resolve()
@@ -194,23 +206,27 @@ def main(argv: list[str] | None = None) -> int:
             if value:
                 base_args.extend([f"--{name}", value])
 
-        results: list[dict[str, Any]] = []
-        for index, state in enumerate(plan["states"]):
-            results.append(
-                run_state(
-                    base_args=base_args,
-                    state=state,
-                    output_root=output_root,
-                    skip_build=index > 0,
-                    timeout=args.timeout,
-                )
-            )
+        if args.xctest_batch_size is not None:
+            from ios_runtime_capture_batch import run_batches
+
+            results = run_batches(args, plan["states"], output_root)
+        else:
+            for name in ("source-root", "configuration-id", "scenario-id"):
+                value = getattr(args, name.replace("-", "_"))
+                if value:
+                    base_args.extend([f"--{name}", value])
+            results = [
+                run_state(base_args=base_args, state=state, output_root=output_root,
+                          skip_build=index > 0, timeout=args.timeout)
+                for index, state in enumerate(plan["states"])
+            ]
 
         blocked = [item for item in results if item["status"] != "captured"]
         manifest = {
             "schema_version": 1,
             "status": "captured" if not blocked else "partial",
-            "started_at": utc_now(),
+            "started_at": started_at,
+            "elapsed_seconds": round(time.monotonic() - started, 3),
             "plan_path": str(plan_path),
             "output_root": str(output_root),
             "state_count": len(results),
@@ -218,6 +234,8 @@ def main(argv: list[str] | None = None) -> int:
             "blocked_count": len(blocked),
             "states": results,
         }
+        if args.xctest_batch_size is not None:
+            manifest["xctest_session_count"] = (len(results) + args.xctest_batch_size - 1) // args.xctest_batch_size
         manifest_paths = write_manifests(Path(args.project_root).expanduser().resolve(), output_root, manifest)
         manifest["handoff_manifest"] = manifest_paths["handoff_manifest"]
         # Keep both copies self-describing.  The handoff path is consumed by
@@ -226,7 +244,7 @@ def main(argv: list[str] | None = None) -> int:
             path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         print(json.dumps(manifest, ensure_ascii=False, indent=2))
         return 0 if not blocked else 2
-    except (OSError, ValueError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 

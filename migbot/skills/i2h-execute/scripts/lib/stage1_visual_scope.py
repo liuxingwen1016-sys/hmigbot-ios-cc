@@ -3,16 +3,50 @@ from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
+import tempfile
 from typing import Any
 
 from .stage1_contract import digest, normalize, source_digest
 
 
 _GOOD_STATUS = {'audited', 'captured', 'verified', 'pass', 'PASS'}
+RUNTIME_META = 'runtime-meta.json'
 
 
 def _load(path: Path | str) -> dict:
     return json.loads(Path(path).read_text(encoding='utf-8'))
+
+
+def read_snapshot_meta(folder: Path) -> dict:
+    static_path = folder / 'meta.json'
+    meta = _load(static_path) if static_path.is_file() else {}
+    if not isinstance(meta, dict):
+        raise ValueError(f'invalid static metadata: {static_path}')
+    runtime_path = folder / RUNTIME_META
+    if not runtime_path.is_file():
+        return meta
+    runtime = _load(runtime_path)
+    states = runtime.get('runtime_evidence_by_state') if isinstance(runtime, dict) else None
+    if (not isinstance(states, dict) or runtime.get('page_id') != folder.name
+            or any(not isinstance(row, dict) for row in states.values())):
+        raise ValueError(f'invalid runtime metadata: {runtime_path}')
+    legacy = meta.get('runtime_evidence_by_state')
+    return {**meta, 'runtime_evidence_by_state': {**(legacy if isinstance(legacy, dict) else {}), **states}}
+
+
+def write_runtime_snapshot_meta(folder: Path, states: dict) -> None:
+    folder.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', dir=folder, encoding='utf-8', delete=False) as stream:
+            temporary = Path(stream.name)
+            json.dump({'page_id': folder.name, 'runtime_evidence_by_state': states}, stream,
+                      ensure_ascii=False, indent=2)
+            stream.write('\n')
+        temporary.replace(folder / RUNTIME_META)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def _evidence_for_state(meta: dict, state: str) -> dict:
@@ -98,8 +132,7 @@ def baseline(root: Path | str, page: dict) -> dict:
     if not isinstance(page_id, str) or not page_id or not isinstance(state, str) or not state:
         raise ValueError('page_id and state_id are required')
     folder = root / 'spec/baseline/ui-snapshots' / page_id
-    meta_path = folder / 'meta.json'
-    meta = _load(meta_path) if meta_path.is_file() else {}
+    meta = read_snapshot_meta(folder)
     evidence = _evidence_for_state(meta, state)
     if meta.get('view_xml_synthesized') is True:
         raise ValueError('runtime baseline is synthesized')
@@ -231,8 +264,8 @@ def sync_runtime_capture(root: Path | str, manifest_path: Path | str) -> dict:
     ``ios_runtime_capture_plan.py`` can write to a temporary output root to
     keep the capture run disposable.  The visual gate still needs the PNG,
     accessibility JSON, and per-state metadata below
-    ``spec/baseline/ui-snapshots``.  This explicit sync keeps the evidence
-    content-addressed and makes a partial capture fail closed.
+    ``spec/baseline/ui-snapshots``. Store runtime rows beside the frozen
+    Spec metadata so that an Execute sync leaves its exact bytes intact.
     """
     root = Path(root).resolve()
     manifest_file = Path(manifest_path).expanduser().resolve()
@@ -247,6 +280,8 @@ def sync_runtime_capture(root: Path | str, manifest_path: Path | str) -> dict:
     if not output_root.is_dir():
         raise ValueError(f'runtime capture output root is missing: {output_root}')
 
+    if any(not isinstance(row, dict) for row in states):
+        raise ValueError('runtime capture state entry is invalid')
     blocked = [
         {
             'page_id': row.get('page_id'),
@@ -254,7 +289,7 @@ def sync_runtime_capture(root: Path | str, manifest_path: Path | str) -> dict:
             'reason': row.get('blocked_reason', 'capture did not complete'),
         }
         for row in states
-        if not isinstance(row, dict) or row.get('status') != 'captured'
+        if row.get('status') != 'captured'
     ]
     if blocked:
         raise ValueError(f'runtime capture manifest is partial: {json.dumps(blocked, ensure_ascii=False)}')
@@ -262,8 +297,6 @@ def sync_runtime_capture(root: Path | str, manifest_path: Path | str) -> dict:
     synced: list[dict[str, str]] = []
     baseline_root = root / 'spec/baseline/ui-snapshots'
     for row in states:
-        if not isinstance(row, dict):
-            raise ValueError('runtime capture state entry is invalid')
         page_id = _safe_part(row.get('page_id'), 'runtime capture page_id')
         state_id = _safe_part(row.get('state_id', 'normal'), 'runtime capture state_id')
         output_value = row.get('output_dir')
@@ -281,16 +314,21 @@ def sync_runtime_capture(root: Path | str, manifest_path: Path | str) -> dict:
         if output_dir != expected_dir.resolve():
             raise ValueError(f'runtime capture output_dir does not match page/state: {output_dir}')
         source_page = output_root / page_id
-        source_meta = source_page / 'meta.json'
-        if not source_meta.is_file():
-            raise ValueError(f'runtime capture metadata is missing: {source_meta}')
         destination_page = baseline_root / page_id
-        _copy_file(source_meta, destination_page / 'meta.json')
+        capture = _evidence_for_state(read_snapshot_meta(source_page), state_id)
+        if not capture or (capture.get('state_id') or capture.get('state')) not in {None, state_id}:
+            raise ValueError(f'runtime capture metadata does not bind {page_id}/{state_id}')
         files = sorted(path for path in output_dir.iterdir() if path.is_file()) if output_dir.is_dir() else []
         if not files:
             raise ValueError(f'runtime capture state directory is empty: {output_dir}')
         for source in files:
             _copy_file(source, destination_page / 'states' / state_id / source.name)
+        meta = read_snapshot_meta(destination_page)
+        states_by_id = meta.get('runtime_evidence_by_state')
+        if not isinstance(states_by_id, dict):
+            states_by_id = {}
+        states_by_id[state_id] = capture
+        write_runtime_snapshot_meta(destination_page, states_by_id)
         synced.append({'page_id': page_id, 'state_id': state_id, 'snapshot': str(destination_page.relative_to(root))})
     return {
         'manifest': str(manifest_file),

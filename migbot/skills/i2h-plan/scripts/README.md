@@ -155,7 +155,7 @@ python3 lint_feature_plan.py <project_root>
 
 ### 4. gate_plan_complete.py - 完成门禁
 
-**功能**：在 i2h-plan 完成时执行最终门禁检查
+**功能**：只读检查 i2h-plan 的产物和门禁，返回退出码。完成标记由 i2h-plan 收口按 `references/marker-contract.md` 写入。
 
 **检查项**：
 - ✅ 所有必需文件存在
@@ -216,7 +216,6 @@ python3 gate_plan_complete.py <project_root>
 
 🎉 门禁通过: 所有检查通过，可以进入 i2h-execute！
 
-✅ 完成标记已创建: spec/baseline/plans/complete.txt
 ```
 
 ---

@@ -13,7 +13,7 @@
 - **未选项**: {CHECK-3/4/5 中用户未选的项目；全选时写"无"}
 - **代码与实测依据**: {工作树状态/相关改动、verifier 轮次与测试包标识}
 - **基础及已选视觉/UT 范围结论**: {PASS / FAIL / PARTIAL；仅 CHECK-1/2 + 已选 CHECK-3/4}
-- **行为验证结果（非门控）**: {CHECK-5 SKIP/WARN/DEFERRED/ERROR；不计入上述结论}
+- **行为验证结果**: {CHECK-5 状态；严格 `--require-behavior` 模式另核对机器回执}
 
 ---
 
@@ -25,11 +25,10 @@
 | CHECK-2 | App 身份校验 | {PASS/FAIL/PARTIAL} | {FAIL 为 0 → PASS；有 FAIL → FAIL} | {检查项通过数/总数} |
 | CHECK-3 | 视觉对齐 | {PASS/FAIL-visual/FAIL-functional/PARTIAL/DEFERRED/SKIP} | {平均相似度、匹配页面数} | {截图路径、对比报告} |
 | CHECK-4 | 单元测试 | {PASS/FAIL/PARTIAL/DEFERRED/SKIP} | {通过率、设计验证率} | {UT 报告路径、轮次} |
-| CHECK-5 | 行为验证（非门控）| {WARN/DEFERRED/ERROR/SKIP} | {当前状态说明} | {行为报告路径（如有）} |
+| CHECK-5 | 行为验证 | {PASS/FAIL/PARTIAL/WARN/DEFERRED/ERROR/SKIP} | {当前状态说明} | {行为报告路径（如有）} |
 
-**注**：
-- 状态含义见下方"结果判定"章节
-- CHECK-5 不参与整体判定（非门控）
+原生 CHECK-5 为 PASS 时，另起一行填入 `behavior-summary-sha256: <report_sha256>`，
+取值来自本轮行为验证命令。标准范围结论仍按 CHECK-1/2 和已选 CHECK-3/4 计算。
 
 ---
 

@@ -112,14 +112,12 @@ feature worker 必须先读取索引切片，禁止再次 Read 整个 Swift 项�
 
 #### iOS 专属 UI 风格触发（按命中加载）
 
-在页面交付脚手架生成后，可对当前只读 iOS 源运行：
+标准 `ui_evidence.py` 扫描将样式触发项写入 `spec/ref/ios-style-triggers.json`，并在
+`spec/.i2h/target-input.json` 记录证据摘要。Plan 读取同次扫描生成的证据，执行门禁核对摘要。
+源变化时重跑标准扫描。诊断脚本 `ios_style_triggers.py` 单独运行时使用其他输出路径。
 
-```bash
-python3 "${CLAUDE_PLUGIN_ROOT:-.claude}/skills/i2h-spec/scripts/ios_style_triggers.py" \
-  <IOS_SOURCE_ROOT> --output spec/ref/ios-style-triggers.json
-```
-
-该产物只记录源码锚点、现有 ArkUI Skill 建议、候选原生 API 和回退路径。它不会全局加载玻璃、Popover、Context Menu 等样式 Skill，也不会把 API 26 能力当成当前项目可用能力。Plan 只消费命中的 `suggested_skills`，无命中项保持不触发。
+该产物记录源码锚点、现有 ArkUI Skill 建议、候选原生 API 和回退路径。Plan 只消费命中的
+`suggested_skills`，依据目标 SDK 判断 API 26 等能力的可用性。
 
 页面分析使用 `pipeline_workers.run_bounded`，默认 4 个 worker，每批 3–5 页。每个
 worker 写入 `spec/.i2h/checkpoints/pages/` 下的独立 checkpoint 和临时目录，失败时只
@@ -163,6 +161,12 @@ python3 .claude/skills/i2h-spec/scripts/ios_runtime_capture_plan.py \
 
 计划文件的每个状态必须提供 `page_id`、`state_id`，以及 `accessibility_command` 或已有的 `accessibility_json`。`accessibility_command` 负责在真实 Simulator 中执行确定性导航，并写入环境变量 `I2H_UI_JSON_OUT`。随后的 `I2H_FOREGROUND_RECEIPT_OUT` 必须由同一 XCTest 探针在应用前台且页面就绪后写出，采集器只在 JSON 与 receipt 同时存在时截图。一个状态失败时包装器继续采集其余状态，最终退出码为 2，并在 `capture-plan-manifest.json` 中记录 `blocked_reason`。下游只能把 `status=captured` 的状态作为运行时证据，不能把 partial 汇总伪装成全量通过。
 
+Cuike 可使用共享 XCUITest 会话采集。将 `--xctest-batch-size 6 --source-root <iOS 源根> --bundle-id com.cuike.brew --configuration-id Cuike.Debug.uitesting` 附加到上述包装器命令。需要明确指定已授权的模拟器 ID。包装器在临时源码副本中添加探针，一次编译测试包，按计划顺序执行每个状态。每个状态仍以 `--uitesting` 重新启动应用并使用自己的导航、锚点和前台截图握手。它使用实际测试应用的构建摘要。项目使用其他测试 target 或文件时，可通过 `--xctest-target` 和 `--xctest-test-source` 指定，仅在已核实该应用的冷启动夹具能独立复位时启用共享会话。
+
+已冻结采集计划且宿主可访问已授权模拟器时，可按 [采集并行交接](./references/ios-capture-overlap.md)
+启动独立 XCUITest 作业。同时执行不消费运行时证据的静态事实、功能和 API 分析。运行时消费者
+以及 Phase A 的收口仍需先取得同一计划的终态回执并交接，保留原有顺序和验收门禁。
+
 如果状态需要进入非默认页面，必须在同一状态写入 `navigation`。它包含 `steps` 和可选的
 `anchors`。step 支持 `tap`、`type_text`、`swipe_up`、`swipe_down`、`wait`，tap/type
 目标使用 `element` 加 `identifier`、`label` 或 `label_contains`。`element` 可为
@@ -170,12 +174,14 @@ python3 .claude/skills/i2h-spec/scripts/ios_runtime_capture_plan.py \
 或 `switch`，可用 `reveal_swipes` 逐步揭示 ScrollView 内控件。每个 anchor 也必须
 使用同样的 selector，并可声明 `hittable: true`。XCTest 探针会在写出 receipt 前执行
 这些步骤和 anchor 校验，缺少目标时该页面状态为 BLOCKED，禁止把默认首页截图绑定到目标页。
+源状态要求显示键盘时，在 `navigation` 中设 `keyboard_visible: true`，探针会等键盘进入应用视口且其位置稳定后再写前台回执。
 
 批量包装器同时把同一份清单写入目标工程的
 `spec/execution/ios-runtime-capture/capture-plan-manifest.json`。即使
 `--output-root` 指向临时目录，i2h-execute 的 visual scope 也会自动发现该清单，
-把每个已捕获状态的 PNG、accessibility JSON 和 `meta.json` 同步到
-`spec/baseline/ui-snapshots/<page_id>/states/<state_id>`。partial 清单在同步时保持阻断。
+把每个已捕获状态的 PNG 和 accessibility JSON 同步到
+`spec/baseline/ui-snapshots/<page_id>/states/<state_id>`，并把运行时元数据写入页面目录的
+`runtime-meta.json`，保留 Spec 冻结的 `meta.json`。partial 清单在同步时保持阻断。
 
 运行时证据使用 PNG + accessibility JSON。Android 的 `view.xml` 只适用于 legacy
 或 Android 输入，不得作为 iOS 的必需格式。
@@ -287,7 +293,16 @@ python3 "${CLAUDE_PLUGIN_ROOT:-.claude}/skills/i2h-spec/scripts/ios_xctest_acces
 
 #### 补充字段到 meta.json
 
-在脚本骨架基础上，补充以下字段：
+将逐页审阅结果合并为 `spec/.i2h/ios-page-semantics.json`，包含 `schema_version: 1`、当前 `target_input_sha256` 和 `pages`。每项记录 `page_id`、`view_name`、`file_path`，以及经源代码审阅的 `purpose`、`complexity`、`confidence`、`ui_structure`、`state_management`、`interactions`、`conversion_strategy`、`ios_source_anchors`。可补充 `navigation_role` 和 `dependencies`。用随包脚本合成 `meta.json`，由脚本带入属性、行号、源摘要与 UI 义务。
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT:-.claude}/skills/i2h-spec/scripts/ios_page_meta.py" \
+  --inventory spec/.i2h/resources-inventory.json \
+  --semantics spec/.i2h/ios-page-semantics.json \
+  --output-root spec/baseline/ui-snapshots
+```
+
+合成后的页面元数据形态如下：
 
 ```json
 {
@@ -413,16 +428,7 @@ Phase B: 生成 UI 清单
 
 #### Step A1b: 生成静态 UI/资源事实（确定性脚本）
 
-在完成项目骨架扫描后，必须运行随本 skill 安装的静态证据脚本。它是 iOS
-版本对 Android `view.xml`/资源索引的对应物，记录源代码锚点、SwiftUI/UIKit
-页面、Assets.xcassets 变体、本地化条目和代码到资源的引用；它不会猜测运行时值。
-
-```bash
-python3 .claude/skills/i2h-spec/scripts/ui_evidence.py \
-  "$IOS_PATH" \
-  --output spec/.i2h/resources-inventory.json \
-  --res-index spec/baseline/res-index
-```
+使用 Step A1 的 `ui_evidence.py` 已生成的静态证据。它记录源代码锚点、SwiftUI/UIKit 页面、Assets.xcassets 变体、本地化条目和代码到资源的引用。以下产物有缺失或目标输入摘要过期时，重跑 Step A1 的完整命令。
 
 必须验证以下产物存在且 `target_input_sha256` 一致：
 

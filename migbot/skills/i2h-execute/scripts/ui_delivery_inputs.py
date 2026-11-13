@@ -25,7 +25,11 @@ def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if _ios_inventory(argv):
         from lib.ui_delivery_inputs_ios import freeze
-        return freeze(argv)
+        try:
+            return freeze(argv)
+        except (OSError, ValueError) as exc:
+            print(f'ui_delivery_inputs BLOCKED: {exc}', file=sys.stderr)
+            return 2
     return dispatch("ui_delivery_inputs", argv)
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from ui_evidence import build_skeleton, parse_ui_obligations, run
+from ui_evidence import build_skeleton, parse_ui_obligations, run, sha256_file
 from runtime_view import normalize
 
 
@@ -31,6 +31,17 @@ class UiEvidenceTests(unittest.TestCase):
         skeleton = build_skeleton(payload)
         self.assertEqual(skeleton['source_file_count'], 2)
         self.assertEqual(skeleton['swift_files'], ['App/Views/Home.swift', 'Core/BrewDomain.swift'])
+
+    def test_standard_spec_scan_emits_style_evidence_bound_to_source_digest(self):
+        source = self.write('App/Home.swift', 'struct HomeView: View { var body: some View { TabView(selection: $tab) {} } }')
+        evidence = self.root / 'spec/.i2h/resources-inventory.json'
+        payload = run(str(self.root), str(evidence))
+        receipt = json.loads((evidence.parent / 'target-input.json').read_text())
+        style = json.loads((self.root / 'spec/ref/ios-style-triggers.json').read_text())
+        self.assertEqual(receipt['style_triggers_sha256'], sha256_file(self.root / 'spec/ref/ios-style-triggers.json'))
+        self.assertEqual(style['target_input_sha256'], payload['target_input_sha256'])
+        self.assertEqual(style['triggers'][0]['trigger_id'], 'floating_tabbar')
+        self.assertEqual(style['triggers'][0]['source_anchor']['sha256'], sha256_file(source))
 
     def test_runtime_normalize_preserves_ios_state_and_artifact_hashes(self):
         output = self.root / 'capture'

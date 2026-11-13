@@ -62,25 +62,35 @@ def source_bundle_id(source_root: Path) -> str | None:
 def profile_bundle_name(profile: Path, *, security_bin: str = "security") -> tuple[str | None, str | None]:
     if not profile.is_file():
         return None, "signing profile file not found"
-    if shutil.which(security_bin) is None:
-        return None, f"{security_bin} command not available"
+    commands = (
+        [security_bin, "cms", "-D", "-i", str(profile)],
+        # Verify the signed CMS content without requiring a local trust chain.
+        # Package signing and device installation are separate checks.
+        ["openssl", "cms", "-verify", "-inform", "DER", "-in", str(profile), "-noverify"],
+    )
+    diagnostics = []
+    for command in commands:
+        if shutil.which(command[0]) is None:
+            diagnostics.append(f"{command[0]} command not available")
+            continue
+        try:
+            result = subprocess.run(command, check=False, capture_output=True, text=True, timeout=30)
+        except (OSError, subprocess.SubprocessError, UnicodeError) as exc:
+            diagnostics.append(f"{command[0]}: {exc}")
+            continue
+        if result.returncode == 0:
+            return bundle_name_from_payload(result.stdout)
+        diagnostics.append((result.stderr or f"{command[0]} cms failed").strip())
+    return None, " | ".join(diagnostics)
+
+
+def bundle_name_from_payload(content: str) -> tuple[str | None, str | None]:
     try:
-        result = subprocess.run(
-            [security_bin, "cms", "-D", "-i", str(profile)],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        return None, f"cannot inspect signing profile: {exc}"
-    if result.returncode != 0:
-        return None, (result.stderr or "security cms failed").strip()
-    try:
-        payload = json.loads(result.stdout)
+        payload = json.loads(content)
     except json.JSONDecodeError as exc:
         return None, f"invalid signing profile payload: {exc}"
-    value = payload.get("bundle-info", {}).get("bundle-name")
+    bundle = payload.get("bundle-info") if isinstance(payload, dict) else None
+    value = bundle.get("bundle-name") if isinstance(bundle, dict) else None
     if not isinstance(value, str) or not value:
         return None, "signing profile has no bundle-info.bundle-name"
     return value, None
@@ -114,7 +124,7 @@ def evaluate(
         issues.append("target bundleName is still a template example identity")
 
     profile_matches_target = bool(target_id and profile_id and target_id == profile_id)
-    status = "PASS" if profile_matches_target and not target_id.startswith("com.example.") else "identity_signing_pending"
+    status = "PASS" if profile_matches_target and not issues else "identity_signing_pending"
     return {
         "schema_version": SCHEMA_VERSION,
         "gate": "i2h-execute.identity-signing-preflight",

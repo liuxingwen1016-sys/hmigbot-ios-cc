@@ -42,7 +42,7 @@ jobs:
       - name: Run marker schema and hash tests
         run: python -m unittest tests/test_marker_contract.py -v
 
-      - name: Run install and pipeline import smoke tests
+      - name: Verify installed Python gates and upgrade contracts
         run: python -m unittest migbot.scripts.test_install_runtime -v
 
       - name: Run i2h-execute contract tests

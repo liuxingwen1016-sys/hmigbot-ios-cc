@@ -1,5 +1,0 @@
-{
-  "static_resource_index": "../../android2hmos_resources_convert/scripts/static_resource_index.py",
-  "resource_semantics": "../../android2hmos_resources_convert/scripts/resource_semantics.py",
-  "image_codec": "../../android2hmos_resources_convert/scripts/image_codec.py"
-}

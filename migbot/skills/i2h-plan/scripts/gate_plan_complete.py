@@ -2,7 +2,7 @@
 """
 i2h-plan Completion Gate
 
-在 i2h-plan 完成时执行最终门禁检查，确保所有产物就绪且质量达标。
+在 i2h-plan 完成时只读校验产物与质量门禁。完成标记由阶段收口写入。
 
 Usage:
     python3 gate_plan_complete.py <project_root>
@@ -18,7 +18,6 @@ import json
 from pathlib import Path
 from typing import List, Dict, Optional
 from dataclasses import dataclass
-from datetime import datetime
 
 
 @dataclass
@@ -417,38 +416,7 @@ class PlanCompletionGate:
             return True
         else:
             print("\n🎉 门禁通过: 所有检查通过，可以进入 i2h-execute！")
-            self._create_completion_marker()
             return True
-
-    def _create_completion_marker(self):
-        """创建完成标记文件"""
-        marker_path = self.plans_dir / 'complete.txt'
-
-        # 统计信息
-        ui_plan_path = self.plans_dir / 'ui-plan.md'
-        feature_plan_path = self.plans_dir / 'feature-plan.md'
-
-        batches = 0
-        groups = 0
-
-        if ui_plan_path.exists():
-            content = ui_plan_path.read_text()
-            batches = content.count('## Batch')
-
-        if feature_plan_path.exists():
-            content = feature_plan_path.read_text()
-            groups = content.count('## Group')
-
-        # 写入完成标记
-        timestamp = datetime.now().isoformat()
-        marker_content = f"""i2h-plan completed at {timestamp}
-UI batches: {batches}
-Feature groups: {groups}
-Status: PASS
-"""
-
-        marker_path.write_text(marker_content)
-        print(f"\n✅ 完成标记已创建: {marker_path.relative_to(self.project_root)}")
 
 
 def main():

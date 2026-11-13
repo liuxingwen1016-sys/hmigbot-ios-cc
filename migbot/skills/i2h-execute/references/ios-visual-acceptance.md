@@ -102,29 +102,36 @@ bottom CTA frames against the iOS baseline before accepting the sheet.
 
 ## F101 camera and OCR capability closure
 
-When the iOS source contains camera or VisionKit OCR behavior, the Harmony
-delivery is not complete after a static `CameraKit` import. The execute slice
-must verify the following on the selected real device when available.
+Determine whether the approved iOS source takes a photo or continuously recognizes
+text in an in-app preview. `capability_gate.py` checks the approved source anchors
+against their frozen hashes and reports `source_camera_mode`. A stale or unavailable
+anchor requires source evidence recovery before Stage 5 can pass.
 
 - `module.json5` declares `ohos.permission.CAMERA` with a user-facing reason
   and an `EntryAbility` in-use scene.
 - The page requests runtime permission through `abilityAccessCtrl` and shows a
   source-backed fallback when the user denies it.
-- `cameraPicker.PickerProfile` is created with an object literal containing the
+- For still capture, create `cameraPicker.PickerProfile` with an object literal containing the
   back camera and a writable `saveUri`. Some Harmony releases expose profile
   properties as read-only after construction, so mutating `new PickerProfile()`
-  is a runtime crash pattern.
-- The picker call is protected on both synchronous and Promise failure paths.
-  A failed camera path must leave the app alive and expose album selection,
+  is a runtime crash pattern. Handle both synchronous and Promise failures.
+- For `DataScannerViewController`, mount a live preview from the scanner route and
+  feed preview frames into on-device OCR. Camera Kit can render one preview output
+  to an `XComponent` surface and feed another to an `ImageReceiver`. Release the
+  frame, session and surfaces on cancellation, confirmation and exit. A still-camera
+  picker can be a fallback where the source allows one.
+- A failed camera path must leave the app alive and expose album selection,
   sample-image OCR, and manual BeanEditor entry.
 - OCR distinguishes an unreadable image from an image containing no text. The
   latter remains `ERR_OCR_EMPTY` so the user can correct the image or use a
   fallback. Evidence records the actual camera result and OCR text or error.
 
-The F101 acceptance record has separate results for permission, camera launch,
-image return, OCR, sample-image fallback, album fallback, and manual entry. A
-physical lens obstruction is an environmental PARTIAL result when the same
-OCR chain succeeds on a sample or album image.
+Run permission, launch, OCR and fallbacks on the selected real device. For still
+capture, verify the returned photo reaches the editor. For continuous scanning,
+verify live frame recognition against known text, confirm and read back the editor
+contents, then test cancellation and release. Keep each result separate. Report a
+physical lens obstruction as an environmental PARTIAL even when sample or album
+OCR passes. The static F101 report sets `behavior_verified` to false.
 
 ## F102/F103/F104 system-surface closure
 

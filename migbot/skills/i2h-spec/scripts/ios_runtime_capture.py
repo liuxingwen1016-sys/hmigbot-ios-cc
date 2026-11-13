@@ -385,6 +385,18 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
                 screenshot=screenshot,
             )
 
+    return write_capture_evidence(args, output_dir=output_dir, device=device, app=app, identity=identity,
+                                  source_sha256=source_sha256, receipt_payload=receipt_payload)
+
+
+def write_capture_evidence(
+    args: argparse.Namespace, *, output_dir: Path, device: str, app: Path, identity: dict[str, str],
+    source_sha256: str | None, receipt_payload: dict[str, Any] | None,
+) -> dict[str, Any]:
+    ui_json = output_dir / "ios-accessibility.json"
+    screenshot = output_dir / "ios-runtime.png"
+    foreground_receipt = output_dir / "foreground-receipt.json"
+    foreground_ack = output_dir / "foreground-capture-ack.json"
     ui_payload = json.loads(ui_json.read_text(encoding="utf-8"))
     captured_nodes = ui_payload.get("nodes", []) if isinstance(ui_payload, dict) else []
     raw = {

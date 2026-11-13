@@ -8,7 +8,7 @@ schema 1 仅供读取历史实验，不得用于绕过新项目的所有权和�
 
 ~~~sh
 python3 <i2h-plan>/scripts/ui_delivery.py draft --project-root <project> \
-  --out <project>/spec/baseline/plans/stage1-ui-delivery.json
+  --out <project>/spec/baseline/ui-delivery-approved.json
 ~~~
 
 草稿先按源码组件汇合 canonical snapshot 与 composition，再为每个组件生成一个单元。
@@ -21,6 +21,9 @@ source_refs、required_states、输出符号、正式路由/受控 Preview、宿
 
 full_ui 范围必须解释所有 canonical snapshots；排除需要 source_refs、reason、
 decision_ref。缺截图不能自动排除。只交付 smoke path 时显式使用 selected_smoke。
+Plan 已知项目原生 UITest 使用稳定目标控件 ID 时，将该单元的真实操作入口登记到
+`source_obligations.runner_action_ids`。图标按钮可同时保留源无障碍名称。
+静态门禁要求实际 `.id(...)` 修饰符，真机回执继续核对可点击和进入正确状态。
 生成单元包含 unit_id、page_id、component、presentation_role、required_states、
 output={file,symbol,builder}、source_refs、generation_owner、integration_owner=closer。
 draft 会从源码 modifier 生成可审查的 `presentation` 提示。`.sheet()` 使用
@@ -32,6 +35,7 @@ draft 会从源码 modifier 生成可审查的 `presentation` 提示。`.sheet()
 原生绑定时，必须在宿主文件写入完整的 `presentation_fallback` 标记，声明 owner、state、
 scrim、corner、detent、dismissal 和 safe_area，不能只用 pageKey 或普通导航页代替模态层。
 嵌入单元增加 integration={host_file,host_builder,child_symbol}。
+同一内容经多个独立宿主呈现时，`integration` 可为对象数组。每个槽位独立核对，模态槽位可声明 `mount=bindSheet` 或 `mount=bindContentCover`，并绑定实际 Swift `source_ref`。
 
 每单元的 owned_ui_roles、每状态的 responsibility 明确 shell/content/overlay/behavior；
 宿主采到不代表宿主实现正文。相同层级正文不能重复认领；跨层覆盖填写 layer/overlap_reason。
@@ -45,6 +49,10 @@ scrim、corner、detent、dismissal 和 safe_area，不能只用 pageKey 或普�
 自持 UI builder，子组件的 integration 列出宿主槽位。composition 的 Fragment 不能无声消失，
 排除组件必须在 component_exclusions 写来源和审批依据。Stage 3 Step 3a 复用和接入真实逻辑，
 新增 UI 必须登记增量。fixture 只解决展示输入，不结清网络、登录、支付等业务义务。
+对于可直接识别的 SwiftUI `TabView` 子页面，草稿在 `presentation.swiftui_tab_roots` 列出
+宿主声明和 Swift 源锚点。确认每个目标 Tab 槽位并将该锚点写入 `integration.source_ref`。
+审批前验证按源码重查锚点、宿主输出符号及路径。间接 builder、动态 Tab 和 UIKit 的宿主
+关系继续按源码审阅并登记。运行时到达证据由 Stage 1 冒烟验收核对。
 
 required_states 每项有 state_id、arrival_mode=formal/preview/behavior；
 运行时绑定可有 evidence_page_id、evidence_state_id、region_px。
@@ -54,10 +62,11 @@ required_states 每项有 state_id、arrival_mode=formal/preview/behavior；
 
 ~~~sh
 python3 <i2h-plan>/scripts/ui_delivery.py validate --project-root <project> \
-  --inventory <inventory> --out <validated-inventory>
+  --inventory <inventory> --receipt-only --out <validation-receipt>
 ~~~
 
-批准最终草稿：`ui_delivery.py approve --project-root <project> --inventory <inventory> --confirmation-ref <ref> --out <inventory>`。
+确认后用 `ui_delivery.py approve --project-root <project> --inventory <inventory> --validation-receipt <validation-receipt> --confirmation-ref <ref> --out <inventory>`。
+原地审批在 approved 清单保留候选和验证回执摘要。既有工程的历史清单路径继续兼容。
 检查修订：`ui_delivery.py diff --project-root <project> --inventory <inventory> --out <diff.json>`。
 
 ## Execute：脚本先声明输入
@@ -71,6 +80,7 @@ python3 <i2h-execute>/scripts/validate_runtime_snapshots.py --project-root <proj
 枚举、兼容 API 和代码数值来源；这些检查不等于完整类型检查，也不证明布局保真。
 脚本声明必需内容，Converter 禁改 packet/index、减少列表或自行声明零输入。
 输入变更须回到准备步骤重新审阅，受影响单元 STALE，不能手写脚本批量重绑旧报告 hash。
+冻结命令先同步标准 iOS 批量采集清单，逐状态合并运行证据到 `ui-snapshots`，保留已有静态事实。
 只有 ui_dispatch.py reuse-metadata --dispatch-id <id> --packet <new-packet> 自动确认同内容后可复用。
 
 每个单元运行 `ui_dispatch.py prepare --project-root <project> --unit-id <id> --attempt <N>`，将 prompt_path
@@ -132,6 +142,10 @@ code_anchor 和描述符号仅诊断 WARN，不能因空行/行号漂移修改�
 schema 2 同时保存输入字节的内容寻址副本及 preflight 报告；便利缓存重建不能覆盖已消费的 G0 证据。
 全批结束 `stage1_acceptance.py --kind g0` 原子汇总首次归档；失败不得跳过。后续修复使用新 attempt，保留旧 G0。
 
+iOS Python 派发入口保存 `spec/execution/dispatch/<dispatch_id>/` 和 `dispatch/events.jsonl`。
+准备结果会列出缺失的状态证据，converter 按 packet 给出的 `comparison_id` 报告图片观察。
+G0 校验本单元原始输出、转换报告、输入和状态引用；宿主装配、编译、设备到达和视觉留给后续门禁。
+
 ## 验收和修复
 
 项目 ledger 批准 Stage 1 按根因处置时，任何 G0/G1/编译/视觉失败先加载 [stage1-gate-policy.md](stage1-gate-policy.md)。产物缺陷必须修复；有证据的前置/环境/工具缺口经有界恢复后可带缺口继续，但 G0/G1 原始归档、验收分母和 stage1_complete 的真实判据不变。缺失归档或截图不能补造成成功。
@@ -140,6 +154,21 @@ schema 2 同时保存输入字节的内容寻址副本及 preflight 报告；便
 python3 <i2h-execute>/scripts/ui_stage1_gate.py --project-root <project> --output-json <gate.json>
 python3 <i2h-execute>/scripts/stage1_visual_scope.py --project-root <project> --out <scope.json>
 ~~~
+
+安装后的正式命令位于 `.claude/skills/i2h-execute/scripts/ui_stage1_gate.py`。
+历史名称 `ui_delivery_gate.py` 运行同一 Python 门禁。两者默认读取
+`spec/baseline/ui-delivery-approved.json`，也可用 `--inventory` 或历史的 `--wiring-dir <清单文件>`
+指定已批准清单。`--inputs-index` 校验冻结输入，`--wiring-contract` 追加明确的接线约束。
+历史命令把已批准清单传给 `--wiring-contract` 时仍可运行。
+`--output-json` 或 `--output` 指定报告路径，省略时写标准输出。
+
+门禁按必交单元检查实际文件、声明的组件和可达 builder、宿主挂载及转换报告的逐状态记录。
+批准清单未声明必需的宿主槽位时报告 `required_host_slot_missing`。已声明但目标宿主未挂载实际输出时
+报告 `required_host_slot_unbound`，并列出宿主文件及 builder。
+`wired_units` 只包含通过上述结构检查的单元。`PASS` 退出 0，schema-2 项目缺陷或缺输入为
+`BLOCKED` 并退出 2。无法写入报告等工具执行错误写 `tool_error` 并退出 3。显式 schema-1 历史
+wiring 清单保留原退出 0/1 契约。结构结果固定为 `STRUCTURAL_ONLY`，实际到达、视觉及 G0/G1
+原始归档继续由现有验收流程核对。
 
 import 统计只表示依赖。完整交付要求 100% required units/states 有实现；
 正式路径与 Preview 各自按批准清单达到 100%，Preview 不计入正式业务完成。
@@ -175,12 +204,21 @@ python3 <i2h-execute>/scripts/stage1_acceptance.py --project-root <project> \
 
 采集索引 `{"pairs":[{"pair_id","arrival_receipt","frames":[{"comparison_id","harmony_png","harmony_xml","harmony_region_px","harmony_density"}]}`
 （到不了的写 `arrival_failure:{evidence,install_receipt,summary}`，环境阻断写 `blocked:{code,reason,evidence}`）；
-判图结果 `{"comparisons":[{"comparison_id","verdict","severity","appearance_report","notes"}]}`。
+判图结果 `{"comparisons":[{"comparison_id","verdict","severity","appearance_report","relationship_report","notes"}]}`。
+两份判定工件必须分别绑定同一 comparison ID。`appearance_report` 绑定 `ios_png_sha256` 和 `harmony_png_sha256`。
+`relationship_report` 绑定 `ios_ui_sha256` 和 `harmony_ui_sha256`。PASS 需要两份工件都提供 `verdict=PASS`。
 
 G0 是 converter 的强制交接门；静态装配与修复后用 --kind g1 归档。两份不可覆写。
+G1 验证每个必交单元首次归档仍可读，当前转换回执与最近的通过归档一致，当前组件及宿主槽位通过结构门。
+归档按实际源码和回执内容寻址，源码修复保留先前的 G1。完整运行时计划在批准前填写宿主文件、builder 和子组件符号。
 Stage 1 验证包 compile 最多两次 repair。BLOCKED 的环境恢复不消耗源码修复次数，但必须计入根因处置脚本的有界恢复预算，不能无限重试；
 恢复时沿用已有预算，不能通过重建任务重置已经做过的修复。
 archive 自动分配 round-0/1/2，记录首次结果，不能改任务 ID 或 candidate 名重置预算。
+
+编译完成后用 `stage1_acceptance.py --kind compile --scope <scope.json> --build-receipt <spec 内构建回执>` 登记。
+也可用 `--report` 传入 `{status,scope_sha256,build_receipt}`，其中 build_receipt 是相对 spec 的文件引用。
+真实编译失败报告使用 `status=FAIL`，带 `source_sha256`、`exit_code`、`reason` 和 `evidence` 日志引用。
+环境阻断报告使用 `status=BLOCKED` 并保留同样的源与诊断引用，单独计恢复次数。
 
 ### 视觉修复：只保接线和关键显示，不追细节
 
@@ -201,11 +239,21 @@ archive 自动分配 round-0/1/2，记录首次结果，不能改任务 ID 或 c
 其余 pair 用 `--carry-from <N>` 沿用上轮结论，记录脚本会再核对其相关文件确实没变。
 有沿用项时，结束前在最终 HAP 上跑一次整包冒烟（冷启动、各 Tab、每个正式页面能到达），用
 `--kind smoke` 登记，cases 覆盖全部正式 page_id；冒烟通过才算 Stage 1 完成。
+冒烟输入使用 `--report`，包含 `scope_sha256`、同一套 `build_receipt` 和 `install_receipt`、
+`cold_start` 及 `cases`。各 case 使用 `{page_id,arrived:true,evidence}`，evidence 引用真实到达回执。
+cold_start 引用绑定本轮源、scope、HAP、设备和 capture_run_id 的 PASS 回执，并引用冷启动命令日志。
+所有正式页面和已批准的 Tab 状态必须在同次安装、同一采集轮次观察到。Python 命令只登记与复验实际采集结果。
 
 最终运行 `stage1_acceptance.py --kind summary --project-root <project> --scope <scope.json>`。
 结构 PASS 只标 STRUCTURAL_ONLY；缺 G0/构建/比较不得报 Stage 1 完成。assessment_complete 仅表示全状态
 都有 PASS/FAIL/BLOCKED；stage1_complete 还要求结构、当前源码构建、视觉 PASS（可带 accepted_differences）和必要时的冒烟 PASS。
 源代码变化使旧比较 STALE；正式到达和 Preview 分别保留，Preview 不等于正式业务接入。
+Python 汇总会重验当前 G1 原档、最新视觉归档及其源、HAP 和双端证据，可用 `--out` 保存 JSON。
+旧版同一 scope 有多份无顺序索引的视觉归档时，通过 `--report` 选定已归档的比较报告。
+有实际构建但暂无完整视觉结果时，可用 `--build-receipt <spec 内路径>` 核实当前构建，未采或未判的状态保留 NOT_RUN。
+当前 iOS Python 汇总以同次安装的全量新采结果判定完成。达到原生视觉修复轮次后，普通残余差异同时写进
+`accepted_differences` 和原始失败明细，后续严格视觉验收仍可消费原始 `raw_visual` 和逐状态结果。
+跨包沿用仍需依赖文件核验，独立冒烟通过不会让未经核验的沿用比较进入完成判定。
 
 ### S1-V 编排
 
@@ -216,6 +264,18 @@ archive 自动分配 round-0/1/2，记录首次结果，不能改任务 ID 或 c
 新契约要求 ui_relationships.py 对双端 dump 的文字/角色/语义上下文匹配后检查靠边、顺序、重叠、间距，
 并有独立外观复核报告；模糊匹配保持 UNRESOLVED。缺实际步骤是 NOT_RUN，只有已记录的前置阻断
 才可写 BLOCKED。最终 writeback 必带 stage1.phase=assembled/assessed/complete；脚本先验证再写 brief。
+
+从已安装的 CC iOS skill 运行双端关系检查。作用域读取 iOS schema-2 的对应帧，源树使用 XCUITest 的
+`debug_description` 或带 viewport 的结构化节点，鸿蒙树使用 UI Test 的原生 `dumpLayout` JSON。
+坐标按两端实际 viewport 归一到 iOS 点；单独记录关系差异、未匹配节点和输入摘要。状态栏和系统键盘
+由独立外观及状态到达检查取证。归档时按同一规则复算树并比对关系报告。关系 PASS 仍须独立外观 PASS。
+
+~~~sh
+python3 .claude/skills/i2h-execute/scripts/ui_relationships.py --project-root . \
+  --scope spec/execution/stage1-visual/scope.json --comparison-id <id> \
+  --harmony-tree spec/execution/stage1-visual/<run>/target.json \
+  --out spec/execution/stage1-visual/<run>/relationship.json
+~~~
 `ui_consumption.py --project-root <project> --out <diagnostics.json>` 按 unit/state/region 输出消费声明，
 共享原图在全局去重。声明仅诊断，不解析 transcript 当作确定的质量门，也不把 host 消费计成 child 消费。
 后续 i2h-verify 的完整业务验收独立进行，不能提前写页面 verified。

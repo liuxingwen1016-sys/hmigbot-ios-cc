@@ -2,6 +2,17 @@
 
 `hmigbot-ios` 是从 `../hmigbot-1.8.0` 派生的 iOS → HarmonyOS 改造分支。原版 Android → HarmonyOS 的完整变更记录保存在 [`docs/archive/source-android/CHANGELOG-ANDROID-REFERENCE.md`](docs/archive/source-android/CHANGELOG-ANDROID-REFERENCE.md)，不作为本项目的版本说明。
 
+## main_ui_optimize · 2026-11-13
+
+- 固定 UI 交付运行时的安装校验、续跑输入、批量源采集和阶段回执。增加 Plan 角色输入摘录及 AC 验收绑定。
+- Execute 补采将运行时元数据与 Spec 冻结文件分离。迁移回归进度、未通过项和工具边界见 [CC iOS 流水线优化交接](docs/CC_UI_OPTIMIZATION_2026-11-13.md)。
+
+## [1.0.0-alpha.1] - 2026-11-11
+
+- CC iOS UI 交付门禁通过随包 Python 运行。`ui_stage1_gate.py` 与兼容入口 `ui_delivery_gate.py` 检查已批准清单的输出、状态记录和宿主接线。
+- CC iOS 包剔除 Execute 目录内过时的共享二进制。项目安装器先在临时目录校验门禁文件及命令，再替换执行技能。
+- 安装回归覆盖完整交付、缺页、缺状态、错误接线、损坏包及旧版升级。`PASS` 表示结构通过。
+
 ## [Unreleased] - 2026-11-06
 
 ### 文档与工程治理

@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+_SPEC_SCRIPTS = Path(__file__).resolve().parents[2] / "i2h-spec/scripts"
 
 TOOL_VERSION = "i2h-ui-delivery/1.1"
 
@@ -25,6 +26,17 @@ _IMMERSIVE_SOURCE_PATTERNS: tuple[tuple[str, str], ...] = (
     ("safeAreaInset", r"\.safeAreaInset\s*\("),
     ("statusBar", r"\.statusBar\s*\("),
     ("fullScreenCover", r"\.fullScreenCover\s*\("),
+)
+_SWIFT_TRIVIA = re.compile(r'/\*[\s\S]*?\*/|//[^\n]*|"""[\s\S]*?"""|"(?:\\.|[^"\\])*"')
+_TAB_VIEW = re.compile(r"(?<![\w.])TabView\s*(?:\([^(){}]*\)\s*)?\{")
+_LABELED_TAB = re.compile(
+    r"(?<![\w.])(?:Navigation(?:Stack|View)\s*\{\s*)?"
+    r"(?P<child>[A-Z]\w*)\s*\([^(){}]*\)\s*(?:\}\s*)?\.tabItem\s*\{"
+)
+_MODERN_TAB = re.compile(
+    r"(?<![\w.])Tab\s*\([^(){}]*\)\s*\{\s*"
+    r"(?:(?P<wrapper>Navigation(?:Stack|View))\s*\{\s*)?"
+    r"(?P<child>[A-Z]\w*)\s*\([^(){}]*\)\s*\}(?(wrapper)\s*\})"
 )
 
 
@@ -212,6 +224,47 @@ def evidence_source_root(root: Path) -> Path:
     return root
 
 
+def swiftui_tab_roots(source_root: Path, views: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    """Find explicit tab children with known source declarations."""
+    if not views:
+        return {}
+    if str(_SPEC_SCRIPTS) not in sys.path:
+        sys.path.insert(0, str(_SPEC_SCRIPTS))
+    from ui_obligations import declaration_slice
+
+    known = {str(view["view_name"]) for view in views}
+    tabs: dict[str, list[dict[str, Any]]] = {}
+    for view in views:
+        host = str(view["view_name"])
+        file = str(view["file_path"])
+        path = (source_root / file).resolve()
+        if source_root not in path.parents or path.suffix != ".swift" or not path.is_file():
+            continue
+        raw = path.read_bytes()
+        if b"TabView" not in raw:
+            continue
+        text = _SWIFT_TRIVIA.sub(lambda match: re.sub(r"[^\n]", " ", match[0]), raw.decode("utf-8-sig"))
+        declaration = re.search(rf"\bstruct\s+{re.escape(host)}\b[^{{]*\{{", text)
+        if not declaration:
+            continue
+        start = declaration.start()
+        body = declaration_slice(text, start)
+        for tab_view in _TAB_VIEW.finditer(body):
+            content = declaration_slice(body, tab_view.start())
+            matches = [match for pattern in (_LABELED_TAB, _MODERN_TAB) for match in pattern.finditer(content)]
+            for match in sorted(matches, key=lambda item: item.start("child")):
+                prefix = content[:match.start()]
+                if prefix.count("{") - prefix.count("}") != 1 or prefix.count("(") != prefix.count(")"):
+                    continue
+                child = match["child"]
+                if child not in known or child == host:
+                    continue
+                offset = start + tab_view.start() + match.start("child")
+                ref = {"file": file, "line": text.count("\n", 0, offset) + 1, "sha256": digest(raw)}
+                tabs.setdefault(child, []).append({"host": host, "source_ref": ref})
+    return tabs
+
+
 def draft(project_root: str | Path, out: str | Path) -> dict[str, Any]:
     root = Path(project_root).expanduser().resolve()
     views = views_from_evidence(root)
@@ -219,6 +272,7 @@ def draft(project_root: str | Path, out: str | Path) -> dict[str, Any]:
     shared_components = evidence.get("components", []) if isinstance(evidence, dict) else []
     source_root = evidence_source_root(root)
     presentation_hints = _presentation_hints(source_root, views)
+    tab_roots = swiftui_tab_roots(source_root, views)
     units = []
     for index, view in enumerate(views, 1):
         name = str(view["view_name"])
@@ -249,6 +303,8 @@ def draft(project_root: str | Path, out: str | Path) -> dict[str, Any]:
             # this field lets execute gates validate the host file without
             # reconstructing SwiftUI syntax from a prompt.
             presentation_contract["source_obligations"] = source_presentations
+        if name in tab_roots:
+            presentation_contract["swiftui_tab_roots"] = tab_roots[name]
         immersive = _immersive_hint(source_root, view, hint)
         units.append({
             "unit_id": f"ios.{index:04d}.{slug}",
@@ -303,7 +359,37 @@ def draft(project_root: str | Path, out: str | Path) -> dict[str, Any]:
     return result
 
 
-def validate(project_root: str | Path, inventory: dict[str, Any]) -> dict[str, Any]:
+def visual_binding_gaps(units: list, verification: list) -> dict[str, list]:
+    owners = {
+        (unit.get("unit_id"), unit.get("page_id"), state.get("state_id"))
+        for unit in units if isinstance(unit, dict) and unit.get("required") is not False
+        for state in (unit["required_states"] if isinstance(unit.get("required_states"), list) else [])
+        if isinstance(state, dict)
+        if all(isinstance(value, str) and value
+               for value in (unit.get("unit_id"), unit.get("page_id"), state.get("state_id")))
+    }
+    seen_ids = set()
+    covered = set()
+    unbound = []
+    for index, row in enumerate(verification):
+        values = [row.get(key) for key in ("verification_id", "owner", "page_id", "state_id")] if isinstance(row, dict) else []
+        if not values or not all(isinstance(value, str) and value for value in values):
+            unbound.append(index)
+            continue
+        pair_id, owner, page, state = values
+        if pair_id in seen_ids or (owner, page, state) not in owners:
+            unbound.append(index)
+            continue
+        seen_ids.add(pair_id)
+        covered.add((page, state))
+    return {
+        "unbound_verification_rows": unbound,
+        "missing_visual_states": [{"page_id": page, "state_id": state}
+                                  for page, state in sorted({(p, s) for _, p, s in owners} - covered)],
+    }
+
+
+def validate(project_root: str | Path, inventory: dict[str, Any], *, require_runtime_plan: bool = False) -> dict[str, Any]:
     root = Path(project_root).expanduser().resolve()
     source_root = Path(str(inventory.get("source_project_root", root))).expanduser().resolve()
     errors: list[dict[str, Any]] = []
@@ -314,6 +400,14 @@ def validate(project_root: str | Path, inventory: dict[str, Any]) -> dict[str, A
     if not isinstance(units, list) or not units:
         errors.append({"code": "UNITS_EMPTY", "message": "units must contain at least one UI unit"})
         units = []
+    if require_runtime_plan:
+        verification = inventory.get("verification_states")
+        if not isinstance(verification, list) or not verification:
+            errors.append({"code": "runtime_verification_states_missing"})
+        else:
+            for code, rows in visual_binding_gaps(units, verification).items():
+                if rows:
+                    errors.append({"code": code, "rows": rows})
     seen_ids: set[str] = set()
     seen_outputs: set[str] = set()
     # State ids are scoped to the page/component that owns them.  A source
@@ -403,10 +497,52 @@ def validate(project_root: str | Path, inventory: dict[str, Any]) -> dict[str, A
     return result
 
 
-def approve(project_root: str | Path, inventory: dict[str, Any], confirmation_ref: str) -> dict[str, Any]:
-    result = validate(project_root, inventory)
+def validate_tab_integrations(root: Path, inventory: dict[str, Any]) -> list[dict[str, Any]]:
+    source_root = evidence_source_root(root)
+    tabs = swiftui_tab_roots(source_root, views_from_evidence(root))
+    by_component: dict[str, list[dict[str, Any]]] = {}
+    for unit in inventory["units"]:
+        component = unit.get("component")
+        if unit.get("required", True) and isinstance(component, str):
+            by_component.setdefault(component, []).append(unit)
+    errors = []
+    for child, anchors in tabs.items():
+        matching = by_component.get(f"ios.{child}", [])
+        if not matching and inventory.get("scope") != "full_ui":
+            continue
+        for anchor in anchors:
+            hosts = by_component.get(f'ios.{anchor["host"]}', [])
+            host_outputs = {unit["output"]["file"]: unit["output"].get("symbol") for unit in hosts}
+            if not any(tab_slot_matches(unit, anchor["source_ref"], host_outputs) for unit in matching):
+                errors.append({"code": "SWIFTUI_TAB_HOST_SLOT_MISSING", "child": child, **anchor})
+    return errors
+
+
+def tab_slot_matches(unit: dict, source: dict, host_outputs: dict) -> bool:
+    integration = unit.get("integration")
+    slots = integration if isinstance(integration, list) else [integration]
+    for slot in slots:
+        if (not isinstance(slot, dict) or slot.get("source_ref") != source or slot.get("mount")
+                or slot.get("child_symbol") != unit["output"].get("symbol")):
+            continue
+        host_file, builder = slot.get("host_file"), slot.get("host_builder")
+        if not isinstance(host_file, str) or not isinstance(builder, str):
+            continue
+        owner, _, name = builder.rpartition(".")
+        if name and host_outputs.get(host_file) and (owner or slot.get("host_symbol")) == host_outputs[host_file]:
+            return True
+    return False
+
+
+def approve(project_root: str | Path, inventory: dict[str, Any], confirmation_ref: str, *,
+            require_runtime_plan: bool = False) -> dict[str, Any]:
+    result = validate(project_root, inventory, require_runtime_plan=require_runtime_plan)
     if result["validation"]["errors"]:
-        raise ValueError("cannot approve invalid UI delivery inventory")
+        raise ValueError("cannot approve invalid UI delivery inventory: " +
+                         json.dumps(result["validation"]["errors"], ensure_ascii=False))
+    tab_errors = validate_tab_integrations(Path(project_root).resolve(), inventory)
+    if tab_errors:
+        raise ValueError(json.dumps(tab_errors, ensure_ascii=False))
     if not confirmation_ref or not confirmation_ref.strip():
         raise ValueError("confirmation_ref is required for approval")
     result["status"] = "approved"
@@ -420,41 +556,156 @@ def diff(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
     return {"schema_version": 1, "added": sorted(set(right) - set(left)), "removed": sorted(set(left) - set(right)), "changed": sorted(k for k in set(left) & set(right) if left[k] != right[k])}
 
 
+def add_visual_pairs(inventory: dict) -> dict:
+    """Fill missing page/state pairs in a draft without changing declared journeys."""
+    if inventory.get("schema_version") != 2 or inventory.get("status") != "draft":
+        raise ValueError("visual pair generation requires a schema-2 draft")
+    rows = inventory.get("verification_states", [])
+    units = inventory.get("units")
+    if not isinstance(rows, list) or not isinstance(units, list):
+        raise ValueError("expected units and verification_states arrays")
+    journeys = inventory.get("behavior_journeys", [])
+    if not isinstance(journeys, list):
+        raise ValueError("expected behavior_journeys array")
+    journeys = list(journeys)
+    pairs = []
+    ids, covered = set(), set()
+    for row in rows:
+        if not isinstance(row, dict):
+            raise ValueError("invalid verification state")
+        keys = [row.get(k) for k in ("verification_id", "owner", "page_id", "state_id")]
+        if not any(keys[:2]) and all(isinstance(value, str) and value for value in keys[2:]) and (
+                row.get("source_test") or row.get("description")):
+            if row not in journeys:
+                journeys.append(row)
+            continue
+        if not all(isinstance(value, str) and value for value in keys) or keys[0] in ids:
+            raise ValueError("invalid or duplicate visual pair")
+        ids.add(keys[0])
+        covered.add((keys[2], keys[3]))
+        pairs.append(row)
+    candidates = {}
+    for unit in units:
+        if not isinstance(unit, dict):
+            raise ValueError("invalid delivery unit")
+        if unit.get("required") is False:
+            continue
+        page, owner = unit.get("page_id"), unit.get("unit_id")
+        states = unit.get("required_states")
+        if not isinstance(states, list) or not states:
+            raise ValueError("required unit must declare states")
+        for state in states:
+            if not isinstance(state, dict):
+                raise ValueError("invalid required state")
+            state_id = state.get("state_id")
+            if not all(isinstance(value, str) and value for value in (owner, page, state_id)):
+                raise ValueError("visual pair requires stable unit, page and state IDs")
+            candidates.setdefault((page, state_id), []).append((owner, state))
+    for row in pairs:
+        key = (row["page_id"], row["state_id"])
+        if not any(owner == row["owner"] for owner, _ in candidates.get(key, [])):
+            raise ValueError(f"visual pair does not bind a required owner: {row['verification_id']}")
+    for page, state_id in sorted(candidates.keys() - covered):
+        choices = candidates[(page, state_id)]
+        if len(choices) != 1:
+            raise ValueError(f"explicit visual owner required for {page}/{state_id}")
+        owner, state = choices[0]
+        pair_id = "visual-" + digest(json.dumps([page, state_id]).encode())[:16]
+        if pair_id in ids:
+            raise ValueError(f"visual pair ID already exists: {pair_id}")
+        ids.add(pair_id)
+        pairs.append({"verification_id": pair_id, "owner": owner, "page_id": page, "state_id": state_id,
+                      "arrival_mode": state.get("arrival_mode", "preview")})
+    result = {**inventory, "verification_states": pairs}
+    if journeys:
+        result["behavior_journeys"] = journeys
+    return result
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("draft", "validate", "approve", "diff"))
+    parser.add_argument("command", choices=("draft", "pair-states", "validate", "approve", "diff"))
     parser.add_argument("--project-root", required=True)
     parser.add_argument("--out", required=True)
     parser.add_argument("--inventory")
     parser.add_argument("--confirmation-ref")
+    parser.add_argument("--require-runtime-plan", action="store_true")
+    parser.add_argument("--receipt-only", action="store_true", help="validate writes a digest-bound receipt without inventory units")
+    parser.add_argument("--validation-receipt", help="approve checks the receipt for this exact candidate before revalidation")
     parser.add_argument("--before")
     parser.add_argument("--after")
     args = parser.parse_args(argv)
+    if args.receipt_only and args.command != "validate":
+        parser.error("--receipt-only requires validate")
+    if args.validation_receipt and args.command != "approve":
+        parser.error("--validation-receipt requires approve")
     try:
         if args.command == "draft":
             result = draft(args.project_root, args.out)
-        elif args.command == "validate":
+        elif args.command == "pair-states":
             if not args.inventory:
                 raise ValueError("--inventory is required")
-            result = validate(args.project_root, read(Path(args.inventory)))
-            write(Path(args.out), result)
-        elif args.command == "approve":
+            root = Path(args.project_root).resolve()
+            candidate, output = (Path(value).resolve() for value in (args.inventory, args.out))
+            if any(root not in path.parents for path in (candidate, output)):
+                raise ValueError("draft and paired output must stay inside the project")
+            if output.is_file() and read(output).get("status") == "approved":
+                raise ValueError("pair-states cannot overwrite an approved inventory")
+            result = add_visual_pairs(read(candidate))
+            write(output, result)
+        elif args.command in {"validate", "approve"}:
             if not args.inventory:
                 raise ValueError("--inventory is required")
-            result = approve(args.project_root, read(Path(args.inventory)), args.confirmation_ref or "")
-            write(Path(args.out), result)
+            candidate = Path(args.inventory)
+            output = Path(args.out)
+            in_place = output.resolve() == candidate.resolve()
+            if args.receipt_only and in_place:
+                raise ValueError("validation receipt must use a separate output file")
+            raw = candidate.read_bytes()
+            inventory = json.loads(raw)
+            if not isinstance(inventory, dict):
+                raise ValueError(f"expected JSON object: {args.inventory}")
+            if args.command == "validate":
+                result = validate(args.project_root, inventory, require_runtime_plan=args.require_runtime_plan)
+                if args.receipt_only:
+                    if not result["validation"]["errors"]:
+                        result["validation"]["errors"].extend(validate_tab_integrations(
+                            Path(args.project_root).resolve(), inventory))
+                        if result["validation"]["errors"]:
+                            result["status"] = "invalid"
+                    result = {"schema_version": 1, "kind": "ui-delivery-validation", "status": result["status"],
+                              "inventory_sha256": digest(raw), "validation": result["validation"]}
+            else:
+                raw_receipt = None
+                if args.validation_receipt:
+                    receipt_path = Path(args.validation_receipt)
+                    if receipt_path.resolve() == output.resolve():
+                        raise ValueError("approval output cannot overwrite its validation receipt")
+                    raw_receipt = receipt_path.read_bytes()
+                    receipt = json.loads(raw_receipt)
+                    if not isinstance(receipt, dict) or (receipt.get("schema_version"), receipt.get("kind"), receipt.get("status"),
+                            receipt.get("inventory_sha256")) != (1, "ui-delivery-validation", "validated", digest(raw)):
+                        raise ValueError("validation receipt does not cover the current UI delivery inventory")
+                result = approve(args.project_root, inventory, args.confirmation_ref or "",
+                                 require_runtime_plan=args.require_runtime_plan)
+                if in_place and raw_receipt is not None:
+                    result["approval"]["candidate_sha256"] = digest(raw)
+                    result["approval"]["validation_receipt_sha256"] = digest(raw_receipt)
+            write(output, result)
         else:
             if not args.before or not args.after:
                 raise ValueError("--before and --after are required")
             result = diff(read(Path(args.before)), read(Path(args.after)))
             write(Path(args.out), result)
-    except (OSError, ValueError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError, ImportError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
     if args.command == "draft":
         print(json.dumps({"output": args.out, "units": len(result.get("units", [])), "status": result.get("status")}, ensure_ascii=False))
     else:
         print(json.dumps({"output": args.out, "status": result.get("status")}, ensure_ascii=False))
+    if args.command == "validate" and (args.receipt_only or args.require_runtime_plan) and result["status"] != "validated":
+        return 2
     return 0
 
 

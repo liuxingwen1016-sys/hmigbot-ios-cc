@@ -13,7 +13,7 @@ def _is_ios(argv):
 
 if __name__ == '__main__':
     argv = sys.argv[1:]
-    if '--project-root' in argv and _is_ios(argv):
+    if '--help' in argv or ('--project-root' in argv and _is_ios(argv)):
         import argparse
         parser = argparse.ArgumentParser()
         parser.add_argument('--project-root', required=True)

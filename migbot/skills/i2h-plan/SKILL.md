@@ -36,6 +36,8 @@ domain: migration
 
 Pipeline 第二步（在 i2h-spec 之后、i2h-execute 之前）：spec 已审批 → 生成双计划（UI / 功能）→ 交 i2h-execute 执行。
 
+完整运行时计划在批准前逐个审阅 `embedded` 与 `hosted_destination`。依据原 iOS 宿主、呈现方式和调用点，为必交单元冻结 `integration.host_file`、`integration.host_builder` 与 `integration.child_symbol`。让计划中负责共享接线的 closer 按这一目标槽位交付。`--require-runtime-plan` 会列出未声明宿主的单元，需在 Plan 补齐后进入 Execute。
+
 **禁止代码生成**：本阶段只产出计划，不写任何 `.ets` 代码（代码生成是 i2h-execute 职责）。
 
 ---
@@ -75,6 +77,7 @@ spec/baseline/
 3. **归属消歧**（owning_slice 裁决，4 条规则，见 [templates/ui-plan-template.md](./templates/ui-plan-template.md) §归属消歧）
 4. hub / 横切判定（见 §3b Step 5 隐式关系兜底）
 5. Slice 定号（Slice N ↔ F-ID 1:1）
+6. 核对 Base 需要的公共能力 F-ID。把它们交给 Base writer 的规格视图，作为共享章节之外的补充。
 
 **P1: 三写并行**（3 个 agents，单写者纪律）
 - Agent A: 生成 `ui-plan.md`（写权：仅此文件）
@@ -82,6 +85,7 @@ spec/baseline/
 - Agent C: 生成 `slices/*.md` + 直写 `placeholder-registry.md`（写权：plans/slices/* + spec/placeholder-registry.md）
 
 派发 prompt 模板见 [references/plan-dispatch.md](./references/plan-dispatch.md) §P1-A/B/C。
+各 writer 使用该模板中的 `plan_input_view.py` 角色读取规则。P0 和 P2 使用完整规格进行裁决和对账。
 
 P1 使用 `scripts/parallel_dispatch.py` 的依赖组调度，默认最多 4 个 worker。每个
 worker 只写自己的临时目录和 checkpoint，checkpoint 位于
@@ -553,6 +557,29 @@ Plan 生成完毕后，必须执行覆盖率校验，确保所有功能都被 pl
 
 双计划生成后输出审批摘要；默认无人值守按 i2h-spec gate-handling.md §5 自动确认后进入 i2h-execute，用户要求逐个确认时等人工审批。
 
+UI 交付清单只编写一次，保存到 `spec/baseline/ui-delivery-approved.json`，初始状态为
+`draft`。审批前用 `ui_delivery.py validate --receipt-only` 留存验证结果和候选摘要。
+完成单元、状态与到达方式后，对同一 draft 执行 `ui_delivery.py pair-states`，
+使用相同的 `--inventory` 和 `--out` 路径生成缺少的视觉配对。
+共享状态由 Plan 明确指定配对 owner。历史源测试旅程保留在 `behavior_journeys`，
+按验收绑定规程关联 AC 和设备证据。生成配对后再执行验证与审批。
+当流水线选择 `--require-runtime-plan` 时，把该参数传给下面两条命令。
+审批前即校验视觉配对覆盖，续跑使用同一规则复核。
+取得确认引用后原子更新同一文件到 `approved`。验证失败或未确认时保留候选原样。
+草稿中有 `presentation.swiftui_tab_roots` 时，逐条按源码确认目标宿主和 builder，
+把对应的 Swift 锚点写入 `integration.source_ref`。验证报
+`SWIFTUI_TAB_HOST_SLOT_MISSING` 时，补齐该页的宿主接线后再审批。
+
+```bash
+python3 .claude/skills/i2h-plan/scripts/ui_delivery.py validate --project-root . \
+  --inventory spec/baseline/ui-delivery-approved.json --receipt-only \
+  --out spec/.i2h/ui-delivery-validation.json
+python3 .claude/skills/i2h-plan/scripts/ui_delivery.py approve --project-root . \
+  --inventory spec/baseline/ui-delivery-approved.json \
+  --validation-receipt spec/.i2h/ui-delivery-validation.json \
+  --confirmation-ref "$APPROVAL_REF" --out spec/baseline/ui-delivery-approved.json
+```
+
 摘要包含：
 - UI 转换计划（总页面 / 批次 / low confidence 页面）
 - 功能执行计划（Base 层任务 / Feature Slices / 可并行组）
@@ -560,6 +587,10 @@ Plan 生成完毕后，必须执行覆盖率校验，确保所有功能都被 pl
 - Placeholder Registry（总条目）
 - 骨架审计预演（WARN）
 - grill #2 决策清单
+
+本轮范围包含原生行为场景且已有真实 UITest runner 时，在 Plan 审批前按
+[原生验收绑定](./references/acceptance-plan.md) 写入场景、断言和原始证据约定，
+使用 `acceptance_plan.py seal` 对照完整 AC 索引。将结果路径和未绑定数量纳入审批摘要。
 
 用户可以：
 - 直接确认 → 进入 i2h-execute
@@ -586,7 +617,8 @@ execute coverage lint 只消费这两个索引，并从 packet 的
 创建 `spec/baseline/plans/complete.txt` 作为 **schema-2 JSON marker**。按照
 [marker-contract.md](./references/marker-contract.md) 调用
 `marker_contract.write_marker()`，传入 `stage="i2h-plan"`、当前
-`target_input_sha256`，以及最终 plan 和已审批的 schema-2 UI delivery JSON
+`target_input_sha256`，以及最终 plan、已审批的 schema-2 UI delivery JSON 和本轮已生成的
+`acceptance-plan.json`
 （文件必须已落盘）。不要再写 `i2h-plan completed at ...` 纯文本；marker
 本身不能作为 artifact。
 

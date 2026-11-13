@@ -10,6 +10,9 @@ from pathlib import Path
 from typing import Any
 
 from .stage1_visual_acceptance import accept, report as acceptance_report
+from .ios_stage1_visual_gate import _checked_ref, _index
+from .ios_ui_delivery_gate import _project_file
+from .ios_ui_dispatch import atomic_write, sha256
 
 
 def _read(value: Any) -> dict:
@@ -88,6 +91,76 @@ def summarize(scope: dict | str | Path, cases: list[dict] | None = None, *, geom
     }
 
 
+def assemble(root, scope_path, capture_path, judgement_paths):
+    scope = _read(scope_path)
+    approved = _index(scope.get('pairs'), 'pair_id')
+    capture = _index(_read(capture_path).get('pairs'), 'pair_id')
+    judgements = _index([row for file in judgement_paths for row in _read(file).get('comparisons', [])],
+                        'comparison_id')
+    frames_in_scope = {frame['comparison_id'] for pair in approved.values() for frame in pair['comparisons']}
+    if not approved or capture.keys() - approved.keys() or judgements.keys() - frames_in_scope:
+        raise ValueError('capture or judgement IDs fall outside the approved visual scope')
+
+    def reference(value):
+        if isinstance(value, dict):
+            _checked_ref(root, value)
+            return value
+        path = _project_file(root / 'spec', value)
+        raw = path.read_bytes()
+        if not raw:
+            raise ValueError(f'empty evidence: {path}')
+        return {'path': path.relative_to(root / 'spec').as_posix(), 'sha256': sha256(raw)}
+
+    rows = []
+    gaps = []
+    for name, pair in approved.items():
+        entry = {'pair_id': name, 'arrival_mode': pair['arrival_mode']}
+        try:
+            captured = capture[name]
+            if captured.get('blocked'):
+                blocked = captured['blocked']
+                entry.update(verdict='BLOCKED', reason=blocked['reason'], evidence=reference(blocked['evidence']))
+            elif captured.get('arrival_failure'):
+                failure = captured['arrival_failure']
+                entry.update(verdict='FAIL', severity='critical', arrival_failure={
+                    'evidence': reference(failure['evidence']), 'install_receipt': reference(failure['install_receipt']),
+                    'summary': failure['summary'],
+                })
+            else:
+                observed = _index(captured['frames'], 'comparison_id')
+                if observed.keys() != {frame['comparison_id'] for frame in pair['comparisons']}:
+                    raise ValueError('captured comparison IDs differ from the frozen pair')
+                comparisons = []
+                for expected in pair['comparisons']:
+                    key = expected['comparison_id']
+                    image, judgement = observed[key], judgements[key]
+                    if judgement['verdict'] not in {'PASS', 'FAIL'}:
+                        raise ValueError(f'comparison {key} has no resolved visual verdict')
+                    result = {
+                        'comparison_id': key, 'ios_png_sha256': pair['baseline']['png_sha256'],
+                        'ios_region_px': expected.get('ios_region_px'), 'verdict': judgement['verdict'],
+                        'harmony_png': reference(image['harmony_png']), 'harmony_xml': reference(image['harmony_xml']),
+                        'appearance_report': reference(judgement['appearance_report']),
+                        'relationship_report': reference(judgement['relationship_report']),
+                    }
+                    if result['verdict'] == 'FAIL':
+                        result['severity'] = judgement['severity']
+                    comparisons.append(result)
+                failed = [row for row in comparisons if row['verdict'] == 'FAIL']
+                entry.update(verdict='FAIL' if failed else 'PASS', comparisons=comparisons,
+                             arrival_receipt=reference(captured['arrival_receipt']))
+                if failed:
+                    entry['severity'] = 'critical' if any(row['severity'] == 'critical' for row in failed) else 'normal'
+        except (OSError, TypeError, KeyError, ValueError) as exc:
+            gaps.append({'pair_id': name, 'reason': str(exc)})
+            continue
+        rows.append(entry)
+    return {
+        'schema_version': 2, 'status': 'BLOCKED' if gaps else 'ASSEMBLED',
+        'scope_sha256': sha256(scope_path.read_bytes()), 'pairs': rows, 'assembly_gaps': gaps,
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument('command', nargs='?', default='summary', choices=('summary', 'assemble', 'affected'))
@@ -100,6 +173,27 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--out')
     parser.add_argument('--geometry-tolerance', type=float, default=4.0)
     args = parser.parse_args(argv)
+    root = Path(args.project_root).resolve() if args.project_root else None
+    scope_path = _project_file(root, args.scope) if root else Path(args.scope)
+    if args.command == 'assemble' and root and _read(scope_path).get('schema_version') == 2:
+        if args.carry_from:
+            parser.error('iOS comparison reuse requires a separately validated repair round')
+        if not args.capture:
+            parser.error('assemble requires --capture')
+        try:
+            result = assemble(root, scope_path, _project_file(root, args.capture),
+                              [_project_file(root, path) for path in args.judgements or []])
+        except (OSError, TypeError, KeyError, ValueError) as exc:
+            print(json.dumps({'status': 'BLOCKED', 'error': str(exc)}, ensure_ascii=False))
+            return 2
+        encoded = json.dumps(result, ensure_ascii=False, indent=2) + '\n'
+        if args.out:
+            output = _project_file(root, args.out)
+            output.parent.mkdir(parents=True, exist_ok=True)
+            atomic_write(output, encoded.encode('utf-8'))
+        else:
+            print(encoded, end='')
+        return 0 if result['status'] == 'ASSEMBLED' else 2
     cases = None
     if args.cases:
         payload = _read(args.cases)

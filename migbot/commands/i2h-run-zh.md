@@ -2,7 +2,7 @@
 description: 运行完整的 iOS → HarmonyOS 迁移流水线（spec → plan → execute → verify → retrospect）
 ---
 
-`$ARGUMENTS` 被忽略。
+`$ARGUMENTS` 可包含 `--require-runtime-plan`、`--require-visual-and-ut` 和 `--require-behavior`。每次前置检查均传入调用方指定的参数。指定视觉和 UT 门禁时，执行 CHECK-3/4。指定行为门禁时，CHECK-5 也必须有通过的实际行为证据才能完成正式验收。
 
 ## 目标
 
@@ -22,11 +22,11 @@ description: 运行完整的 iOS → HarmonyOS 迁移流水线（spec → plan �
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT:-.claude}/skills/i2h-plan/scripts/pipeline_resume.py" \
-  --project-root . \
+  --project-root . --summary \
   --out spec/.i2h/i2h-run-status.json
 ```
 
-读取 `spec/.i2h/i2h-run-status.json`，其中的 `resume_stage` 是唯一的恢复依据。
+从命令输出的 JSON 读取 `resume_stage`、阶段检查结果与错误码。完整机器回执仍写入 `spec/.i2h/i2h-run-status.json`。诊断需要明细时，从该文件提取具体检查项。
 流水线未完成时检查器会返回退出码 `1`，这是正常的恢复场景；应继续读取 JSON，
 不能仅凭退出码把它当作阶段失败。
 检查器会先解析 canonical indexed-v1 路径，再解析明确支持的旧路径别名。旧路径
@@ -41,9 +41,11 @@ python3 "${CLAUDE_PLUGIN_ROOT:-.claude}/skills/i2h-plan/scripts/pipeline_resume.
 - execute、verify、retrospect 报告包含可识别的身份/状态证据；static-only 运行必须
   明确记录 deferred 的运行时或设备检查以及验证标记。
 
-如果 JSON 的 `status` 是 `incomplete`，严格从 `resume_stage` 开始。如果任一阶段
-的 `checks` 含有 `errors`，停止并报告错误码，不得继续推进。仅存在的文件、没有
-内容哈希的旧 marker 或过期的 UI delivery 都不能作为完成证据。
+如果 JSON 的 `status` 是 `incomplete`，派发 `resume_stage`。该阶段的检查错误说明
+本阶段需要补齐的工作，包括缺少完成回执。后续阶段的检查在派发前仅用于诊断。
+已经被检查器认定完成的阶段可能保留历史诊断，以 `complete` 字段为准。
+执行阶段自身的准入规则，收尾复查仍未完成时停止向下推进。
+过期的 UI 交付契约应在 Plan 处理，通过后再交 Execute。
 
 ## 3. 运行各个阶段
 
@@ -52,8 +54,16 @@ python3 "${CLAUDE_PLUGIN_ROOT:-.claude}/skills/i2h-plan/scripts/pipeline_resume.
 1. 宣布：`"开始阶段 <N>/5: <id>"`
 2. 调用 skill：`Skill(skill="<skill-name>")`
 3. 总结结果（2-3 行）
-4. 再次运行确定性检查器并检查当前阶段的 `checks`；不能直接检查标记文件是否存在。
+4. 使用同一条带 `--summary` 的命令再次运行检查器，并检查当前阶段的 `checks`。
 5. 只有当前阶段显示 `complete` 才能自动推进。
+
+从 Spec 到 Verify 用同一预检命令和同一组门禁参数计时。阶段准备和 Skill 调用前，
+追加 `--timing start --timing-stage <阶段>`。保存返回的 `timing.run_id`，
+后续计时调用都加 `--timing-run <ID>`。设备、判图和本次返修都实际结束后，
+第 4 步加 `--timing finish --timing-stage <阶段> --timing-run <ID>`。
+有明确失败结果也正常记录结束。同一次调用中的重试继续使用同一 ID。
+另一次调用使用新 ID。异常中断保留 running 和未知结束时间。
+连续时间统计到 Verify 通过，包含阶段间耗时。跳过 Spec 或缺少任何严格门禁时只记录局部计时。
 
 调用 `i2h-execute` 前，必须消费已批准的 UI delivery 契约并生成 ownership 回执：
 使用 `stages[i2h-plan].checks.delivery.path` 中返回的路径；下面命令使用的是
@@ -77,7 +87,7 @@ python3 "${CLAUDE_PLUGIN_ROOT:-.claude}/skills/i2h-plan/scripts/ui_state_ownersh
 最后再次运行检查器。根据 JSON 打印五个阶段的结果，只有 `status: complete` 且
 `resume_stage: complete` 时才可宣布流水线完成。
 
-打印最终摘要，列出所有五个阶段和输出。
+打印五阶段结果和 `verification.unpassed_checks`。运行时检查未通过时，明确当前静态范围和未通过项。报告门禁仅核对所选检查状态，产品行为、状态覆盖与端到端耗时依据实际证据验收。
 
 提醒用户：
 ```

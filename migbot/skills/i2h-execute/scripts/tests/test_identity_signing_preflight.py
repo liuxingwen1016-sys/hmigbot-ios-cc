@@ -2,6 +2,8 @@ import json
 import plistlib
 import tempfile
 import unittest
+from subprocess import CompletedProcess
+from unittest.mock import patch
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -59,5 +61,29 @@ class Tests(unittest.TestCase):
         source=root/'ios'; source.mkdir();
         with (source/'Info.plist').open('wb') as f: plistlib.dump({'CFBundleIdentifier':'com.example.source'},f)
         self.assertEqual(gate.source_bundle_id(source),'com.example.source')
+
+    def test_openssl_recovers_diagnostic_profile_without_approving_wrong_source_identity(self):
+        td, root, profile = self.make_project('www.TestDemo.myapplication')
+        self.addCleanup(td.cleanup)
+        payload = json.dumps({'bundle-info': {'bundle-name': 'www.TestDemo.myapplication'}})
+        responses = [
+            CompletedProcess([], 1, '', 'security: problem decoding'),
+            CompletedProcess([], 0, payload, 'CMS Verification successful'),
+        ]
+        with patch.object(gate.shutil, 'which', side_effect=lambda name: name), \
+                patch.object(gate.subprocess, 'run', side_effect=responses) as run:
+            report = gate.evaluate(root, source_id='com.cuike.brew')
+        self.assertEqual(run.call_args.args[0], [
+            'openssl', 'cms', '-verify', '-inform', 'DER', '-in', str(profile), '-noverify',
+        ])
+        self.assertEqual(report['identity_status'], 'identity_signing_pending')
+        self.assertTrue(report['signed_install_allowed'])
+        self.assertEqual(report['signing_profile_bundle_name'], 'www.TestDemo.myapplication')
+
+    def test_profile_shape_errors_are_diagnostic(self):
+        for value in ([], {'bundle-info': None}):
+            name, error = gate.bundle_name_from_payload(json.dumps(value))
+            self.assertIsNone(name)
+            self.assertIn('bundle-info.bundle-name', error)
 
 if __name__=='__main__': unittest.main()

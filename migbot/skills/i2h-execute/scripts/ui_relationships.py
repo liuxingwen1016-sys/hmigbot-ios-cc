@@ -1,8 +1,5 @@
-"""CLI launcher for the bundled i2h-execute command ``ui_relationships``."""
-from _launcher import dispatch
-
-def main(argv=None):
-    return dispatch("ui_relationships", argv)
+"""CLI entry point for native iOS and HarmonyOS layout relationships."""
+from lib.ios_ui_relationships import main
 
 if __name__ == "__main__":
     raise SystemExit(main())

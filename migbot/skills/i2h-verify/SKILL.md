@@ -22,7 +22,7 @@ Pipeline 第四步，负责基础检查与可选检查的编排和结果汇总�
 
 未选项记为 SKIP（用户未选择），不检查其前置条件、不启动其 verifier、不复用其旧报告。未选 CHECK-5 也不创建 run、不调用 adapter、不读取历史 check12/check5 目录。选择在本次修复和复检中保持不变；用户明确调整时再更新。
 
-"只跑 UT"选 4，"行为验证 / Behavior Verify / 跑效果检查"选 5，"全部执行"选 3/4/5，固定 1/2 始终执行。全选不授权 CHECK-5 第二轮。只验证、不改产品代码的任务选中 CHECK-5 时记 DEFERRED（当前能力与只读约束不兼容），不调用默认修复流程或虚构 verify_only。
+"只跑 UT"选 4，"行为验证 / Behavior Verify / 跑效果检查"选 5，"全部执行"选 3/4/5，固定 1/2 始终执行。全选不授权 CHECK-5 第二轮。只读任务选中 CHECK-5 时可使用原生 UITest 回执，无原生证据的范围记 DEFERRED。
 
 ## 启动检查 — 待办 findings
 
@@ -52,7 +52,7 @@ Pipeline 第四步，负责基础检查与可选检查的编排和结果汇总�
 | CHECK-2 | App 身份校验 | 检查应用配置、名称和图标资源 | FAIL 为 0；WARN 附报告 |
 | CHECK-3 | 视觉对齐 | 双端截图对比（简化版实现）| 完成范围内实测且无未解决差异；纯 ALIGN 差异记建议项 |
 | CHECK-4 | 单元测试 | `arkts-ut-verifier` | 全范围实际 GREEN，无未验证设计点 |
-| CHECK-5 | 行为验证（可选） | `arkts-behavior-verify` 一次联合调用 | 只报告设置/点击稳定终态；不判全域 PASS，不参与整体判定 |
+| CHECK-5 | 行为验证（可选） | 原生 UITest 与验收绑定 | 当前签名包的完整场景与 AC 都有通过证据；独立汇报 |
 
 CHECK-1/2 的具体规则见 [静态分析与 App 身份](references/static-and-identity.md)。CHECK-3 的实现见 [设备验证](references/device-verification.md)。CHECK-4/5 的模式、产物和状态映射见 [设备验证](references/device-verification.md)。
 
@@ -218,9 +218,17 @@ CHECK-1/2 的具体规则见 [静态分析与 App 身份](references/static-and-
 
 ## CHECK-5：行为验证（可选，非门控）
 
-**当前状态**：DEFERRED
+**原生 UITest 路径**：当前签名包有实际设备回执时，按
+[行为验证](references/check5-behavior-verify.md) 执行 `acceptance_plan.py behavior`。
+将原生场景、直接证据数、未绑定与未验证的 AC 写入 CHECK-5 报告，按实际覆盖判断状态。
+原生汇总 `PASS`、`FAIL` 原样记录，`INCOMPLETE` 记 `PARTIAL`。输入错误记 `ERROR`。
+原生 CHECK-5 通过时，在完整验证报告中单独写一行
+`behavior-summary-sha256: <report_sha256>`，摘要取本次行为命令 stdout。
+严格续跑会重新读取该回执、已批准 Plan、签名 HAP 和原始控件树。
+明确要求首轮功能验证或局部复检时，使用 `/i2h-verify behavior` 或 `/i2h-verify recheck`
+及其独立报告。只读验证可使用该原生路径。
 
-**原因**：`arkts-behavior-verify` 主要基于 Android Oracle，iOS 适配进行中
+**通用 Android Oracle 路径**：iOS 适配尚未完成，缺原生 runner 的范围保持 DEFERRED。
 
 **执行条件**（如未来支持）：
 - 调用 `Skill(arkts-behavior-verify)`

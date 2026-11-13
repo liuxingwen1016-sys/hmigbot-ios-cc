@@ -1,0 +1,8 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+/hmigbot-ios-cc-*.tar.gz
+/migbot/skills/i2h-execute/scripts/bin/
+
+# 预编译产物：体积过大不入库，由本地 scripts/build 生成
+**/scripts/bin/*/_entry.dist/
