@@ -84,6 +84,7 @@ class PlanCoverageLinter:
         self.spec_dir = self.project_root / "spec" / "baseline"
         self.plans_dir = self.spec_dir / "plans"
         self.results: List[CoverageResult] = []
+        self.findings: List[dict] = []
 
     def run_all_checks(self) -> bool:
         """运行所有校验，返回是否全部通过"""
@@ -846,8 +847,17 @@ class PlanCoverageLinter:
                         key, value = line.split(':', 1)
                         data[key.strip()] = value.strip()
 
-            # 解析其他字段
-            data['feature_id'] = self._extract_field(content, 'feature_id')
+            # Extract feature_id from multiple sources (matching generate_execute_coverage._slice_packet)
+            # 1. Try explicit feature_id: field
+            fid = self._extract_field(content, 'feature_id')
+
+            # 2. Try slice heading: ## Slice N: Name (FNNN)
+            if not fid:
+                heading_match = re.search(r'^##\s+Slice\s+[^(]+\((F\d{3})\)', content, re.MULTILINE)
+                if heading_match:
+                    fid = heading_match.group(1)
+
+            data['feature_id'] = fid
             data['complexity'] = self._extract_field(content, 'complexity')
             data['parallel_group'] = int(self._extract_field(content, 'parallel_group') or 0)
             data['depends_on'] = self._extract_list_field(content, 'depends_on')
@@ -860,7 +870,25 @@ class PlanCoverageLinter:
         return slices
 
     def _extract_field(self, content: str, field: str) -> Optional[str]:
-        """从内容中提取字段值"""
+        """从内容中提取字段值
+
+        Supports multiple formats:
+        - Markdown bold: - **复杂度**: low
+        - YAML-like: complexity: simple
+        - Inline: parallel_group: 1 | complexity: simple
+        """
+        # Try markdown bold format first (feature spec template)
+        match = re.search(rf'-\s*\*\*{field}\*\*:\s*`?(\S+?)`?(?:\s|$)', content, re.IGNORECASE)
+        if match:
+            return match.group(1)
+
+        # Try Chinese field name for 复杂度
+        if field == 'complexity':
+            match = re.search(r'-\s*\*\*复杂度\*\*:\s*`?(\S+?)`?(?:\s|$)', content)
+            if match:
+                return match.group(1)
+
+        # Try YAML-like format (slice template: complexity: simple)
         match = re.search(rf'{field}:\s*(\S+)', content)
         return match.group(1) if match else None
 
@@ -969,20 +997,67 @@ class PlanCoverageLinter:
         return tasks
 
     def _parse_feature_specs(self) -> Dict[str, Dict]:
-        """解析所有 feature spec 文件"""
+        """解析所有 feature spec 文件
+
+        Supports both canonical and legacy naming:
+        - Canonical: feat_fNNN_name.md (e.g., feat_f001_auth.md)
+        - Canonical alt: feat_NNN_name.md (e.g., feat_001_auth.md)
+        - Legacy: FNNN.md or FNNN_name.md (e.g., F001.md)
+
+        Also extracts from heading if filename doesn't match:
+        - Heading: # F001: Feature Name
+
+        Rejects ambiguous duplicates with blocking finding.
+        """
         features_dir = self.spec_dir / "features"
         if not features_dir.exists():
             return {}
 
         features = {}
-        for spec_file in features_dir.glob("F*.md"):
-            match = re.search(r'(F\d{3})', spec_file.name)
+        seen_features = {}  # Track file per feature ID to detect duplicates
+
+        # Collect all markdown files
+        for spec_file in sorted(features_dir.glob("*.md")):
+            content = spec_file.read_text()
+            fid = None
+
+            # Try canonical feat_fNNN_name.md format
+            match = re.search(r'feat_(f?\d{3})_', spec_file.name, re.IGNORECASE)
             if match:
-                fid = match.group(1)
-                content = spec_file.read_text()
-                features[fid] = {
-                    'complexity': self._extract_field(content, 'complexity')
-                }
+                fid = match.group(1).upper()
+                if not fid.startswith('F'):
+                    fid = 'F' + fid
+
+            # Try legacy FNNN format
+            if not fid:
+                match = re.search(r'^(F\d{3})', spec_file.name)
+                if match:
+                    fid = match.group(1)
+
+            # Try heading format: # F001: Feature Name
+            if not fid:
+                match = re.search(r'^#\s+(F\d{3})\b', content, re.MULTILINE)
+                if match:
+                    fid = match.group(1)
+
+            if not fid:
+                continue  # Skip files without identifiable feature ID
+
+            # Check for duplicates - reject ambiguous, not silent skip
+            if fid in seen_features:
+                self.findings.append({
+                    'code': 'IOS.AMBIGUOUS_FEATURE_ID',
+                    'category': 'spec',
+                    'file': str(spec_file.relative_to(self.project_root)),
+                    'message': f'Feature ID {fid} duplicated in {seen_features[fid]} and {spec_file.name}',
+                    'severity': 'blocking'
+                })
+                continue
+
+            seen_features[fid] = spec_file.name
+            features[fid] = {
+                'complexity': self._extract_field(content, 'complexity')
+            }
 
         return features
 
