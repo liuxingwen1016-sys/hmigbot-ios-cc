@@ -328,3 +328,10 @@ def stage_status(
         "errors": errors,
     })
     return result
+
+
+if __name__ == "__main__":
+    import sys
+    print("ERROR: marker_contract.py is a library module, not a CLI script.", file=sys.stderr)
+    print("Usage: import marker_contract; marker_contract.write_marker(...)", file=sys.stderr)
+    sys.exit(1)
