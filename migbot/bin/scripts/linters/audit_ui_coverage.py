@@ -18,13 +18,21 @@ def audit_ui_coverage(project_root: str) -> list[dict]:
     """审计 UI 覆盖率"""
     findings = []
 
-    # 读取 project-info.json
-    project_info_path = os.path.join(project_root, "spec/.i2h/project-info.json")
-    if not os.path.exists(project_info_path):
+    # Try native project-skeleton.json first, fall back to legacy project-info.json
+    skeleton_path = os.path.join(project_root, "spec/.i2h/project-skeleton.json")
+    legacy_path = os.path.join(project_root, "spec/.i2h/project-info.json")
+
+    project_info_path = None
+    if os.path.exists(skeleton_path):
+        project_info_path = skeleton_path
+    elif os.path.exists(legacy_path):
+        project_info_path = legacy_path
+
+    if not project_info_path:
         findings.append(make(
             "IOS.MISSING_REQUIRED_FILE",
             "spec",
-            "project-info.json",
+            "project-skeleton.json or project-info.json",
             "无法进行覆盖率审计：缺少项目信息"
         ))
         return findings
@@ -33,7 +41,8 @@ def audit_ui_coverage(project_root: str) -> list[dict]:
         project_info = json.load(f)
 
     swiftui_views = project_info.get("swiftui_views", [])
-    uikit_vcs = project_info.get("uikit_vcs", [])
+    # Support both canonical uikit_viewcontrollers and legacy uikit_vcs
+    uikit_vcs = project_info.get("uikit_viewcontrollers") or project_info.get("uikit_vcs", [])
 
     total_ui_files = len(swiftui_views) + len(uikit_vcs)
 

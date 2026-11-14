@@ -19,27 +19,35 @@ def lint_phase_a(project_root: str) -> list[dict]:
     """验证 Phase A 产出"""
     findings = []
 
-    # 检查 project-info.json
-    project_info = os.path.join(project_root, "spec/.i2h/project-info.json")
-    if not os.path.exists(project_info):
+    # Try native project-skeleton.json first, fall back to legacy project-info.json
+    skeleton_path = os.path.join(project_root, "spec/.i2h/project-skeleton.json")
+    legacy_path = os.path.join(project_root, "spec/.i2h/project-info.json")
+
+    project_info_path = None
+    if os.path.exists(skeleton_path):
+        project_info_path = skeleton_path
+    elif os.path.exists(legacy_path):
+        project_info_path = legacy_path
+
+    if not project_info_path:
         findings.append(make(
             "IOS.MISSING_REQUIRED_FILE",
             "spec",
-            "project-info.json",
+            "project-skeleton.json or project-info.json",
             "Phase A 未生成项目信息文件",
             fix_hint="重新运行 Phase A Step A1"
         ))
     else:
         # 验证内容
         try:
-            with open(project_info) as f:
+            with open(project_info_path) as f:
                 data = json.load(f)
 
             if "swift_files" not in data:
                 findings.append(make(
                     "IOS.INVALID_PROJECT_STRUCTURE",
                     "spec",
-                    "project-info.json",
+                    os.path.basename(project_info_path),
                     "缺少 swift_files 字段"
                 ))
 
@@ -47,14 +55,14 @@ def lint_phase_a(project_root: str) -> list[dict]:
                 findings.append(make(
                     "IOS.INVALID_PROJECT_STRUCTURE",
                     "spec",
-                    "project-info.json",
+                    os.path.basename(project_info_path),
                     "缺少 swiftui_views 字段"
                 ))
         except json.JSONDecodeError:
             findings.append(make(
                 "IOS.INVALID_PROJECT_STRUCTURE",
                 "spec",
-                "project-info.json",
+                os.path.basename(project_info_path),
                 "文件格式无效"
             ))
 
