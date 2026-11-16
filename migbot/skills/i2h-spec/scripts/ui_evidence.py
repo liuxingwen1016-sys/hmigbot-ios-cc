@@ -34,8 +34,13 @@ try:
 except ImportError:  # pragma: no cover - package/installed-tree fallback
     from .ui_obligations import declaration_slice, parse_ui_obligations  # type: ignore
 
+try:
+    from ios_declaration_scope import SwiftSource, view_kind
+except ImportError:  # pragma: no cover - package/installed-tree fallback
+    from .ios_declaration_scope import SwiftSource, view_kind  # type: ignore
 
-TOOL_VERSION = "i2h-ui-evidence/1.2"
+
+TOOL_VERSION = "i2h-ui-evidence/1.3"
 SCHEMA_VERSION = 1
 
 
@@ -89,24 +94,21 @@ def line_number(text: str, offset: int) -> int:
     return text.count("\n", 0, offset) + 1
 
 
-def parse_properties(text: str) -> list[dict[str, Any]]:
-    pattern = re.compile(
-        r"@(?P<wrapper>StateObject|ObservedObject|EnvironmentObject|Environment|"
-        r"Binding|State|AppStorage|SceneStorage|FocusState|Published)"
-        r"(?:\([^\n)]*\))?\s+(?:(?:private|internal|public|fileprivate)\s+)?"
-        r"var\s+(?P<name>[A-Za-z_]\w*)\s*:\s*(?P<type>[^=\n{]+?)"
-        r"(?:\s*=\s*(?P<default>[^\n]+))?(?=\n|$)"
-    )
+def parse_properties_scoped(source: "SwiftSource", declaration: dict[str, Any]) -> list[dict[str, Any]]:
+    """Extract properties using scoped declaration boundaries to prevent sibling contamination."""
+    props = source.properties(declaration)
     result = []
-    for match in pattern.finditer(text):
+    for prop in props:
+        if prop["name"] is None:
+            continue
         row: dict[str, Any] = {
-            "name": match.group("name"),
-            "wrapper": "@" + match.group("wrapper"),
-            "type": match.group("type").strip(),
-            "line": line_number(text, match.start()),
+            "name": prop["name"],
+            "wrapper": prop["wrapper"],
+            "type": prop["type"],
+            "line": prop["line"],
         }
-        if match.group("default"):
-            row["default_value"] = match.group("default").strip()
+        if "default_value" in prop:
+            row["default_value"] = prop["default_value"]
         result.append(row)
     return result
 
@@ -116,8 +118,10 @@ def detect_views(path: Path, root: Path) -> list[dict[str, Any]]:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return []
+
+    # Use SwiftSource for proper declaration scoping
+    source = SwiftSource(text)
     result = []
-    declaration = re.compile(r"\b(?:struct|class|final\s+class)\s+([A-Za-z_]\w*)\s*:\s*([^\{\n]+)")
     known_components = (
         "VStack", "HStack", "ZStack", "List", "ScrollView", "LazyVStack", "LazyHStack",
         "NavigationStack", "NavigationView", "NavigationLink", "TabView", "Form", "Group",
@@ -125,13 +129,22 @@ def detect_views(path: Path, root: Path) -> list[dict[str, Any]]:
         "Sheet", "Alert", "UICollectionView", "UITableView", "UIScrollView", "UIButton",
         "UILabel", "UIImageView", "UITextField", "UIStackView",
     )
-    for match in declaration.finditer(text):
-        bases = match.group(2).strip()
-        if not any(token in bases for token in ("View", "UIViewController", "UICollectionViewController", "UITableViewController")):
+
+    for declaration in source.declarations:
+        if declaration["kind"] not in {"struct", "class"}:
             continue
-        class_name = match.group(1)
-        kind = "SwiftUI View" if re.search(r"\bView\b", bases) and "UIView" not in bases else "UIKit ViewController"
-        components = [name for name in known_components if re.search(r"\b" + re.escape(name) + r"\b", text)]
+        bases = source.bases_for(declaration)
+        kind = view_kind(bases)
+        if kind is None:
+            continue
+
+        # Extract scoped text for this declaration only
+        scoped_text = source.owned_text(declaration, code=False)
+
+        # Components: search only in scoped text
+        components = [name for name in known_components if re.search(r"\b" + re.escape(name) + r"\b", scoped_text)]
+
+        # Interactions: search only in scoped text
         interactions = []
         interaction_patterns = {
             "navigation": r"\bNavigation(Link|Stack|View)\b",
@@ -142,23 +155,43 @@ def detect_views(path: Path, root: Path) -> list[dict[str, Any]]:
             "list": r"\b(List|ForEach|UICollectionView|UITableView)\b",
         }
         for interaction, pattern in interaction_patterns.items():
-            if re.search(pattern, text):
-                interactions.append({"type": interaction, "evidence": "source pattern", "line": line_number(text, re.search(pattern, text).start())})
-        body_match = re.search(r"\bvar\s+body\s*:\s*some\s+View\s*\{", text)
-        body_line = line_number(text, body_match.start()) if body_match else None
-        properties = parse_properties(text)
-        declaration_text = declaration_slice(text, match.start())
+            for match in re.finditer(pattern, scoped_text):
+                interactions.append({
+                    "type": interaction,
+                    "evidence": "source pattern",
+                    "line": line_number(text, match.start())
+                })
+
+        # Body line using scoped detection
+        body_line = source.body_line(declaration)
+
+        # Properties using scoped extraction
+        properties = parse_properties_scoped(source, declaration)
+
+        # Declaration text for ui_obligations
+        declaration_text = declaration_slice(text, declaration["start_offset"])
         ui_obligations = parse_ui_obligations(
             declaration_text,
-            line_offset=line_number(text, match.start()) - 1,
+            line_offset=declaration["line"] - 1,
         )
+
+        # Calculate line_count for this declaration only
+        if declaration["end_offset"] is not None:
+            decl_text = text[declaration["start_offset"]:declaration["end_offset"]]
+            line_count = len(decl_text.splitlines())
+            end_line = declaration["end_line"]
+        else:
+            line_count = 0
+            end_line = None
+
         result.append({
-            "view_name": class_name,
+            "view_name": declaration["name"],
             "type": kind,
-            "bases": [part.strip() for part in bases.split(",")],
+            "bases": bases,
             "file_path": relative(path, root),
-            "line_count": len(text.splitlines()),
-            "declaration_line": line_number(text, match.start()),
+            "line_count": line_count,
+            "declaration_line": declaration["line"],
+            "declaration_end_line": end_line,
             "body_line": body_line,
             "properties": properties,
             "has_state": bool(properties),
@@ -166,13 +199,14 @@ def detect_views(path: Path, root: Path) -> list[dict[str, Any]]:
             "ui_structure": {
                 "key_components": components,
                 "container": components[0] if components else None,
-                "depth_estimate": max(0, text.count("{") - text.count("}") // 2),
+                "depth_estimate": max(0, scoped_text.count("{") - scoped_text.count("}") // 2),
             },
             "interactions": interactions,
             "ui_obligations": ui_obligations,
-            "surface": classify_view_surface(class_name, [part.strip() for part in bases.split(",")], relative(path, root), text),
+            "surface": classify_view_surface(declaration["name"], bases, relative(path, root), scoped_text),
             "confidence": "high",
             "source_sha256": sha256_bytes(text.encode("utf-8")),
+            "scoped_diagnostics": source.scope_diagnostics(declaration),
         })
     return result
 
@@ -250,13 +284,61 @@ def scan_resources(root: Path) -> tuple[dict[str, Any], list[Path]]:
     input_files: list[Path] = list(source_files)
     input_files += [p for p in root.rglob("*.json") if eligible(p)]
     input_files += [p for p in root.rglob("*.strings") if eligible(p)]
+    input_files += [p for p in root.rglob("*.xcstrings") if eligible(p)]
+    input_files += [p for p in root.rglob("*.stringsdict") if eligible(p)]
     references: list[dict[str, Any]] = []
-    localizations: dict[str, dict[str, Any]] = {}
-    for strings in sorted(root.rglob("*.strings")):
-        if not eligible(strings):
-            continue
-        language = next((part[:-5] for part in strings.parts if part.endswith(".lproj")), "und")
-        localizations.setdefault(language, {})[relative(strings, root)] = parse_strings(strings)
+
+    # Use ios_localizations for complete xcstrings/strings/stringsdict support
+    loc_entries: list[dict[str, Any]] = []
+    loc_sources: list[dict[str, Any]] = []
+    loc_diagnostics: list[dict[str, Any]] = []
+    try:
+        from ios_localizations import scan_localizations
+        loc_facts = scan_localizations(root, eligible)
+        localizations = loc_facts.get("localizations", {})
+        loc_entries = loc_facts.get("entries", [])
+        loc_sources = loc_facts.get("sources", [])
+        loc_diagnostics = loc_facts.get("diagnostics", [])
+        # Add localization source files to input tracking
+        for source in loc_sources:
+            source_path = root / source["file"]
+            if source_path.is_file():
+                input_files.append(source_path)
+    except (ImportError, Exception) as exc:
+        # Fallback to legacy .strings-only parsing
+        localizations: dict[str, dict[str, Any]] = {}
+        loc_diagnostics.append({"code": "localization-import-failed", "error": str(exc)})
+        for strings in sorted(root.rglob("*.strings")):
+            if not eligible(strings):
+                continue
+            language = next((part[:-5] for part in strings.parts if part.endswith(".lproj")), "und")
+            localizations.setdefault(language, {})[relative(strings, root)] = parse_strings(strings)
+    # Scan fonts (TTF/OTF) and registrations
+    font_facts: dict[str, Any] = {"fonts": [], "registrations": []}
+    try:
+        from ios_fonts import scan_fonts
+        font_facts = scan_fonts(root, eligible)
+        # Add font files to input tracking
+        for font in font_facts.get("fonts", []):
+            font_path = root / font["path"]
+            if font_path.is_file():
+                input_files.append(font_path)
+        # Add Info.plist source files to input tracking — UIAppFonts registration
+        # affects font_registrations output so plist bytes must hash the input.
+        for info_plist in sorted(root.rglob("Info.plist")):
+            if eligible(info_plist) and info_plist.is_file():
+                input_files.append(info_plist)
+    except (ImportError, Exception) as exc:
+        loc_diagnostics.append({"code": "font-scan-failed", "error": str(exc)})
+
+    # Scan theme source files for Color/spacing/Font expressions
+    theme_facts: dict[str, Any] = {"themes": [], "colors": [], "spacing": [], "fonts": []}
+    try:
+        from ios_theme import scan_themes
+        theme_facts = scan_themes(root, eligible)
+        # Theme source files are already in source_files
+    except (ImportError, Exception) as exc:
+        loc_diagnostics.append({"code": "theme-scan-failed", "error": str(exc)})
     for path in root.rglob("*.swift"):
         if not eligible(path) or "Tests" in path.parts or "Test" in path.name:
             continue
@@ -288,14 +370,28 @@ def scan_resources(root: Path) -> tuple[dict[str, Any], list[Path]]:
         "catalogs": catalogs,
         "source_files": [file_entry(path, root) for path in source_files],
         "localizations": localizations,
+        "localization_entries": loc_entries,
+        "localization_sources": loc_sources,
+        "fonts": font_facts.get("fonts", []),
+        "font_registrations": font_facts.get("registrations", []),
+        "themes": theme_facts.get("themes", []),
         "code_references": references,
         "standalone_assets": [file_entry(path, root) for path in sorted(all_assets)],
+        "diagnostics": loc_diagnostics,
         "summary": {
             "catalog_count": len(catalogs),
             "images": sum(len(c["images"]) for c in catalogs),
             "colors": sum(len(c["colors"]) for c in catalogs),
             "app_icons": sum(len(c["app_icons"]) for c in catalogs),
             "localization_languages": len(localizations),
+            "localization_entry_count": len(loc_entries),
+            "localization_source_count": len(loc_sources),
+            "font_count": font_facts.get("total_count", 0),
+            "font_resolved_count": font_facts.get("resolved_count", 0),
+            "theme_file_count": theme_facts.get("summary", {}).get("theme_file_count", 0),
+            "theme_color_count": theme_facts.get("summary", {}).get("color_count", 0),
+            "theme_spacing_count": theme_facts.get("summary", {}).get("spacing_count", 0),
+            "theme_font_count": theme_facts.get("summary", {}).get("font_count", 0),
             "code_reference_count": len(references),
             "source_file_count": len(source_files),
         },

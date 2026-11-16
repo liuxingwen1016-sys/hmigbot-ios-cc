@@ -41,8 +41,13 @@ def audit_ui_coverage(project_root: str) -> list[dict]:
         project_info = json.load(f)
 
     swiftui_views = project_info.get("swiftui_views", [])
-    # Support both canonical uikit_viewcontrollers and legacy uikit_vcs
-    uikit_vcs = project_info.get("uikit_viewcontrollers") or project_info.get("uikit_vcs", [])
+    # Support both canonical uikit_viewcontrollers and legacy uikit_vcs.
+    # NOTE: Use explicit None check; an empty [] is valid and must not fall
+    # through to the legacy key (or-fallback would silently accept stale counts).
+    if "uikit_viewcontrollers" in project_info:
+        uikit_vcs = project_info["uikit_viewcontrollers"]
+    else:
+        uikit_vcs = project_info.get("uikit_vcs", [])
 
     total_ui_files = len(swiftui_views) + len(uikit_vcs)
 

@@ -26,6 +26,46 @@ class PipelineResumeTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    def schema1_outputs(self):
+        """Create valid schema-1 Plan outputs using native producers with seal."""
+        from generate_execute_coverage import build
+        from acceptance_plan import current_requirements, seal
+
+        # Create minimal source fixture
+        feature_dir = self.root / 'spec/baseline/features'
+        slice_dir = self.root / 'spec/baseline/plans/slices'
+        feature_dir.mkdir(parents=True, exist_ok=True)
+        slice_dir.mkdir(parents=True, exist_ok=True)
+
+        (feature_dir / 'feat_001_test.md').write_text(
+            '# F001: Test\n\n## Acceptance Criteria\n\n- [ ] F001-AC01 Basic requirement\n',
+            encoding='utf-8'
+        )
+        (slice_dir / 'slice-01-F001.md').write_text(
+            'feature_id: F001\n\nmodifies_files:\n  - entry/src/main/ets/pages/Index.ets\n',
+            encoding='utf-8'
+        )
+
+        # Generate using native producers including seal
+        index, coverage = build(self.root)
+        current_reqs = current_requirements(self.root)
+        sealed_plan = seal(current_reqs, {'schema_version': 1, 'bindings': []})
+
+        i2h_dir = self.root / 'spec/.i2h'
+        plan_dir = self.root / 'spec/baseline/plans'
+        i2h_dir.mkdir(parents=True, exist_ok=True)
+        plan_dir.mkdir(parents=True, exist_ok=True)
+
+        (i2h_dir / 'requirements-index.json').write_text(
+            json.dumps(index, ensure_ascii=False, indent=2), encoding='utf-8'
+        )
+        (i2h_dir / 'plan-coverage.json').write_text(
+            json.dumps(coverage, ensure_ascii=False, indent=2), encoding='utf-8'
+        )
+        (plan_dir / 'acceptance-plan.json').write_text(
+            json.dumps(sealed_plan, ensure_ascii=False, indent=2), encoding='utf-8'
+        )
+
     def marker(self, rel, stage, artifacts=()):
         path = self.root / rel
         for artifact in artifacts:
@@ -50,6 +90,8 @@ class PipelineResumeTests(unittest.TestCase):
         path.write_text(json.dumps({'schema_version': 2, 'status': status,
                                     'target_input_sha256': self.target if target is None else target,
                                     'units': units}), encoding='utf-8')
+        # Also create valid schema-1 outputs required by Plan validation
+        self.schema1_outputs()
 
     def test_summary_preserves_decision_and_full_receipt(self):
         self.delivery()
@@ -349,7 +391,7 @@ class PipelineResumeTests(unittest.TestCase):
         shutil.copy2(HERE / 'pipeline_resume.py', script)
         shutil.copy2(HERE / 'ui_state_ownership.py', ownership)
         shutil.copy2(HERE / 'ui_delivery.py', delivery)
-        for module in ('acceptance_plan.py', 'generate_execute_coverage.py'):
+        for module in ('acceptance_plan.py', 'generate_execute_coverage.py', 'validate_plan_schema1.py'):
             shutil.copy2(HERE / module, script.parent / module)
         shutil.copy2(HERE.parents[2] / 'bin/scripts/pipeline/marker_contract.py', marker)
         result = subprocess.run(

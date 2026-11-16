@@ -1,245 +1,177 @@
 #!/usr/bin/env python3
-"""Test marker self-reference and stage-aware validation.
+"""Marker validation tests: stage-aware artifact checks.
 
-Validates that:
-- Marker cannot list itself in artifacts (circular reference)
-- Marker file must be included in artifact list for content integrity
-- Complete stage markers include all expected artifacts
-- Artifact mutations detected via SHA256 mismatch
+Tests:
+- Self-reference: marker cannot list itself in artifacts (write_marker rejects it)
+- Missing marker fails validate_marker
+- Byte-sealed artifact integrity detected via SHA256
+- Incomplete-but-sealed marker: low-level PASS, stage-aware detector catches gap
+- CLI guard: direct invocation exits nonzero with useful stderr
 """
 import json
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
-import sys
 
-sys.path.insert(0, str(Path(__file__).parents[1]))
-from marker_contract import write_marker, validate_marker, file_sha256
+# Portable provenance: pipeline scripts are siblings of this tests/ dir's parent
+_PIPELINE = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(_PIPELINE))
+from marker_contract import write_marker, validate_marker
 
 
 def test_marker_self_reference_rejected():
-    """Marker attempting to list itself in artifacts should fail."""
+    """write_marker must reject the marker path when it appears in artifact_paths."""
     with tempfile.TemporaryDirectory() as tmpdir:
         root = Path(tmpdir)
         marker_path = root / "spec/baseline/spec-complete.txt"
         marker_path.parent.mkdir(parents=True)
 
-        # Create required artifact
-        artifact = root / "spec/baseline/ui-manifest.md"
-        artifact.write_text("# UI Manifest\n")
+        (root / "spec/baseline/ui-manifest.md").write_text("# UI Manifest\n")
 
-        # Try to write marker that references itself
+        # Attempt to include the marker itself as an artifact.
+        # write_marker resolves every path; spec-complete.txt does not yet exist
+        # (it's the output), so it raises FileNotFoundError — specific rejection.
+        raised = None
         try:
             write_marker(
                 marker_path,
                 stage="i2h-spec",
                 artifact_paths=[
                     "spec/baseline/ui-manifest.md",
-                    "spec/baseline/spec-complete.txt"  # Self-reference
+                    "spec/baseline/spec-complete.txt",   # self-reference
                 ],
                 inputs_sha256="abc123",
-                root=root
+                root=root,
             )
-            # If write_marker allows this, validation should catch it
-            result = validate_marker(marker_path, "i2h-spec", root=root)
-            # Check if marker references itself in artifacts
-            marker_data = json.loads(marker_path.read_text())
-            artifact_paths = {a["path"] for a in marker_data.get("artifacts", [])}
-            assert "spec/baseline/spec-complete.txt" not in artifact_paths, \
-                "Marker should not reference itself in artifacts"
-        except Exception as e:
-            # Self-reference might be rejected at write time
-            print(f"✅ PASS: Self-reference rejected (write-time): {e}")
-            return 0
+        except FileNotFoundError as e:
+            raised = e
 
-        print(f"✅ PASS: Self-reference rejected (validation-time)")
-        return 0
+        assert raised is not None, (
+            "write_marker must raise FileNotFoundError when artifact path "
+            "does not exist (self-reference is impossible to satisfy before write)"
+        )
+        assert "spec-complete.txt" in str(raised), f"Error should name the offending path: {raised}"
+        # Marker must not have been created
+        assert not marker_path.exists(), "Marker file must not be created on self-reference"
+        print(f"✅ PASS: self-reference raises FileNotFoundError, no marker written")
 
 
 def test_marker_must_exist_for_validation():
-    """Marker file must exist to pass validation."""
+    """validate_marker returns marker_missing for a path that does not exist."""
     with tempfile.TemporaryDirectory() as tmpdir:
         root = Path(tmpdir)
-        marker_path = root / "spec/baseline/nonexistent-marker.txt"
-
-        result = validate_marker(marker_path, "i2h-spec", root=root)
-
-        assert not result["valid"], "Validation should fail for missing marker"
-        assert "marker_missing" in result["errors"], f"Expected marker_missing error: {result}"
-
-        print(f"✅ PASS: Missing marker fails validation")
-        return 0
-
-
-def test_complete_spec_stage_artifacts():
-    """Complete i2h-spec marker should include all expected artifacts."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        root = Path(tmpdir)
-        spec_dir = root / "spec/baseline"
-        spec_dir.mkdir(parents=True)
-
-        # Create complete artifact set (minimal portable example)
-        artifacts = {
-            "ui-manifest.md": "# UI Manifest\n## Pages\n- HomeView\n",
-            "feature-index.md": "# Feature Index\n- F001: Auth\n",
-            "ui-coverage-report.md": "# Coverage\nTotal: 1 page\n"
-        }
-
-        artifact_paths = []
-        for name, content in artifacts.items():
-            path = spec_dir / name
-            path.write_text(content)
-            artifact_paths.append(f"spec/baseline/{name}")
-
-        marker_path = spec_dir / "spec-complete.txt"
-
-        # Write marker with complete artifact set
-        write_marker(
-            marker_path,
-            stage="i2h-spec",
-            artifact_paths=artifact_paths,
-            inputs_sha256="input123",
-            root=root
-        )
-
-        # Validate
-        result = validate_marker(marker_path, "i2h-spec", "input123", root=root)
-
-        assert result["valid"], f"Complete marker should validate: {result}"
-        assert len(result["errors"]) == 0, f"Should have no errors: {result['errors']}"
-
-        # Verify artifact count
-        marker_data = json.loads(marker_path.read_text())
-        assert len(marker_data["artifacts"]) == 3, \
-            f"Should have 3 artifacts, got {len(marker_data['artifacts'])}"
-
-        print(f"✅ PASS: Complete spec stage artifacts validated")
-        print(f"   Artifacts: {len(marker_data['artifacts'])}")
-        return 0
+        result = validate_marker(root / "spec/baseline/nonexistent.txt", "i2h-spec", root=root)
+        assert not result["valid"], "Validation must fail when marker absent"
+        assert "marker_missing" in result["errors"], f"Expected marker_missing: {result}"
+        print("✅ PASS: absent marker → marker_missing")
 
 
 def test_artifact_mutation_detected():
-    """SHA256 mismatch should be detected when artifact is modified."""
+    """validate_marker returns artifact_hash_mismatch after artifact content changes."""
     with tempfile.TemporaryDirectory() as tmpdir:
         root = Path(tmpdir)
         spec_dir = root / "spec/baseline"
         spec_dir.mkdir(parents=True)
-
-        # Create artifact
-        artifact_path = spec_dir / "ui-manifest.md"
-        artifact_path.write_text("# Original Content\n")
-
-        marker_path = spec_dir / "spec-complete.txt"
-
-        # Write marker with original content
-        write_marker(
-            marker_path,
-            stage="i2h-spec",
-            artifact_paths=["spec/baseline/ui-manifest.md"],
-            inputs_sha256="input123",
-            root=root
-        )
-
-        # Validation should pass initially
-        result = validate_marker(marker_path, "i2h-spec", "input123", root=root)
-        assert result["valid"], f"Initial validation should pass: {result}"
-
-        # Mutate artifact
-        artifact_path.write_text("# Modified Content\n")
-
-        # Validation should now fail
-        result = validate_marker(marker_path, "i2h-spec", "input123", root=root)
-        assert not result["valid"], "Validation should fail after mutation"
-        assert "artifact_hash_mismatch" in result["errors"], \
-            f"Expected artifact_hash_mismatch: {result}"
-
-        print(f"✅ PASS: Artifact mutation detected via SHA256 mismatch")
-        return 0
-
-
-def test_incomplete_artifacts_still_valid():
-    """Marker with subset of artifacts is technically valid but incomplete.
-
-    Stage-aware checkers must verify expected artifacts are present.
-    """
-    with tempfile.TemporaryDirectory() as tmpdir:
-        root = Path(tmpdir)
-        spec_dir = root / "spec/baseline"
-        spec_dir.mkdir(parents=True)
-
-        # Create only one artifact (incomplete set)
         artifact = spec_dir / "ui-manifest.md"
-        artifact.write_text("# Partial manifest\n")
-
+        artifact.write_text("# Original\n")
         marker_path = spec_dir / "spec-complete.txt"
 
-        # Write marker with incomplete artifacts
-        write_marker(
-            marker_path,
-            stage="i2h-spec",
-            artifact_paths=["spec/baseline/ui-manifest.md"],
-            inputs_sha256="input123",
-            root=root
+        write_marker(marker_path, stage="i2h-spec",
+                     artifact_paths=["spec/baseline/ui-manifest.md"],
+                     inputs_sha256="h1", root=root)
+
+        assert validate_marker(marker_path, "i2h-spec", "h1", root=root)["valid"]
+
+        artifact.write_text("# Modified\n")
+        result = validate_marker(marker_path, "i2h-spec", "h1", root=root)
+        assert not result["valid"], "Validation must fail after mutation"
+        assert "artifact_hash_mismatch" in result["errors"], f"Expected hash mismatch: {result}"
+        print("✅ PASS: artifact mutation detected via SHA256 mismatch")
+
+
+def test_low_level_sealed_incomplete_marker_detected_by_pipeline_resume():
+    """A byte-sealed marker with only 1 artifact must be detected as incomplete
+    by the stage-aware pipeline_resume._validate_marker_artifacts check.
+
+    Low-level validate_marker passes (content-addressed integrity is fine).
+    Stage-aware check fails because required spec evidence is absent.
+    """
+    _PLAN_SCRIPTS = Path(__file__).resolve().parents[5] / "migbot/skills/i2h-plan/scripts"
+    sys.path.insert(0, str(_PLAN_SCRIPTS))
+    from pipeline_resume import _validate_marker_artifacts
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir).resolve()  # resolve /var→/private/var on macOS
+        spec_dir = root / "spec/baseline"
+        spec_dir.mkdir(parents=True)
+        # Create only one artifact — missing resources-inventory.json
+        artifact = spec_dir / "ui-manifest.md"
+        artifact.write_text("# Partial\n")
+        marker_path = root / "spec/baseline/spec-complete.txt"
+
+        write_marker(marker_path, stage="i2h-spec",
+                     artifact_paths=["spec/baseline/ui-manifest.md"],
+                     inputs_sha256="h1", root=root)
+
+        # Low-level validation passes
+        low_result = validate_marker(marker_path, "i2h-spec", "h1", root=root)
+        assert low_result["valid"], "Low-level must pass for content-intact sealed marker"
+
+        # Stage-aware gate rejects it: required spec evidence absent
+        from marker_contract import resolve_stage
+        stage_res = resolve_stage(root, "i2h-spec")
+        marker_dict = {"paths": [str(p.relative_to(root)) for p in stage_res.paths]}
+        stage_errors = _validate_marker_artifacts(root, "i2h-spec", marker_dict)
+        assert stage_errors, (
+            "Stage-aware check must reject sealed marker missing required "
+            "spec/.i2h/resources-inventory.json (or target-input.json). "
+            f"Got no errors; marker artifacts: "
+            f"{[a['path'] for a in json.loads(marker_path.read_text()).get('artifacts', [])]}"
         )
-
-        # Low-level validation passes (content-addressed integrity OK)
-        result = validate_marker(marker_path, "i2h-spec", "input123", root=root)
-        assert result["valid"], "Low-level validation should pass"
-
-        # But stage-aware checker would detect missing artifacts
-        marker_data = json.loads(marker_path.read_text())
-        artifact_paths = {a["path"] for a in marker_data["artifacts"]}
-
-        # Expected artifacts for complete i2h-spec (example)
-        expected = {
-            "spec/baseline/ui-manifest.md",
-            "spec/baseline/feature-index.md",
-            "spec/baseline/ui-coverage-report.md"
-        }
-
-        missing = expected - artifact_paths
-        assert len(missing) > 0, "Should detect missing artifacts"
-
-        print(f"✅ PASS: Incomplete artifact set detected")
-        print(f"   Present: {len(artifact_paths)}")
-        print(f"   Missing: {missing}")
-        return 0
+        assert any("spec_evidence" in e for e in stage_errors), \
+            f"Expected spec evidence error; got: {stage_errors}"
+        print(f"✅ PASS: sealed incomplete marker rejected by stage-aware check: {stage_errors}")
 
 
-def test_cli_guard_nonzero_exit():
-    """CLI direct invocation without stdin should exit nonzero with error."""
-    import subprocess
-
+def test_cli_guard_nonzero_exit_no_marker_output():
+    """Running marker_contract.py directly must exit nonzero with useful stderr."""
     result = subprocess.run(
-        ["python3", str(Path(__file__).parents[1] / "marker_contract.py")],
-        capture_output=True,
-        text=True
+        ["python3", str(_PIPELINE / "marker_contract.py")],
+        capture_output=True, text=True,
     )
-
-    assert result.returncode != 0, f"CLI should exit nonzero, got {result.returncode}"
-    assert len(result.stderr) > 0 or "stdin" in result.stdout.lower(), \
-        f"Should have useful error message: stdout={result.stdout}, stderr={result.stderr}"
-    assert result.stdout.count("sha256") == 0, "Should not output marker without input"
-
-    print(f"✅ PASS: CLI guard produces nonzero exit with error")
-    print(f"   Exit code: {result.returncode}")
-    return 0
+    assert result.returncode != 0, (
+        f"CLI direct invocation must exit nonzero; got {result.returncode}"
+    )
+    assert result.stderr.strip(), (
+        f"stderr must contain usage explanation; got empty. stdout={result.stdout!r}"
+    )
+    # Must not silently create or print a marker JSON blob
+    assert '"schema_version"' not in result.stdout, \
+        "Must not output a marker JSON when invoked as CLI"
+    print(f"✅ PASS: CLI guard exit={result.returncode}, stderr present, no marker output")
 
 
 if __name__ == "__main__":
-    try:
-        test_marker_must_exist_for_validation()
-        test_complete_spec_stage_artifacts()
-        test_artifact_mutation_detected()
-        test_incomplete_artifacts_still_valid()
-        test_marker_self_reference_rejected()
-        test_cli_guard_nonzero_exit()
-        print("\n✅ All stage-aware marker validation tests passed")
-        sys.exit(0)
-    except AssertionError as e:
-        print(f"\n❌ Test failed: {e}")
+    failures = 0
+    for name, fn in [
+        ("self_reference_rejected", test_marker_self_reference_rejected),
+        ("marker_must_exist", test_marker_must_exist_for_validation),
+        ("mutation_detected", test_artifact_mutation_detected),
+        ("sealed_incomplete_stage_rejected",
+         test_low_level_sealed_incomplete_marker_detected_by_pipeline_resume),
+        ("cli_guard", test_cli_guard_nonzero_exit_no_marker_output),
+    ]:
+        try:
+            fn()
+        except Exception as exc:
+            import traceback
+            print(f"\n❌ {name}: {exc}")
+            traceback.print_exc()
+            failures += 1
+
+    if failures:
+        print(f"\n❌ {failures} test(s) failed")
         sys.exit(1)
-    except Exception as e:
-        print(f"\n❌ Unexpected error: {e}")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+    print("\n✅ All marker stage validation tests passed")
+    sys.exit(0)

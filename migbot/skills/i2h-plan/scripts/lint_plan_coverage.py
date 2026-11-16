@@ -130,6 +130,19 @@ class PlanCoverageLinter:
         # 12. 跨切片接线归属检测
         self._check_cross_slice_wiring()
 
+        # 13. 结构性问题（来自解析阶段收集的 findings，如重复 FID）
+        if self.findings:
+            blocking = [f for f in self.findings if f.get('severity') == 'blocking']
+            self.results.append(CoverageResult(
+                name="解析结构校验",
+                passed=len(blocking) == 0,
+                actual=0,
+                total=len(blocking),
+                threshold=0.0,
+                blocking=True,
+                errors=[f.get('message', str(f)) for f in blocking],
+            ))
+
         # 输出结果
         self._print_results()
 
@@ -603,25 +616,77 @@ class PlanCoverageLinter:
 
         self.results.append(result)
 
+    def _normalize_slice_dep(self, dep: str, slices: Dict[str, Dict]) -> Optional[str]:
+        """Map a dependency reference to a slice key stored in ``slices``.
+
+        Resolution order:
+        1. Direct slice-key match (numeric string like "11" or "01").
+        2. Feature-ID match: dep is F001 → find the unique slice whose
+           feature_id == dep (requires uniqueness; ambiguous → None with warning).
+        3. Numeric extraction from text alias ("Slice 11" → "11", padded variants).
+
+        "Base" / "base" (and any capitalisation) is not a slice reference; callers
+        must skip it before calling this method.
+        """
+        dep = (dep or "").strip()
+        if not dep:
+            return None
+        # Direct key match
+        if dep in slices:
+            return dep
+        # Feature-ID match (F001 must NOT be treated as numeric "001" / "01")
+        if re.match(r'^[A-Z]\d{3}$', dep):
+            matched = [sid for sid, data in slices.items()
+                       if data.get('feature_id') == dep]
+            if len(matched) == 1:
+                return matched[0]
+            # 0 or ≥2 matches — cannot resolve unambiguously
+            return None
+        # Numeric extraction: "Slice 11" → try "11", "11".lstrip("0") or "0", "11".zfill(2)
+        m = re.search(r'(\d+)', dep)
+        if m:
+            num = m.group(1)
+            for cand in (num, num.lstrip("0") or "0", num.zfill(2)):
+                if cand in slices:
+                    return cand
+        return None
+
     def _check_group_validation(self):
         """11. 功能分组校验"""
         slices = self._parse_slices()
         errors = []
 
-        # 11.1 最早可行组：每个 slice 排入 max(依赖组号)+1 组
+        # 11.1 最早可行组 + same/later group rejection
         for sid, data in slices.items():
             depends_on = data.get('depends_on', [])
             parallel_group = data.get('parallel_group', 0)
 
             max_dep_group = 0
             for dep in depends_on:
-                if dep == 'base':
+                # "Base" / "base" / "BASE" is a legitimate non-slice reference
+                if dep.strip().lower() == 'base':
                     continue
-                dep_slice = slices.get(dep, {})
-                dep_group = dep_slice.get('parallel_group', 0)
+                dep_key = self._normalize_slice_dep(dep, slices)
+                if dep_key is None:
+                    errors.append(
+                        f"Slice {sid}: 未知的依赖 '{dep}'"
+                    )
+                    continue
+                dep_group = slices[dep_key].get('parallel_group', 0)
+                # Reject same-group dependency (can't depend on a sibling)
+                if dep_group == parallel_group:
+                    errors.append(
+                        f"Slice {sid}: parallel_group={parallel_group} 依赖同组 Slice {dep_key}(G{dep_group})"
+                    )
+                # Reject later-group dependency (depends on something that runs later)
+                if dep_group > parallel_group:
+                    errors.append(
+                        f"Slice {sid}: parallel_group={parallel_group} 依赖后组 Slice {dep_key}(G{dep_group})"
+                    )
                 max_dep_group = max(max_dep_group, dep_group)
 
-            expected_min_group = max_dep_group + 1 if depends_on and depends_on != ['base'] else 1
+            non_base_deps = [d for d in depends_on if d.strip().lower() != 'base']
+            expected_min_group = max_dep_group + 1 if non_base_deps else 1
             if parallel_group < expected_min_group:
                 errors.append(
                     f"Slice {sid}: parallel_group={parallel_group} < 最早可行组 {expected_min_group}"

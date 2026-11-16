@@ -41,6 +41,7 @@ from marker_contract import (  # type: ignore[import-not-found]
 import ui_state_ownership  # type: ignore[import-not-found]
 import ui_delivery  # type: ignore[import-not-found]
 from acceptance_plan import BEHAVIOR_REPORT, replay_behavior
+from validate_plan_schema1 import validate_plan_outputs
 
 STAGES = ("i2h-spec", "i2h-plan", "i2h-execute", "i2h-verify", "i2h-retrospect")
 VERIFY_CHECKS = tuple(f"CHECK-{index}" for index in range(1, 6))
@@ -471,6 +472,7 @@ def pipeline_status(root: str | Path, *, allow_legacy: bool = True,
         checks: dict[str, Any] = {"marker": marker}
         if stage == "i2h-plan":
             checks["delivery"] = validate_delivery(root, input_hash, require_runtime_plan=require_runtime_plan)
+            checks["schema1_outputs"] = validate_plan_outputs(root)
         elif stage == "i2h-execute":
             checks["report"] = _report(root, stage)
             delivery = _delivery_path(root)

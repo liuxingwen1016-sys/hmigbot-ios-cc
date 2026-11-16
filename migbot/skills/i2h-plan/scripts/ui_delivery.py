@@ -389,6 +389,106 @@ def visual_binding_gaps(units: list, verification: list) -> dict[str, list]:
     }
 
 
+_KNOWN_PRESENTATION_ROLES = frozenset({
+    "routed_page", "hosted_destination", "embedded",
+})
+
+# Patterns that indicate placeholder values written by an executor bypass
+_PLACEHOLDER_RE = re.compile(
+    r"""(?xi)
+    ^(?:UNRESOLVED|TODO|PLACEHOLDER|TBD|FIXME|UNKNOWN|
+        None|null|undefined|"")\s*$
+    """,
+    re.IGNORECASE,
+)
+# Valid ArkTS target identifier: QualifiedName like "entry.SomeBuilder"
+# or a bare CamelCase name.  Must not contain slashes or dots after last segment.
+_ATS_IDENT_RE = re.compile(r'^[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*$')
+
+
+def _is_placeholder(value: object) -> bool:
+    return not isinstance(value, str) or not value.strip() or bool(_PLACEHOLDER_RE.match(value.strip()))
+
+
+def _validate_integration_host(unit: dict[str, Any], errors: list[dict[str, Any]]) -> None:
+    """Fail-closed validation of integration host fields.
+
+    Catches executor bypass patterns:
+    - Unknown/None presentation_role for required units (not in known enum)
+    - host_file: must be safe relative POSIX .ets path — rejects absolute,
+      path-traversal, Windows backslash paths, .swift and any non-.ets extension
+    - host_builder / child_symbol: reject placeholders and invalid identifiers
+    - Required hosted_destination/embedded slots must have all 3 host fields
+    """
+    unit_id = unit.get("unit_id")
+    role = unit.get("presentation_role")
+
+    # presentation_role must be a supported enum value (None counts as unknown
+    # for any unit that declares an integration slot).
+    if role is None or role not in _KNOWN_PRESENTATION_ROLES:
+        if role is not None or unit.get("integration"):
+            # Non-None unknown role, or None with integration slots present
+            errors.append({"code": "PRESENTATION_ROLE_UNKNOWN", "unit_id": unit_id, "role": role})
+
+    integration = unit.get("integration")
+    slots = integration if isinstance(integration, list) else ([integration] if integration else [])
+    for slot in slots:
+        if not isinstance(slot, dict):
+            continue
+        host_file = slot.get("host_file")
+        host_builder = slot.get("host_builder")
+        child_symbol = slot.get("child_symbol")
+
+        # Required hosted/embedded slots must have all 3 fields present
+        if role in ("hosted_destination", "embedded"):
+            for field_name, field_val in (
+                ("host_file", host_file),
+                ("host_builder", host_builder),
+                ("child_symbol", child_symbol),
+            ):
+                if field_val is None:
+                    errors.append({"code": "HOST_FIELD_REQUIRED", "unit_id": unit_id,
+                                   "field": field_name, "role": role})
+
+        if host_file is not None:
+            if _is_placeholder(host_file):
+                errors.append({"code": "HOST_FILE_PLACEHOLDER", "unit_id": unit_id, "host_file": host_file})
+            elif isinstance(host_file, str):
+                hf = host_file.strip()
+                # Reject absolute paths (Unix and Windows)
+                if hf.startswith("/") or (len(hf) >= 2 and hf[1] == ":"):
+                    errors.append({"code": "HOST_FILE_ABSOLUTE_PATH", "unit_id": unit_id, "host_file": hf})
+                # Reject Windows-style backslash paths
+                elif "\\" in hf:
+                    errors.append({"code": "HOST_FILE_BACKSLASH_PATH", "unit_id": unit_id, "host_file": hf})
+                # Reject path traversal
+                elif ".." in hf.split("/"):
+                    errors.append({"code": "HOST_FILE_PATH_TRAVERSAL", "unit_id": unit_id, "host_file": hf})
+                # Must end with .ets — reject .swift, .ts, .txt, etc.
+                elif not hf.endswith(".ets"):
+                    errors.append({"code": "HOST_FILE_NOT_ETS", "unit_id": unit_id, "host_file": hf,
+                                   "detail": "target host file must be a .ets ArkTS path"})
+                # Planned .ets hosts need not exist yet; no existence check
+
+        if host_builder is not None:
+            if _is_placeholder(host_builder):
+                errors.append({"code": "HOST_BUILDER_PLACEHOLDER", "unit_id": unit_id, "host_builder": host_builder})
+            elif isinstance(host_builder, str) and not _ATS_IDENT_RE.match(host_builder.strip()):
+                errors.append({"code": "HOST_BUILDER_INVALID_IDENTIFIER", "unit_id": unit_id, "host_builder": host_builder})
+
+        if child_symbol is not None:
+            if _is_placeholder(child_symbol):
+                errors.append({"code": "CHILD_SYMBOL_PLACEHOLDER", "unit_id": unit_id, "child_symbol": child_symbol})
+            elif isinstance(child_symbol, str) and not _ATS_IDENT_RE.match(child_symbol.strip()):
+                errors.append({"code": "CHILD_SYMBOL_INVALID_IDENTIFIER", "unit_id": unit_id, "child_symbol": child_symbol})
+            else:
+                # child_symbol must match unit's output.symbol exactly
+                expected_symbol = (unit.get("output") or {}).get("symbol") if isinstance(unit.get("output"), dict) else None
+                if expected_symbol is not None and isinstance(child_symbol, str) and child_symbol.strip() != expected_symbol:
+                    errors.append({"code": "CHILD_SYMBOL_MISMATCH", "unit_id": unit_id,
+                                   "child_symbol": child_symbol, "output_symbol": expected_symbol})
+
+
 def validate(project_root: str | Path, inventory: dict[str, Any], *, require_runtime_plan: bool = False) -> dict[str, Any]:
     root = Path(project_root).expanduser().resolve()
     source_root = Path(str(inventory.get("source_project_root", root))).expanduser().resolve()
@@ -471,6 +571,8 @@ def validate(project_root: str | Path, inventory: dict[str, Any], *, require_run
                 continue
             if not (source_root / ref["file"]).is_file() and not (root / ref["file"]).is_file() and not (root / "spec" / ref["file"]).is_file():
                 warnings.append({"code": "SOURCE_REF_MISSING", "unit_id": unit_id, "file": ref["file"]})
+        # Integration host validation: fail-closed on placeholder/invalid host fields
+        _validate_integration_host(unit, errors)
         states = unit.get("required_states")
         if not isinstance(states, list) or not states:
             errors.append({"code": "STATES_EMPTY", "unit_id": unit_id})

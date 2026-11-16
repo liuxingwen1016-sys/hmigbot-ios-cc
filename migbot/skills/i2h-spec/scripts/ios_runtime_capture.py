@@ -5,6 +5,10 @@ The runner owns the deterministic simulator steps. Accessibility trees are
 provided by an XCTest/XCUITest helper through ``--accessibility-command`` or
 an already-produced JSON file through ``--accessibility-json``. The runner
 never fabricates an accessibility tree when that evidence is unavailable.
+
+PATCHED: This version queries the actual installed app bundle during the
+foreground receipt/ACK handshake to bind the manifest to the true installed
+bundle digest rather than the requested input app.
 """
 from __future__ import annotations
 
@@ -25,6 +29,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 from runtime_view import atomic_json, normalize  # noqa: E402
 from ios_evidence_protocol import bundle_identity, sha256_file, source_identity  # noqa: E402
+from ios_installed_identity import query_installed_app_path, validate_installed_identity  # noqa: E402
 
 
 def utc_now() -> str:
@@ -274,7 +279,8 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
     app = find_app(derived_data, args.app_path)
     app_bundle_id = bundle_id(app, args.bundle_id)
     identity = app_identity(app, app_bundle_id)
-    identity["bundle_sha256"] = bundle_identity(app)
+    requested_bundle_sha256 = bundle_identity(app)
+    identity["bundle_sha256"] = requested_bundle_sha256
     run_command([xcrun, "simctl", "install", device, str(app)], timeout=args.timeout)
     run_command([xcrun, "simctl", "launch", device, app_bundle_id], timeout=args.timeout)
 
@@ -284,6 +290,7 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
     foreground_ack = output_dir / "foreground-capture-ack.json"
     screenshot_taken = False
     receipt_payload: dict[str, Any] | None = None
+    actual_installed_identity: dict[str, Any] | None = None
     foreground_receipt.unlink(missing_ok=True)
     foreground_ack.unlink(missing_ok=True)
     if args.accessibility_json:
@@ -331,6 +338,8 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
                 text=True,
             )
             deadline = time.monotonic() + args.timeout
+            actual_identity_before: dict[str, Any] | None = None
+            actual_identity_after: dict[str, Any] | None = None
             try:
                 while process.poll() is None:
                     if not screenshot_taken and ui_json.is_file() and foreground_receipt.is_file():
@@ -340,9 +349,60 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
                             page_id=args.page_id,
                             state_id=args.state_id,
                         )
+                        # Query actual installed app before screenshot
+                        installed_app_path = query_installed_app_path(device, app_bundle_id, xcrun=xcrun)
+                        if not installed_app_path:
+                            raise RuntimeError(
+                                f"Cannot find actual installed app for {app_bundle_id} on {device}. "
+                                f"Foreground receipt exists but installed identity query failed."
+                            )
+                        before_observed = utc_now()
+                        actual_identity_before = validate_installed_identity(
+                            installed_app_path, app_bundle_id, compute_digest=bundle_identity
+                        )
+                        actual_identity_before["observed_at"] = before_observed
+
                         time.sleep(0.25)
                         run_command([xcrun, "simctl", "io", device, "screenshot", str(screenshot)], timeout=args.timeout)
                         screenshot_taken = True
+
+                        # Query again after screenshot, before ACK
+                        installed_app_path_after = query_installed_app_path(device, app_bundle_id, xcrun=xcrun)
+                        if not installed_app_path_after:
+                            raise RuntimeError(
+                                f"Installed app {app_bundle_id} disappeared after screenshot"
+                            )
+                        after_observed = utc_now()
+                        actual_identity_after = validate_installed_identity(
+                            installed_app_path_after, app_bundle_id, compute_digest=bundle_identity
+                        )
+                        actual_identity_after["observed_at"] = after_observed
+
+                        # Verify stability: path, bundle_id, version, build, digest
+                        if actual_identity_before["app_path"] != actual_identity_after["app_path"]:
+                            raise RuntimeError(
+                                f"Installed app path changed during capture: "
+                                f"{actual_identity_before['app_path']} -> {actual_identity_after['app_path']}"
+                            )
+                        if actual_identity_before["bundle_sha256"] != actual_identity_after["bundle_sha256"]:
+                            raise RuntimeError(
+                                f"Installed app bundle digest changed during capture: "
+                                f"{actual_identity_before['bundle_sha256']} -> {actual_identity_after['bundle_sha256']}"
+                            )
+                        if actual_identity_before["build_identity"] != actual_identity_after["build_identity"]:
+                            raise RuntimeError(
+                                f"Installed app identity changed during capture: "
+                                f"{actual_identity_before['build_identity']} -> {actual_identity_after['build_identity']}"
+                            )
+
+                        # Binding is stable, record it
+                        actual_installed_identity = {
+                            **actual_identity_after,
+                            "before_observation": actual_identity_before,
+                            "after_observation": actual_identity_after,
+                            "binding_stable": True,
+                        }
+
                         write_foreground_ack(
                             foreground_ack,
                             bundle_id=app_bundle_id,
@@ -386,12 +446,15 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
             )
 
     return write_capture_evidence(args, output_dir=output_dir, device=device, app=app, identity=identity,
-                                  source_sha256=source_sha256, receipt_payload=receipt_payload)
+                                  source_sha256=source_sha256, receipt_payload=receipt_payload,
+                                  requested_bundle_sha256=requested_bundle_sha256,
+                                  actual_installed_identity=actual_installed_identity)
 
 
 def write_capture_evidence(
     args: argparse.Namespace, *, output_dir: Path, device: str, app: Path, identity: dict[str, str],
     source_sha256: str | None, receipt_payload: dict[str, Any] | None,
+    requested_bundle_sha256: str, actual_installed_identity: dict[str, Any] | None,
 ) -> dict[str, Any]:
     ui_json = output_dir / "ios-accessibility.json"
     screenshot = output_dir / "ios-runtime.png"
@@ -399,13 +462,34 @@ def write_capture_evidence(
     foreground_ack = output_dir / "foreground-capture-ack.json"
     ui_payload = json.loads(ui_json.read_text(encoding="utf-8"))
     captured_nodes = ui_payload.get("nodes", []) if isinstance(ui_payload, dict) else []
+
+    # For strict foreground handshake captures, actual identity is mandatory
+    if not actual_installed_identity:
+        if receipt_payload is not None:
+            # Foreground receipt exists but actual identity is missing - error
+            raise RuntimeError(
+                "Foreground receipt handshake capture requires actual installed identity. "
+                "Cannot fall back to requested bundle digest for verified captures."
+            )
+        # Legacy non-receipt capture path: use requested
+        build_sha256 = requested_bundle_sha256
+        app_info = {**identity, "app_path": str(app)}
+    else:
+        # Verified binding with actual installed identity
+        build_sha256 = actual_installed_identity["bundle_sha256"]
+        app_info = {
+            **actual_installed_identity,
+            "requested_app_path": str(app),
+            "requested_bundle_sha256": requested_bundle_sha256,
+        }
+
     raw = {
         "schema_version": 2,
         "page_id": args.page_id,
         "state_id": args.state_id,
         "captured_at": utc_now(),
         "device": {"udid": device},
-        "app": {**identity, "app_path": str(app)},
+        "app": app_info,
         "evidence_identity": {
             "platform": "ios",
             "page_id": args.page_id,
@@ -414,13 +498,37 @@ def write_capture_evidence(
             "configuration_id": args.configuration_id,
             "checkpoint_id": args.checkpoint_id,
             "source_sha256": source_sha256,
-            "build_sha256": identity.get("bundle_sha256"),
+            "build_sha256": build_sha256,
             "device_udid": device,
         },
         "screenshot": screenshot.name,
         "ui_json": ui_json.name,
         "nodes": captured_nodes,
     }
+
+    # Record build binding provenance with both observations
+    if actual_installed_identity:
+        before_obs = actual_installed_identity.get("before_observation", {})
+        after_obs = actual_installed_identity.get("after_observation", {})
+        raw["build_binding"] = {
+            "requested_app_path": str(app),
+            "requested_bundle_sha256": requested_bundle_sha256,
+            "actual_installed_app_path": actual_installed_identity["app_path"],
+            "actual_installed_bundle_sha256": actual_installed_identity["bundle_sha256"],
+            "before_screenshot": {
+                "observed_at": before_obs.get("observed_at"),
+                "bundle_sha256": before_obs.get("bundle_sha256"),
+                "build_identity": before_obs.get("build_identity"),
+            },
+            "after_screenshot": {
+                "observed_at": after_obs.get("observed_at"),
+                "bundle_sha256": after_obs.get("bundle_sha256"),
+                "build_identity": after_obs.get("build_identity"),
+            },
+            "binding_stable": actual_installed_identity.get("binding_stable", False),
+            "binding_method": "foreground_receipt_double_check",
+        }
+
     if receipt_payload is not None:
         raw["foreground_receipt"] = foreground_receipt.name
         raw["foreground_ack"] = foreground_ack.name
@@ -463,6 +571,11 @@ def write_capture_evidence(
             "path": foreground_ack.name,
             "sha256": normalized.get("foreground_ack_sha256"),
         }
+
+    # Add build binding to manifest
+    if actual_installed_identity:
+        manifest["build_binding"] = raw["build_binding"]
+
     atomic_json(output_dir / "manifest.json", manifest)
     return {
         "status": "captured",
