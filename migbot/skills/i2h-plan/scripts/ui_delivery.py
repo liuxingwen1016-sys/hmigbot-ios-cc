@@ -419,19 +419,27 @@ def _validate_integration_host(unit: dict[str, Any], errors: list[dict[str, Any]
       path-traversal, Windows backslash paths, .swift and any non-.ets extension
     - host_builder / child_symbol: reject placeholders and invalid identifiers
     - Required hosted_destination/embedded slots must have all 3 host fields
+    - hosted_destination/embedded MUST have at least one integration slot
     """
     unit_id = unit.get("unit_id")
     role = unit.get("presentation_role")
+    required = unit.get("required") is not False
 
-    # presentation_role must be a supported enum value (None counts as unknown
-    # for any unit that declares an integration slot).
-    if role is None or role not in _KNOWN_PRESENTATION_ROLES:
-        if role is not None or unit.get("integration"):
-            # Non-None unknown role, or None with integration slots present
-            errors.append({"code": "PRESENTATION_ROLE_UNKNOWN", "unit_id": unit_id, "role": role})
+    # presentation_role must be a supported enum value for required units
+    # None is rejected outright for any required unit (not just those with integration)
+    if required and (role is None or role not in _KNOWN_PRESENTATION_ROLES):
+        errors.append({"code": "PRESENTATION_ROLE_UNKNOWN", "unit_id": unit_id, "role": role})
 
     integration = unit.get("integration")
     slots = integration if isinstance(integration, list) else ([integration] if integration else [])
+
+    # hosted_destination/embedded MUST have at least one non-empty integration slot
+    if role in ("hosted_destination", "embedded"):
+        valid_slots = [s for s in slots if isinstance(s, dict) and s]
+        if not valid_slots:
+            errors.append({"code": "INTEGRATION_REQUIRED", "unit_id": unit_id, "role": role})
+            return  # No slots to validate further
+
     for slot in slots:
         if not isinstance(slot, dict):
             continue

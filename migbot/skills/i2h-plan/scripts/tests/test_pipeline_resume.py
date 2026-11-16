@@ -78,11 +78,13 @@ class PipelineResumeTests(unittest.TestCase):
     def delivery(self, status='approved', target=None, duplicate=False):
         units = [
             {'unit_id': 'home', 'owned_ui_roles': ['content'],
+             'presentation_role': 'routed_page',
              'required_states': [{'state_id': 'home', 'arrival_mode': 'preview', 'responsibility': 'content'}],
              'output': {'file': 'entry/src/main/ets/pages/Home.ets'}},
         ]
         if duplicate:
             units.append({'unit_id': 'detail', 'owned_ui_roles': ['content'],
+                           'presentation_role': 'routed_page',
                            'required_states': [{'state_id': 'home', 'arrival_mode': 'preview', 'responsibility': 'content'}],
                            'output': {'file': 'entry/src/main/ets/pages/Detail.ets'}})
         path = self.root / 'spec/baseline/ui-delivery-approved.json'
@@ -345,6 +347,7 @@ class PipelineResumeTests(unittest.TestCase):
             {
                 'unit_id': 'home',
                 'page_id': 'page_home',
+                'presentation_role': 'routed_page',
                 'owned_ui_roles': ['content'],
                 'required_states': [{'state_id': 'default', 'arrival_mode': 'preview', 'responsibility': 'content'}],
                 'output': {'file': 'entry/src/main/ets/pages/Home.ets'},
@@ -352,6 +355,7 @@ class PipelineResumeTests(unittest.TestCase):
             {
                 'unit_id': 'settings',
                 'page_id': 'page_settings',
+                'presentation_role': 'routed_page',
                 'owned_ui_roles': ['content'],
                 'required_states': [{'state_id': 'default', 'arrival_mode': 'preview', 'responsibility': 'content'}],
                 'output': {'file': 'entry/src/main/ets/pages/Settings.ets'},

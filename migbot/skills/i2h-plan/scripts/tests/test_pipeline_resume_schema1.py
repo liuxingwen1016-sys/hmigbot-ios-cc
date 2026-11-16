@@ -81,6 +81,7 @@ class PipelineResumeSchema1ValidationTest(unittest.TestCase):
     def delivery(self, status='approved'):
         units = [
             {'unit_id': 'home', 'owned_ui_roles': ['content'],
+             'presentation_role': 'routed_page',
              'required_states': [{'state_id': 'home', 'arrival_mode': 'preview', 'responsibility': 'content'}],
              'output': {'file': 'entry/src/main/ets/pages/Home.ets'}},
         ]

@@ -529,25 +529,41 @@ def test_input_hash_sensitivity():
         assert hash2 != hash3, "Hash should change when font changes"
         assert hash1 != hash3, "All hashes should be unique"
 
+        # Modify Info.plist (UIAppFonts registration) — must affect hash
+        info_plist = root / "Info.plist"
+        import plistlib
+        info_plist.write_bytes(plistlib.dumps({"UIAppFonts": ["Font.ttf", "NewFont.ttf"]}))
+
+        output4 = root / "out4.json"
+        payload4 = run(str(root), str(output4))
+        hash4 = payload4["target_input_sha256"]
+
+        assert hash3 != hash4, (
+            "Hash must change when Info.plist UIAppFonts registration changes; "
+            "plist bytes must be part of producer input hash"
+        )
+
         print("✅ PASS: Input hash sensitivity")
         print(f"   Initial hash: {hash1[:16]}...")
         print(f"   After loc change: {hash2[:16]}...")
         print(f"   After font change: {hash3[:16]}...")
+        print(f"   After plist registration change: {hash4[:16]}...")
 
         return 0
 
 
 def test_module_provenance():
-    """Verify all modules import from sandbox, not dirty repo."""
+    """Verify all modules import from the canonical clean clone, not dirty repo."""
     import ui_evidence
     import ios_localizations
     import ios_fonts
     import ios_theme
 
+    _REPO_ROOT = Path(__file__).resolve().parents[4]
     for module in [ui_evidence, ios_localizations, ios_fonts, ios_theme]:
-        path = Path(module.__file__)
-        assert "tool-resource-sandbox" in path.parts, \
-            f"{module.__name__} not from sandbox: {path}"
+        path = Path(module.__file__).resolve()
+        assert path.is_relative_to(_REPO_ROOT), \
+            f"{module.__name__} not from canonical clone: {path}"
         assert "ios2harmony/hmigbot-ios" not in str(path), \
             f"{module.__name__} from dirty repo: {path}"
 

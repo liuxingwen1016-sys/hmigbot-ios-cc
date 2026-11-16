@@ -76,6 +76,17 @@ def test_known_roles_accepted():
     print("✅ PASS: all 3 known roles accepted")
 
 
+def test_none_role_required_unit_rejected():
+    """presentation_role=None for a required unit must produce PRESENTATION_ROLE_UNKNOWN."""
+    inv = _schema2_inventory(role=None, integration=None)
+    inv["units"][0]["presentation_role"] = None
+    inv["units"][0]["required"] = True  # explicitly required
+    codes = _codes(_call(inv))
+    assert "PRESENTATION_ROLE_UNKNOWN" in codes, \
+        f"None role for required unit must be rejected; got {codes}"
+    print("✅ PASS: None role for required unit rejected")
+
+
 def test_none_role_with_integration_slot_rejected():
     """presentation_role=None with an integration slot must produce PRESENTATION_ROLE_UNKNOWN."""
     inv = _schema2_inventory(role=None, integration=[{
@@ -242,12 +253,31 @@ def test_embedded_requires_all_three_fields():
     print("✅ PASS: embedded requires all 3 host fields")
 
 
+def test_hosted_destination_empty_integration_rejected():
+    """hosted_destination with no integration slots produces INTEGRATION_REQUIRED."""
+    inv = _schema2_inventory(role="hosted_destination", integration=None)
+    codes = _codes(_call(inv))
+    assert "INTEGRATION_REQUIRED" in codes, \
+        f"hosted_destination with no integration must be rejected; got {codes}"
+    print("✅ PASS: hosted_destination requires integration slots")
+
+
+def test_embedded_empty_integration_rejected():
+    """embedded with no integration slots produces INTEGRATION_REQUIRED."""
+    inv = _schema2_inventory(role="embedded", integration=[])
+    codes = _codes(_call(inv))
+    assert "INTEGRATION_REQUIRED" in codes, \
+        f"embedded with empty integration must be rejected; got {codes}"
+    print("✅ PASS: embedded requires integration slots")
+
+
 if __name__ == "__main__":
     import traceback
     failures = 0
     tests = [
         ("unknown_role", test_unknown_role_string_rejected),
         ("known_roles", test_known_roles_accepted),
+        ("none_role_required", test_none_role_required_unit_rejected),
         ("none_role_with_slot", test_none_role_with_integration_slot_rejected),
         ("unresolved_host", test_unresolved_host_file_rejected),
         ("non_ets_extension", test_swift_host_file_rejected),
@@ -260,6 +290,8 @@ if __name__ == "__main__":
         ("child_mismatch", test_child_symbol_mismatch_rejected),
         ("hosted_requires_fields", test_hosted_destination_requires_all_three_fields),
         ("embedded_requires_fields", test_embedded_requires_all_three_fields),
+        ("hosted_empty_integration", test_hosted_destination_empty_integration_rejected),
+        ("embedded_empty_integration", test_embedded_empty_integration_rejected),
     ]
     for name, fn in tests:
         try:
