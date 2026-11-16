@@ -6,6 +6,10 @@
 
 #import "I2HBundleHashCore.h"
 #import <CommonCrypto/CommonDigest.h>
+#include <stdlib.h>
+#include <limits.h>
+#include <errno.h>
+#include <string.h>
 
 @implementation I2HBundleHashResult
 
@@ -32,15 +36,23 @@
 + (I2HBundleHashResult *)computeHashAtURL:(NSURL *)bundleURL {
     NSFileManager *fileManager = [NSFileManager defaultManager];
 
-    // Resolve symlinks in bundle URL to match Python's Path.resolve() semantics
-    // This ensures /var and /private/var map to the same canonical path
-    NSError *resolveError = nil;
-    NSURL *resolvedBundleURL = [bundleURL URLByResolvingSymlinksInPath];
-    if (!resolvedBundleURL) {
-        resolvedBundleURL = bundleURL;
+    // Get the input path
+    NSString *inputPath = [bundleURL path];
+
+    // Use realpath() to fully canonicalize the bundle path
+    // This handles both /var -> /private/var aliases AND symlinked bundle roots
+    // realpath() normalizes Unicode to NFD, but we only use it for the bundle root
+    // Child enumeration preserves raw filesystem bytes
+    char resolvedBundleC[PATH_MAX];
+    if (!realpath([inputPath UTF8String], resolvedBundleC)) {
+        NSError *error = [NSError errorWithDomain:NSPOSIXErrorDomain
+                                            code:errno
+                                        userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"realpath failed: %s", strerror(errno)]}];
+        return [I2HBundleHashResult failureWithError:error];
     }
 
-    NSString *bundlePath = [resolvedBundleURL path];
+    NSString *bundlePath = [NSString stringWithUTF8String:resolvedBundleC];
+    NSURL *resolvedBundleURL = [NSURL fileURLWithPath:bundlePath];
 
     if (!bundlePath || ![fileManager fileExistsAtPath:bundlePath]) {
         NSError *error = [NSError errorWithDomain:@"I2HBundleHashCore"
@@ -100,18 +112,17 @@
             continue;
         }
 
-        // Get relative path and check for excluded parts
-        // Need to handle /private/tmp -> /tmp aliasing without normalizing Unicode
-        // Split into parent directory (which we standardize) and filename (which we preserve)
-        NSURL *parentURL = [fileURL URLByDeletingLastPathComponent];
-        NSString *filename = [fileURL lastPathComponent];
-        NSString *standardizedParent = [[parentURL URLByStandardizingPath] path];
-        NSString *absolutePath = [standardizedParent stringByAppendingPathComponent:filename];
+        // Get relative path preserving exact Unicode bytes
+        // Foundation URL path methods normalize Unicode, so use raw string operations
+        // Get the raw path string directly from the file URL
+        NSString *filePathRaw = [fileURL path];
 
-        // Compute relative path robustly
+        // Compute relative path by string prefix removal
+        // Both filePathRaw and bundlePath may have /private/tmp vs /tmp aliases
+        // but since we enumerate from resolvedURL, paths share the same resolved prefix
         NSString *relativePath = nil;
-        if ([absolutePath hasPrefix:bundlePath]) {
-            relativePath = [absolutePath substringFromIndex:bundlePath.length];
+        if ([filePathRaw hasPrefix:bundlePath]) {
+            relativePath = [filePathRaw substringFromIndex:bundlePath.length];
             if ([relativePath hasPrefix:@"/"]) {
                 relativePath = [relativePath substringFromIndex:1];
             }
@@ -120,7 +131,7 @@
             // but handle defensively
             NSError *error = [NSError errorWithDomain:@"I2HBundleHashCore"
                                                 code:-1
-                                            userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"File path outside bundle: %@", absolutePath]}];
+                                            userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"File path outside bundle: %@", filePathRaw]}];
             return [I2HBundleHashResult failureWithError:error];
         }
 
@@ -136,7 +147,8 @@
         }
 
         if (!shouldExclude) {
-            [files addObject:@{@"relative": relativePath, @"absolute": absolutePath}];
+            // Use filePathRaw as the absolute path for reading file content
+            [files addObject:@{@"relative": relativePath, @"absolute": filePathRaw}];
         }
     }
 
