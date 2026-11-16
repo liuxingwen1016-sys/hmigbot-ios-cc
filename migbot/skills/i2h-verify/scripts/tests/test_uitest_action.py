@@ -49,3 +49,32 @@ class ActionTest(unittest.TestCase):
         self.assertEqual(selected_tab_label(tree, {"Library", "Home"}), "Library")
         with self.assertRaisesRegex(ValueError, r"found \[\]"):
             selected_tab_label(outside, {"Home"})
+
+
+class CLIRefusalTest(unittest.TestCase):
+    """Test that the module refuses CLI invocation with clear guidance."""
+
+    def test_no_args_refuses_with_nonzero_exit(self):
+        import subprocess
+        result = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve().parents[1] / "uitest_action.py")],
+            capture_output=True, text=True
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("library module", result.stderr)
+        self.assertIn("require_focused_app", result.stderr)
+        self.assertIn("label_action_center", result.stderr)
+        self.assertIn("selected_tab_label", result.stderr)
+        self.assertEqual(result.stdout, "")
+
+    def test_cli_args_refuses_with_nonzero_exit(self):
+        import subprocess
+        result = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve().parents[1] / "uitest_action.py"),
+             "--hdc", "/fake/hdc", "--action", "click", "--control-id", "test_button"],
+            capture_output=True, text=True
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("library module", result.stderr)
+        self.assertIn("cannot be invoked as a CLI", result.stderr)
+        self.assertEqual(result.stdout, "")

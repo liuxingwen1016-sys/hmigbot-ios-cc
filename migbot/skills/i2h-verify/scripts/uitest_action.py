@@ -86,3 +86,15 @@ def selected_tab_label(tree: dict, labels: set[str]) -> str:
     if len(selected) != 1:
         raise ValueError(f"expected one selected TabBar label, found {selected!r}")
     return selected[0]
+
+
+if __name__ == "__main__":
+    import sys
+    sys.stderr.write(
+        "uitest_action.py is a library module and cannot be invoked as a CLI.\n"
+        "Import and use the following functions in your code:\n"
+        "  - require_focused_app(tree, bundle)\n"
+        "  - label_action_center(tree, label)\n"
+        "  - selected_tab_label(tree, labels)\n"
+    )
+    sys.exit(1)

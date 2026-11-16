@@ -15,6 +15,9 @@ runner 的每份 `results.json` 必须提供
 取树后、截图或按控件触控前，用 `require_focused_app` 确认当前包拥有前台页面。
 遇到其他包、无有效前台或焦点冲突，结束本轮设备操作，保留已完成场景和未跑分母。
 
+> **注意**: `uitest_action.py` 是仅供导入的库模块，不支持命令行调用。
+> 应在测试脚本中 `import` 后使用其提供的函数。
+
 ```bash
 python3 .claude/skills/i2h-plan/scripts/acceptance_plan.py behavior \
   --signed-hap path/to/signed.hap --device DEVICE_ID --run path/to/results.json
