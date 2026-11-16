@@ -101,9 +101,12 @@
         }
 
         // Get relative path and check for excluded parts
-        // Use URL-based relative path computation to handle symlink resolution properly
-        // This matches Python's Path.relative_to(root) which resolves both paths first
-        NSString *absolutePath = [[fileURL URLByResolvingSymlinksInPath] path];
+        // Need to handle /private/tmp -> /tmp aliasing without normalizing Unicode
+        // Split into parent directory (which we standardize) and filename (which we preserve)
+        NSURL *parentURL = [fileURL URLByDeletingLastPathComponent];
+        NSString *filename = [fileURL lastPathComponent];
+        NSString *standardizedParent = [[parentURL URLByStandardizingPath] path];
+        NSString *absolutePath = [standardizedParent stringByAppendingPathComponent:filename];
 
         // Compute relative path robustly
         NSString *relativePath = nil;
@@ -112,11 +115,6 @@
             if ([relativePath hasPrefix:@"/"]) {
                 relativePath = [relativePath substringFromIndex:1];
             }
-
-            // Normalize to NFC (precomposed) form to match Python's Path behavior
-            // macOS APFS/HFS+ returns NFD (decomposed) but Python preserves creation form
-            // Python's sorted() on Path objects uses the NFC form from file creation
-            relativePath = [relativePath precomposedStringWithCanonicalMapping];
         } else {
             // Path doesn't start with bundle path - should not happen with proper enumeration
             // but handle defensively

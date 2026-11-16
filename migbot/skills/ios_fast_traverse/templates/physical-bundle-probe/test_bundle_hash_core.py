@@ -144,9 +144,12 @@ def create_test_fixtures(fixtures_dir: Path) -> dict:
     (unicode_bundle / "file_.txt").write_text("private use BMP U+E000")
     (unicode_bundle / "file_\U0001f600.txt").write_text("emoji non-BMP U+1F600")
     (unicode_bundle / "file_Á.txt").write_text("A with combining acute")
+    # Add distinct-prefix NFD variants to test raw filesystem spelling preservation
+    (unicode_bundle / "nfc_é.txt").write_text("NFC precomposed")
+    (unicode_bundle / "nfd_é.txt").write_text("NFD decomposed")
     fixtures["unicode_ordering"] = {
         "path": str(unicode_bundle),
-        "description": "Unicode BMP (U+E000) and non-BMP (U+1F600) ordering",
+        "description": "Unicode BMP (U+E000) and non-BMP (U+1F600) ordering, NFD vs NFC preservation",
     }
 
     # Fixture 7: File and directory symlinks (should be excluded)
