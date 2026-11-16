@@ -136,21 +136,35 @@ def create_test_fixtures(fixtures_dir: Path) -> dict:
         "description": "ASCII case ordering with distinct names",
     }
 
-    # Fixture 6: Unicode BMP (U+E000) and non-BMP (U+1F600)
+    # Fixture 6: Unicode BMP (U+E000) and non-BMP (U+1F600), NFD vs NFC
     unicode_bundle = fixtures_dir / "unicode_ordering"
     unicode_bundle.mkdir(exist_ok=True)
     (unicode_bundle / "file_A.txt").write_text("ASCII A")
-    (unicode_bundle / "file_é.txt").write_text("e-acute")
-    (unicode_bundle / "file_.txt").write_text("private use BMP U+E000")
+    (unicode_bundle / "file_Á.txt").write_text("A with acute NFC")
+    (unicode_bundle / "file_é.txt").write_text("e-acute NFC")
+    (unicode_bundle / "file_.txt").write_text("private use BMP U+E000")
     (unicode_bundle / "file_\U0001f600.txt").write_text("emoji non-BMP U+1F600")
-    (unicode_bundle / "file_Á.txt").write_text("A with combining acute")
-    # Add distinct-prefix NFD variants to test raw filesystem spelling preservation
-    (unicode_bundle / "nfc_é.txt").write_text("NFC precomposed")
-    (unicode_bundle / "nfd_é.txt").write_text("NFD decomposed")
+
+    # Add actual NFD vs NFC variants using escaped codepoints
+    # NFC: precomposed é (U+00E9)
+    (unicode_bundle / "nfc_\u00e9.txt").write_text("NFC precomposed")
+    # NFD: decomposed e + combining acute (U+0065 U+0301) - use escape sequence
+    (unicode_bundle / "nfd_e\u0301.txt").write_text("NFD decomposed")
+
+    # Add nested NFD directory with both NFC and NFD children (distinct prefixes)
+    # Directory name uses NFD: e + combining acute (U+0065 U+0301)
+    nfd_dir = unicode_bundle / "dir_e\u0301"
+    nfd_dir.mkdir(exist_ok=True)
+    # Child with NFC filename
+    (nfd_dir / "nfc_\u00e9.txt").write_text("NFC child in NFD dir")
+    # Child with NFD filename using escaped codepoint (distinct prefix to avoid collision)
+    (nfd_dir / "nfd_e\u0301.txt").write_text("NFD child in NFD dir")
+
     fixtures["unicode_ordering"] = {
         "path": str(unicode_bundle),
         "description": "Unicode BMP (U+E000) and non-BMP (U+1F600) ordering, NFD vs NFC preservation",
     }
+
 
     # Fixture 7: File and directory symlinks (should be excluded)
     symlink_bundle = fixtures_dir / "symlinks"
