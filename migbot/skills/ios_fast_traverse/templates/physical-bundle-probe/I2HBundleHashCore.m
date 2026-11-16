@@ -31,7 +31,16 @@
 
 + (I2HBundleHashResult *)computeHashAtURL:(NSURL *)bundleURL {
     NSFileManager *fileManager = [NSFileManager defaultManager];
-    NSString *bundlePath = [bundleURL path];
+
+    // Resolve symlinks in bundle URL to match Python's Path.resolve() semantics
+    // This ensures /var and /private/var map to the same canonical path
+    NSError *resolveError = nil;
+    NSURL *resolvedBundleURL = [bundleURL URLByResolvingSymlinksInPath];
+    if (!resolvedBundleURL) {
+        resolvedBundleURL = bundleURL;
+    }
+
+    NSString *bundlePath = [resolvedBundleURL path];
 
     if (!bundlePath || ![fileManager fileExistsAtPath:bundlePath]) {
         NSError *error = [NSError errorWithDomain:@"I2HBundleHashCore"
@@ -44,10 +53,11 @@
     NSSet<NSString *> *excludedParts = [NSSet setWithArray:@[@".git", @".build", @"DerivedData", @"build", @"dist", @"node_modules"]];
 
     // Collect all files recursively, excluding symlinks and excluded parts
-    NSMutableArray<NSString *> *relativePaths = [NSMutableArray array];
+    // Store both relative path (for hashing) and absolute path (for reading)
+    NSMutableArray<NSDictionary *> *files = [NSMutableArray array];
     __block NSError *enumerationError = nil;
 
-    NSDirectoryEnumerator *enumerator = [fileManager enumeratorAtURL:bundleURL
+    NSDirectoryEnumerator *enumerator = [fileManager enumeratorAtURL:resolvedBundleURL
                                           includingPropertiesForKeys:@[NSURLIsSymbolicLinkKey, NSURLIsDirectoryKey, NSURLIsRegularFileKey]
                                                              options:0
                                                         errorHandler:^BOOL(NSURL *url, NSError *error) {
@@ -91,10 +101,29 @@
         }
 
         // Get relative path and check for excluded parts
-        NSString *absolutePath = [fileURL path];
-        NSString *relativePath = [absolutePath substringFromIndex:bundlePath.length];
-        if ([relativePath hasPrefix:@"/"]) {
-            relativePath = [relativePath substringFromIndex:1];
+        // Use URL-based relative path computation to handle symlink resolution properly
+        // This matches Python's Path.relative_to(root) which resolves both paths first
+        NSString *absolutePath = [[fileURL URLByResolvingSymlinksInPath] path];
+
+        // Compute relative path robustly
+        NSString *relativePath = nil;
+        if ([absolutePath hasPrefix:bundlePath]) {
+            relativePath = [absolutePath substringFromIndex:bundlePath.length];
+            if ([relativePath hasPrefix:@"/"]) {
+                relativePath = [relativePath substringFromIndex:1];
+            }
+
+            // Normalize to NFC (precomposed) form to match Python's Path behavior
+            // macOS APFS/HFS+ returns NFD (decomposed) but Python preserves creation form
+            // Python's sorted() on Path objects uses the NFC form from file creation
+            relativePath = [relativePath precomposedStringWithCanonicalMapping];
+        } else {
+            // Path doesn't start with bundle path - should not happen with proper enumeration
+            // but handle defensively
+            NSError *error = [NSError errorWithDomain:@"I2HBundleHashCore"
+                                                code:-1
+                                            userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat:@"File path outside bundle: %@", absolutePath]}];
+            return [I2HBundleHashResult failureWithError:error];
         }
 
         // Check if any path component is in excluded parts
@@ -109,21 +138,19 @@
         }
 
         if (!shouldExclude) {
-            [relativePaths addObject:relativePath];
+            [files addObject:@{@"relative": relativePath, @"absolute": absolutePath}];
         }
     }
 
     // Check for enumeration error after loop completion
-    // Error handler may fire on final step, loop ends with no next iteration
     if (enumerationError != nil) {
         return [I2HBundleHashResult failureWithError:enumerationError];
     }
 
-    // Sort paths using UTF-8 byte-wise comparison (matching Python sorted())
-    // Python sorted() compares Unicode strings by codepoint, which equals UTF-8 byte ordering
-    // for valid Unicode. NSString compare: with NSLiteralSearch does lexicographic comparison
-    // by composed character, but we need raw UTF-8 byte comparison to match Python exactly.
-    [relativePaths sortUsingComparator:^NSComparisonResult(NSString *path1, NSString *path2) {
+    // Sort by relative paths using UTF-8 byte-wise comparison (matching Python sorted())
+    [files sortUsingComparator:^NSComparisonResult(NSDictionary *file1, NSDictionary *file2) {
+        NSString *path1 = file1[@"relative"];
+        NSString *path2 = file2[@"relative"];
         // Compare UTF-8 encoded bytes directly
         NSData *data1 = [path1 dataUsingEncoding:NSUTF8StringEncoding];
         NSData *data2 = [path2 dataUsingEncoding:NSUTF8StringEncoding];
@@ -150,20 +177,19 @@
     CC_SHA256_CTX ctx;
     CC_SHA256_Init(&ctx);
 
-    for (NSString *relativePath in relativePaths) {
+    for (NSDictionary *file in files) {
+        NSString *relativePath = file[@"relative"];
+        NSString *absolutePath = file[@"absolute"];
+
         // Convert to POSIX path - Python: path.relative_to(root).as_posix()
-        // On macOS/iOS, file paths are already POSIX format
         NSString *posixPath = relativePath;
 
         // Update hash with path (UTF-8 encoded) + NUL
-        // Python: digest.update(relative.encode("utf-8"))
         const char *pathBytes = [posixPath UTF8String];
         CC_SHA256_Update(&ctx, pathBytes, (CC_LONG)strlen(pathBytes));
         CC_SHA256_Update(&ctx, "\0", 1);
 
-        // Read file bytes - fail closed on any error
-        // Python: digest.update(path.read_bytes())
-        NSString *absolutePath = [bundlePath stringByAppendingPathComponent:relativePath];
+        // Read file bytes using stored absolute path
         NSError *readError = nil;
         NSData *fileData = [NSData dataWithContentsOfFile:absolutePath options:0 error:&readError];
 

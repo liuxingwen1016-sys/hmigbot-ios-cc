@@ -212,6 +212,27 @@ def create_test_fixtures(fixtures_dir: Path) -> dict:
         # mkfifo not available or failed, skip this fixture
         pass
 
+    # Fixture 11: Bundle root is a symlink to real directory
+    # Tests that both /var and /private/var (or other aliases) produce same hash
+    real_alias_bundle = fixtures_dir / "real_alias_bundle"
+    real_alias_bundle.mkdir(exist_ok=True)
+    (real_alias_bundle / "data.txt").write_text("content")
+    (real_alias_bundle / "nested").mkdir(exist_ok=True)
+    (real_alias_bundle / "nested" / "file.txt").write_text("nested")
+
+    # Create symlink to this bundle
+    alias_symlink = fixtures_dir / "alias_symlink"
+    try:
+        alias_symlink.symlink_to(real_alias_bundle)
+        fixtures["root_alias"] = {
+            "path": str(alias_symlink),
+            "description": "Bundle root via symlink (tests /var vs /private/var alias handling)",
+            "canonical_path": str(real_alias_bundle),
+        }
+    except (OSError, AttributeError):
+        # symlink creation failed, skip
+        pass
+
     return fixtures
 
 def run_validation(expected_module_path: Path, expected_module: object, cli_binary: Path, fixtures: dict) -> dict:
@@ -289,6 +310,20 @@ def run_validation(expected_module_path: Path, expected_module: object, cli_bina
     return results
 
 def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description='Portable regression driver for I2HBundleHashCore validation.',
+        epilog='Tests 10 fixture cases against unmodified ios_evidence_protocol.py'
+    )
+    parser.add_argument(
+        '--output-dir',
+        type=str,
+        help='Output directory for test artifacts and results (default: temporary directory)'
+    )
+
+    args = parser.parse_args()
+
     skip_non_darwin()
 
     script_dir = Path(__file__).parent.resolve()
@@ -302,10 +337,14 @@ def main():
         print(f"ERROR: {exc}")
         return 1
 
-    # Use temp directory or user-supplied output directory
-    output_dir_env = os.environ.get("TEST_OUTPUT_DIR")
-    if output_dir_env:
-        output_dir = Path(output_dir_env).resolve()
+    # Use specified output directory, env var, or temp directory
+    if args.output_dir:
+        output_dir = Path(args.output_dir).resolve()
+        output_dir.mkdir(parents=True, exist_ok=True)
+        use_temp = False
+        print(f"Using output directory: {output_dir}")
+    elif os.environ.get("TEST_OUTPUT_DIR"):
+        output_dir = Path(os.environ["TEST_OUTPUT_DIR"]).resolve()
         output_dir.mkdir(parents=True, exist_ok=True)
         use_temp = False
         print(f"Using output directory: {output_dir}")
