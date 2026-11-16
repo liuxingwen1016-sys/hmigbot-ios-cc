@@ -221,29 +221,115 @@ class PlanCoverageLinter:
 
         self.results.append(result)
 
+    def _resolve_ui_coverage(self, manifest_pages: Dict[str, Dict], plan_pages: Set[str]) -> tuple:
+        """Resolve UI coverage with canonical ID matching and legacy alias support.
+
+        Returns: (covered_set, missing_set)
+
+        Canonical pages must match exactly: page_0001_ViewA only matches page_0001_ViewA.
+        Bare page_0001 legacy alias matches uniquely if only one canonical page_0001_* exists.
+        For pages without canonical_id (true bare legacy), direct page_NNNN matching works.
+        """
+        covered = set()
+        missing = set()
+
+        # Build canonical ID index from manifest
+        canonical_index = {}  # page_NNNN -> list of canonical IDs
+        for pid, data in manifest_pages.items():
+            canonical = data.get('canonical_id')
+            if canonical:
+                # Extract numeric prefix from canonical (page_0001_Class -> page_0001)
+                match = re.match(r'(page_\d{4})(?:_|$)', canonical)
+                if match:
+                    numeric = match.group(1)
+                    if numeric not in canonical_index:
+                        canonical_index[numeric] = []
+                    canonical_index[numeric].append(canonical)
+
+        # Match plan pages against manifest
+        for pid, data in manifest_pages.items():
+            if not data.get('required', True):
+                continue  # Skip excluded pages
+
+            canonical = data.get('canonical_id')
+            numeric = pid  # page_NNNN normalized form
+
+            # Try exact canonical match first (when manifest has canonical_id)
+            if canonical and canonical in plan_pages:
+                covered.add(pid)
+                continue
+
+            # Try bare numeric alias (legacy)
+            if numeric in plan_pages:
+                variants = canonical_index.get(numeric, [])
+
+                if len(variants) == 0:
+                    # No canonical_id for this page (true bare legacy format)
+                    # Direct page_NNNN matching is allowed
+                    covered.add(pid)
+                elif len(variants) == 1:
+                    # Unambiguous: only one canonical with this prefix
+                    # Bare alias can match
+                    covered.add(pid)
+                else:
+                    # Ambiguous: multiple canonical variants (e.g., page_0001_Right, page_0001_Wrong)
+                    # Bare page_0001 does not match
+                    missing.add(pid)
+                continue
+
+            # No match found
+            missing.add(pid)
+
+        return covered, missing
+
     def _check_ui_page_coverage(self):
-        """3. UI 页面覆盖率 = 100%"""
+        """3. UI 页面覆盖率 = 100% (required pages only)
+
+        Returns CoverageResult with:
+        - actual: count of required pages covered in plan
+        - total: count of required pages in source
+        - Explicit source_count, required_count, excluded_count in warnings
+
+        Uses canonical ID matching: page_0001_ViewA must match exactly.
+        Bare page_0001 aliases work only for unambiguous single-canonical cases.
+        """
         manifest_pages = self._parse_ui_manifest()
         plan_pages = self._parse_ui_plan()
 
-        # 只统计非 skipped 的页面
-        active_pages = {pid for pid, data in manifest_pages.items()
-                       if data.get('status') != 'skipped'}
-        covered = active_pages & plan_pages
+        # Use resolver for canonical vs legacy alias matching
+        covered, missing = self._resolve_ui_coverage(manifest_pages, plan_pages)
 
-        missing = active_pages - covered
+        # Count totals
+        source_count = len(manifest_pages)
+        excluded_pages = {pid for pid, data in manifest_pages.items()
+                         if not data.get('required', True)}
+        excluded_count = len(excluded_pages)
+        required_count = source_count - excluded_count
 
         result = CoverageResult(
             name="UI 页面覆盖率",
             passed=(len(missing) == 0),
             actual=len(covered),
-            total=len(active_pages),
+            total=required_count,
             threshold=100.0,
             blocking=True
         )
 
         if missing:
-            result.errors = [f"缺失页面: {', '.join(sorted(missing))}"]
+            result.errors = [f"缺失 required 页面: {', '.join(sorted(missing))}"]
+
+        # Always add diagnostic showing explicit counts (even when all required)
+        if excluded_count > 0:
+            result.warnings.append(
+                f"源码总计 {source_count} 页面: {required_count} required, "
+                f"{excluded_count} excluded (required=false)"
+            )
+        else:
+            # Explicit counts even when no exclusions
+            result.warnings.append(
+                f"源码总计 {source_count} 页面: {required_count} required, "
+                f"0 excluded (all pages required)"
+            )
 
         self.results.append(result)
 
@@ -799,52 +885,265 @@ class PlanCoverageLinter:
         return {data.get('feature_id') for data in slices.values()
                 if data.get('feature_id')}
 
+    def _parse_formal_ui_docs(self) -> Dict[str, Dict]:
+        """Parse formal UI documentation from spec/baseline/ui/page_*.md files.
+
+        Returns dict mapping page_NNNN to metadata.
+        This is the second-priority source after approved inventory, before legacy manifest.
+        """
+        ui_docs_dir = self.spec_dir / "ui"
+        if not ui_docs_dir.exists():
+            return {}
+
+        pages = {}
+        for doc_file in sorted(ui_docs_dir.glob("page_*.md")):
+            # Extract page ID from filename: page_0001_ClassName.md
+            match = re.match(r'page_(\d{4})(?:_[A-Za-z_]\w*)?\.md$', doc_file.name)
+            if not match:
+                continue
+
+            # Use normalized page_NNNN as key
+            pid = f'page_{match.group(1)}'
+
+            # Extract canonical ID from filename if it has class suffix
+            canonical_match = re.match(r'(page_\d{4}_[A-Za-z_]\w*)\.md$', doc_file.name)
+            canonical_id = canonical_match.group(1) if canonical_match else None
+
+            # All formal docs are required by default (no skip status in formal docs)
+            pages[pid] = {
+                'required': True,
+                'status': 'active',
+                'source': 'formal_ui_docs',
+                'canonical_id': canonical_id
+            }
+
+        return pages
+
     def _parse_ui_manifest(self) -> Dict[str, Dict]:
-        """解析 ui-manifest.md"""
+        """解析 UI 清单，优先使用 ui-delivery-approved.json，回退到 ui-manifest.md
+
+        Returns:
+            Dict mapping page_NNNN to metadata including 'required' and 'status'.
+            For approved inventory: required=True/False from source.
+            For legacy manifest: all pages treated as required=True unless skipped.
+
+        Raises blocking finding if approved inventory exists but is invalid.
+        Falls back to legacy manifest only when approved inventory file is absent.
+        """
+        # Try approved inventory first (authoritative source)
+        approved_path = self.spec_dir / "ui-delivery-approved.json"
+        if approved_path.exists():
+            try:
+                with open(approved_path) as f:
+                    data = json.load(f)
+
+                # Validate structure
+                if not isinstance(data, dict):
+                    self.findings.append({
+                        'code': 'UI.MALFORMED_APPROVED_INVENTORY',
+                        'category': 'spec',
+                        'file': str(approved_path.relative_to(self.project_root)),
+                        'message': 'Approved inventory root is not a dict',
+                        'severity': 'blocking'
+                    })
+                    return {}
+
+                units = data.get('units')
+                if units is None:
+                    self.findings.append({
+                        'code': 'UI.MISSING_UNITS',
+                        'category': 'spec',
+                        'file': str(approved_path.relative_to(self.project_root)),
+                        'message': 'Approved inventory missing "units" field',
+                        'severity': 'blocking'
+                    })
+                    return {}
+
+                if not isinstance(units, list):
+                    self.findings.append({
+                        'code': 'UI.INVALID_UNITS_TYPE',
+                        'category': 'spec',
+                        'file': str(approved_path.relative_to(self.project_root)),
+                        'message': f'Approved inventory "units" is not a list: {type(units).__name__}',
+                        'severity': 'blocking'
+                    })
+                    return {}
+
+                if len(units) == 0:
+                    self.findings.append({
+                        'code': 'UI.EMPTY_UNITS',
+                        'category': 'spec',
+                        'file': str(approved_path.relative_to(self.project_root)),
+                        'message': 'Approved inventory has empty units list',
+                        'severity': 'blocking'
+                    })
+                    return {}
+
+                pages = {}
+                seen_normalized = {}  # Track normalized IDs for duplicate detection
+
+                for idx, unit in enumerate(units):
+                    if not isinstance(unit, dict):
+                        self.findings.append({
+                            'code': 'UI.INVALID_UNIT_TYPE',
+                            'category': 'spec',
+                            'file': str(approved_path.relative_to(self.project_root)),
+                            'message': f'Unit at index {idx} is not a dict: {type(unit).__name__}',
+                            'severity': 'blocking'
+                        })
+                        continue
+
+                    page_id = unit.get('page_id', '')
+                    if not page_id:
+                        self.findings.append({
+                            'code': 'UI.MISSING_PAGE_ID',
+                            'category': 'spec',
+                            'file': str(approved_path.relative_to(self.project_root)),
+                            'message': f'Unit at index {idx} missing page_id',
+                            'severity': 'blocking'
+                        })
+                        continue
+
+                    # Extract page_NNNN from page_NNNN_ClassName
+                    match = re.match(r'(page_\d{4})(?:_|$)', page_id)
+                    if not match:
+                        self.findings.append({
+                            'code': 'UI.UNRESOLVABLE_PAGE_ID',
+                            'category': 'spec',
+                            'file': str(approved_path.relative_to(self.project_root)),
+                            'message': f'Unit at index {idx} has unresolvable page_id: {page_id}',
+                            'severity': 'blocking'
+                        })
+                        continue
+
+                    pid = match.group(1)
+
+                    # Detect duplicate normalized IDs
+                    if pid in seen_normalized:
+                        self.findings.append({
+                            'code': 'UI.DUPLICATE_NORMALIZED_PAGE_ID',
+                            'category': 'spec',
+                            'file': str(approved_path.relative_to(self.project_root)),
+                            'message': f'Duplicate normalized page_id {pid}: {seen_normalized[pid]} and {page_id}',
+                            'severity': 'blocking'
+                        })
+                        continue
+
+                    seen_normalized[pid] = page_id
+
+                    # Use authoritative required flag from inventory
+                    required = unit.get('required', True)
+                    pages[pid] = {
+                        'required': required,
+                        'status': 'skipped' if not required else 'active',
+                        'source': 'approved_inventory',
+                        'canonical_id': page_id
+                    }
+
+                # If we found blocking issues, return empty to trigger blocking result
+                if any(f.get('severity') == 'blocking' for f in self.findings):
+                    return {}
+
+                if pages:
+                    return pages
+
+            except json.JSONDecodeError as e:
+                self.findings.append({
+                    'code': 'UI.JSON_DECODE_ERROR',
+                    'category': 'spec',
+                    'file': str(approved_path.relative_to(self.project_root)),
+                    'message': f'Failed to parse JSON: {e}',
+                    'severity': 'blocking'
+                })
+                return {}
+            except OSError as e:
+                self.findings.append({
+                    'code': 'UI.FILE_READ_ERROR',
+                    'category': 'spec',
+                    'file': str(approved_path.relative_to(self.project_root)),
+                    'message': f'Failed to read file: {e}',
+                    'severity': 'blocking'
+                })
+                return {}
+
+        # Try formal UI docs (second priority, before legacy manifest)
+        formal_docs = self._parse_formal_ui_docs()
+        if formal_docs:
+            return formal_docs
+
+        # Fallback: legacy ui-manifest.md parser (only when approved inventory and formal docs absent)
         path = self.spec_dir / "ui-manifest.md"
         if not path.exists():
             return {}
 
         pages = {}
         for line in path.read_text().splitlines():
-            # Accept canonical page_0001_ClassName IDs as well as the older
-            # page_0001 shorthand.  The class suffix is part of the identity
-            # in newer i2h-spec outputs and must not produce a parser warning.
-            # Manifest page rows always use the canonical class-suffixed form.
-            # Bare source-index IDs are mapping metadata and must not become
-            # additional pages in the coverage denominator.
-            match = re.search(r'\bpage_(\d{4})_[A-Za-z_]\w*\b', line)
-            if match:
-                # Coverage is keyed by the stable numeric page identity. The
-                # class suffix is descriptive and must not create a second
-                # page, otherwise a 12-page iOS manifest becomes 31 pages.
-                pid = f'page_{match.group(1)}'
-                pages[pid] = {}
+            # First try canonical page_0001_ClassName format
+            canonical_match = re.search(r'\bpage_(\d{4})_[A-Za-z_]\w*\b', line)
+            if canonical_match:
+                pid = f'page_{canonical_match.group(1)}'
+                canonical_id = canonical_match.group(0)  # Full match including class suffix
+                skipped = 'skipped' in line.lower()
+                pages[pid] = {
+                    'required': not skipped,
+                    'status': 'skipped' if skipped else 'active',
+                    'source': 'legacy_manifest',
+                    'canonical_id': canonical_id
+                }
+                continue
 
-                # 检查 status
-                if 'skipped' in line.lower():
-                    pages[pid]['status'] = 'skipped'
+            # Also accept bare page_NNNN format (legitimate legacy tables without class suffix)
+            # Match in table cells or list items, avoiding incidental mentions in prose
+            if '|' in line or line.strip().startswith(('-', '*', '+')):
+                bare_match = re.search(r'\bpage_(\d{4})\b', line)
+                if bare_match:
+                    pid = bare_match.group(0)  # page_NNNN
+                    if pid not in pages:  # Don't overwrite canonical entries
+                        skipped = 'skipped' in line.lower()
+                        pages[pid] = {
+                            'required': not skipped,
+                            'status': 'skipped' if skipped else 'active',
+                            'source': 'legacy_manifest',
+                            'canonical_id': None  # Bare format has no canonical class suffix
+                        }
 
         return pages
 
     def _parse_ui_plan(self) -> Set[str]:
-        """解析 ui-plan.md，返回覆盖的页面 ID"""
+        """解析 ui-plan.md，返回覆盖的页面 ID
+
+        Returns canonical IDs when available, normalized page_NNNN as legacy fallback.
+        Preserves exact canonical identity to prevent page_0001_Wrong matching page_0001_Right.
+        """
         path = self.plans_dir / "ui-plan.md"
         if not path.exists():
             return set()
 
         pages = set()
         for line in path.read_text().splitlines():
-            full = re.search(r'\b(page_\d{4}(?:_[A-Za-z_]\w*)?)\b', line)
-            if full:
-                pages.add(full.group(1))
-                pages.add(full.group(1).split('_', 2)[0])
+            # Skip markdown headings to avoid false matches
+            if line.strip().startswith('#'):
                 continue
-            match = re.search(r'\b(\d{4})\b', line)
-            if match:
-                # 假设序号对应 page_NNNN
-                page_id = f"page_{match.group(1)}"
-                pages.add(page_id)
+
+            # Match full canonical form: page_0001_ClassName
+            full = re.search(r'\bpage_(\d{4})_([A-Za-z_]\w*)\b', line)
+            if full:
+                # Keep canonical form for exact matching
+                canonical = f'page_{full.group(1)}_{full.group(2)}'
+                pages.add(canonical)
+                continue
+
+            # Match bare page_NNNN (no class suffix) - legacy alias
+            bare = re.search(r'\bpage_(\d{4})\b', line)
+            if bare:
+                pages.add(f'page_{bare.group(1)}')
+                continue
+
+            # Match bare numeric IDs (legacy format) only in list items
+            if line.strip().startswith(('-', '*', '+')):
+                match = re.search(r'\b(\d{4})\b', line)
+                if match:
+                    pages.add(f"page_{match.group(1)}")
 
         return pages
 
