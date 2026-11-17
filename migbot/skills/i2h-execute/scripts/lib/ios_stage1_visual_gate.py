@@ -1,6 +1,7 @@
 """Validate visual evidence for every frozen iOS verification pair."""
 from __future__ import annotations
 
+from collections import defaultdict
 import json
 
 from .ios_stage1_scope import MAX_REPAIRS, acceptance_lane, build_scope_from_inventory
@@ -11,6 +12,7 @@ from .ios_ui_dispatch import (
 )
 from .ios_ui_relationships import compare_relationships
 from .stage1_contract import source_digest
+from .visual_review_reuse import image_dimensions, platform_review_issue
 
 
 def _checked_ref(root, ref):
@@ -72,12 +74,70 @@ def _arrival(root, expected, actual, scope_hash, source_hash):
         raise ValueError('build and device installation do not bind the same HAP')
     if receipt.get('device_id') != install['device_id']:
         raise ValueError('arrival device does not match installation')
+    if 'frames' in receipt:
+        if (receipt.get('observed_page_id'), receipt.get('observed_state_id')) != (
+            expected['page_id'], expected['state_id']
+        ):
+            raise ValueError('arrival receipt does not confirm approved page/state')
+        if not isinstance(receipt.get('capture_run_id'), str) or not receipt['capture_run_id'].strip():
+            raise ValueError('arrival receipt is missing capture run identity')
+        _checked_ref(root, receipt['landing_evidence'])
+        if 'comparisons' in actual:
+            frames = _index(receipt['frames'], 'comparison_id')
+            comparisons = _index(actual['comparisons'], 'comparison_id')
+            if frames.keys() != comparisons.keys() or any(
+                captured[field] != comparisons[key][field]
+                for key, captured in frames.items()
+                for field in ('harmony_png', 'harmony_xml')
+            ):
+                raise ValueError('comparison frames differ from the native arrival receipt')
     return digest(build['hap_sha256']), install['device_id']
+
+
+def _check_appearance_receipt(root, appearance, common, images=None):
+    ref = appearance.get('review_receipt')
+    if ref is None:
+        return
+    receipt = _checked_json(root, ref)
+    report_path = ref['path']
+    suffix = '.receipt.json'
+    if not report_path.endswith(suffix) or receipt.get('verified') is not True or receipt.get('exit_code') != 0:
+        raise ValueError('appearance review receipt did not verify a successful review')
+    group = _checked_json(root, {
+        'path': report_path.removesuffix(suffix) + '.json', 'sha256': receipt['report_sha256'],
+    })
+    name = common['comparison_id']
+    item = _index(group.get('comparisons'), 'comparison_id').get(name)
+    if item is None or any(item.get(key) != appearance.get(key) for key in ('verdict', 'severity', 'notes')):
+        raise ValueError('appearance result differs from the verified review group')
+    inputs = receipt['review_inputs'][name]
+    if 'platform_dimensions' in inputs:
+        if images is None or inputs['platform_dimensions'] != {
+            side: image_dimensions(raw) for side, raw in images.items()
+        }:
+            raise ValueError('appearance receipt platform dimensions differ from the bound images')
+        issue = platform_review_issue(item, inputs)
+        if issue or appearance.get('platform_dimensions') != item.get('platform_dimensions'):
+            raise ValueError(issue or 'appearance result differs from verified platform observations')
+    for side in ('ios', 'harmony'):
+        if digest(inputs.get(f'{side}_sha256')) != digest(common[f'{side}_png_sha256']):
+            raise ValueError(f'appearance review receipt does not bind the current {side} image')
+    if inputs.get('ios_region_px') != common.get('ios_region_px'):
+        raise ValueError('appearance review receipt does not bind the approved iOS region')
+    context = appearance.get('review_context', [])
+    if not isinstance(context, list):
+        raise ValueError('appearance review context must be an array')
+    hashes = []
+    for reference in context:
+        _checked_ref(root, reference)
+        hashes.append(digest(reference['sha256']))
+    if hashes != inputs.get('source_context_sha256', []):
+        raise ValueError('appearance review receipt does not bind the archived context')
 
 
 def _comparison(root, scope_pair, scope_frame, observed):
     source = scope_pair['baseline']
-    checked_artifact(_project_file(root, source['png_path']), source['png_sha256'])
+    source_image = checked_artifact(_project_file(root, source['png_path']), source['png_sha256'])
     checked_artifact(_project_file(root, source['ui_json_path']), source['ui_json_sha256'])
     if digest(observed['ios_png_sha256']) != digest(source['png_sha256']):
         raise ValueError('comparison does not bind current iOS image')
@@ -93,6 +153,8 @@ def _comparison(root, scope_pair, scope_frame, observed):
     verdict = observed['verdict']
     appearance = _checked_json(root, observed['appearance_report'])
     relationship = _checked_json(root, observed['relationship_report'])
+    if 'diagnostic_surface' in relationship:
+        raise ValueError('foreground surface diagnostics cannot satisfy visual acceptance')
     common = {
         'comparison_id': scope_frame['comparison_id'], 'ios_png_sha256': source['png_sha256'],
         'harmony_png_sha256': observed['harmony_png']['sha256'],
@@ -101,13 +163,25 @@ def _comparison(root, scope_pair, scope_frame, observed):
         actual = appearance.get(key)
         if (digest(actual) if key.endswith('sha256') else actual) != (digest(value) if key.endswith('sha256') else value):
             raise ValueError(f'appearance report does not bind {key}')
+    _check_appearance_receipt(root, appearance, {**common, 'ios_region_px': scope_frame.get('ios_region_px')},
+                              {'ios': source_image, 'harmony': image})
     if relationship.get('comparison_id') != scope_frame['comparison_id']:
         raise ValueError('relationship report does not bind comparison')
     for field, expected in [('ios_ui_sha256', source['ui_json_sha256']),
                             ('harmony_ui_sha256', observed['harmony_xml']['sha256'])]:
         if digest(relationship.get(field)) != digest(expected):
             raise ValueError(f'relationship report does not bind {field}')
-    calculated = compare_relationships(root, scope_pair, scope_frame, target_tree_path, observed['harmony_xml']['sha256'])
+    calculated = compare_relationships(
+        root, scope_pair, scope_frame, target_tree_path, observed['harmony_xml']['sha256'],
+        audit_viewport=relationship.get('audit_viewport') is True,
+        audit_control_clipping=relationship.get('audit_control_clipping') is True,
+        native_control_roles=relationship.get('native_control_roles') is True,
+        tab_bar_id=relationship.get('tab_bar_id'),
+        respect_presentation=relationship.get('respect_presentation') is True,
+        audit_presentation_overlap='cross_presentation_overlaps' in relationship,
+        audit_status_bar='navigation_status_bar' in relationship,
+        navigation_control_ids=relationship.get('navigation_control_ids', ()),
+    )
     if json_bytes(calculated) != json_bytes(relationship):
         raise ValueError('relationship report does not match native tree replay')
     evidence_verdicts = {appearance.get('verdict'), relationship.get('verdict')}
@@ -155,6 +229,37 @@ def _assess_pair(root, expected, row, scope_hash, source_hash):
     return result
 
 
+def shared_capture_groups(approved, captured):
+    """Describe shared image/tree evidence across distinct approved pairs."""
+    grouped = defaultdict(list)
+    for name, row in captured.items():
+        pair = approved[name]
+        source = pair['baseline']
+        for frame in row['frames']:
+            identity = tuple(digest(frame[key]['sha256']) for key in ('harmony_png', 'harmony_xml'))
+            grouped[identity].append({
+                'pair_id': name, 'page_id': pair['page_id'], 'state_id': pair['state_id'],
+                'comparison_id': frame['comparison_id'],
+                'source_png_sha256': digest(source['png_sha256']),
+                'source_ui_sha256': digest(source['ui_json_sha256']),
+            })
+    return [rows for rows in grouped.values() if len({row['pair_id'] for row in rows}) > 1]
+
+
+def conflicting_state_pairs(groups):
+    blocked = set()
+    for group in groups:
+        pages = defaultdict(list)
+        for row in group:
+            pages[row['page_id']].append(row)
+        for rows in pages.values():
+            if len({row['state_id'] for row in rows}) > 1 and len({
+                (row['source_png_sha256'], row['source_ui_sha256']) for row in rows
+            }) > 1:
+                blocked.update(row['pair_id'] for row in rows)
+    return blocked
+
+
 def assess_visual(root, scope_bytes, report_bytes):
     scope = _json_object(scope_bytes)
     report = _json_object(report_bytes)
@@ -169,14 +274,21 @@ def assess_visual(root, scope_bytes, report_bytes):
     actual = _index(report.get('pairs'), 'pair_id')
     if actual.keys() - approved.keys():
         raise ValueError('comparison report contains unexpected pair IDs')
-    pairs = []
+    pairs, captured = [], {}
     for name, pair in approved.items():
         try:
-            result = _assess_pair(root, pair, actual.get(name), scope_hash, source_hash)
+            row = actual.get(name)
+            result = _assess_pair(root, pair, row, scope_hash, source_hash)
+            if row and result.get('hap_sha256'):
+                captured[name] = {'frames': row['comparisons']}
         except (OSError, KeyError, TypeError, ValueError) as exc:
             result = {'pair_id': name, 'verdict': 'NOT_RUN', 'reason': str(exc)}
         pairs.append({**result, 'page_id': pair['page_id'], 'state_id': pair['state_id'],
                       'arrival_mode': pair['arrival_mode']})
+    conflicts = conflicting_state_pairs(shared_capture_groups(approved, captured))
+    for pair in pairs:
+        if pair['pair_id'] in conflicts and pair['verdict'] == 'PASS':
+            pair.update(verdict='NOT_RUN', reason='distinct states share one target image and tree')
     if source_hash != source_digest(root):
         raise ValueError('target source changed during visual acceptance')
     verdicts = {row['verdict'] for row in pairs}
@@ -240,12 +352,12 @@ def _visual_round(root, scope, visual, archive_id):
     previous = history[-1] if history else None
     attempt = 0
     if previous:
-        if previous['source_sha256'] == visual['source_sha256']:
-            attempt = previous['attempt']
-        elif previous['status'] == 'FAIL':
-            attempt = previous['attempt'] + 1
-            if attempt > MAX_REPAIRS:
-                raise ValueError('visual repair budget exhausted for this approved scope')
+        attempt = previous['attempt']
+        if previous['source_sha256'] != visual['source_sha256'] and attempt >= MAX_REPAIRS and visual['status'] != 'PASS':
+            raise ValueError('visual repair budget exhausted for this approved scope')
+        if previous['source_sha256'] != visual['source_sha256'] and previous['status'] == 'FAIL':
+            # A fully passing assessment can close the lane without reopening its budget.
+            attempt = min(attempt + 1, MAX_REPAIRS)
     return records, {'event': 'stage1_visual', 'lane': lane, 'result': {
         'archive_id': archive_id, 'source_sha256': visual['source_sha256'], 'scope_sha256': visual['scope_sha256'],
         'status': visual['status'], 'attempt': attempt,

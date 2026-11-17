@@ -34,7 +34,7 @@ def camera_fixture(root, *, live_source, live_target):
 import { LiveScannerView } from './LiveScannerView';
 export struct ScanView {
   start() { manager.requestPermissionsFromUser(ctx, permissions); new photoAccessHelper.PhotoViewPicker(); }
-  build() { LiveScannerView() }
+  build() { LiveScannerView(); Button('相机').onClick(() => this.start()) }
 }
 """)
     write(root, "entry/src/main/ets/services/OCRService.ets", "recognizeFrame() { textRecognition.recognizeText(info); }")
@@ -76,6 +76,30 @@ def camera_finding(result):
 
 
 class CapabilityGateTests(unittest.TestCase):
+    def test_permission_request_must_be_called_from_the_rendered_scanner(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            camera_fixture(root, live_source=True, live_target=True)
+            page = root / "entry/src/main/ets/pages/ScanView.ets"
+            page.write_text(page.read_text().replace(
+                "export struct",
+                "import { PermissionService as CameraPermission } from '../services/PermissionService';\nexport struct",
+            ).replace(
+                "start() { manager.requestPermissionsFromUser(ctx, permissions);",
+                "private gate: CameraPermission = new CameraPermission();\n  start() { this.gate.check();",
+            ))
+            write(root, "entry/src/main/ets/services/PermissionService.ets", """
+export class PermissionService {
+  check() { return manager.checkAccessToken(token, permission); }
+  ask() { return this.request(); }
+  request() { return manager.requestPermissionsFromUser(context, permissions); }
+}
+""")
+            uncalled = camera_finding(evaluate(root))
+            self.assertIn("runtime_camera_permission", uncalled["missing_checks"])
+            page.write_text(page.read_text().replace("this.gate.check()", "this.gate.ask()"))
+            self.assertEqual(camera_finding(evaluate(root))["status"], "PASS")
+
     def test_all_capabilities_pass_from_realistic_contract(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -152,6 +176,28 @@ class CapabilityGateTests(unittest.TestCase):
                     path.write_text(original.replace(token, "placeholder") + "\n// " + token + "\n", encoding="utf-8")
                     write(root, "entry/src/main/ets/Detached.ets", original)
                     self.assertEqual(camera_finding(evaluate(root))["status"], "BLOCKED")
+
+    def test_live_scanner_receipts_follow_imported_symbols_and_reject_disabled_branch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            camera_fixture(root, live_source=True, live_target=True)
+            ets = root / "entry/src/main/ets"
+            (ets / "pages/LiveScannerView.ets").rename(ets / "pages/CameraSurface.ets")
+            (ets / "services/OCRService.ets").rename(ets / "services/TextRecognizer.ets")
+            scan = ets / "pages/ScanView.ets"
+            scan.write_text(scan.read_text().replace(
+                "{ LiveScannerView } from './LiveScannerView'",
+                "{ LiveScannerView as Preview } from './CameraSurface'",
+            ).replace("LiveScannerView()", "Preview()"))
+            service = ets / "services/LiveCameraScanner.ets"
+            service.write_text(service.read_text().replace("../services/OCRService", "./TextRecognizer"))
+            report = camera_finding(evaluate(root))
+            self.assertEqual(report["status"], "PASS")
+            self.assertTrue(report["checks"]["live_scan_enabled"])
+            service.write_text("export const LIVE_SCAN_SUPPORTED: boolean = false;\n" + service.read_text())
+            report = camera_finding(evaluate(root))
+            self.assertEqual(report["status"], "BLOCKED")
+            self.assertIn("live_scan_enabled", report["missing_checks"])
 
     def test_packaged_command_keeps_still_and_live_modes_distinct(self):
         with tempfile.TemporaryDirectory() as tmp:

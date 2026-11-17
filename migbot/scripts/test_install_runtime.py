@@ -91,6 +91,254 @@ def delivery_fixture(project):
 
 
 class InstallRuntimeTests(unittest.TestCase):
+    def test_installed_spec_gate_rejects_explicit_grapheme_codepoint_mapping(self):
+        with tempfile.TemporaryDirectory() as temp:
+            project = Path(temp)
+            result = install(project)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            for name in ("ui-manifest.md", "feature-index.md", "ui/page_0001_demo.md"):
+                write(project / "spec/baseline" / name, "fixture")
+            feature = project / "spec/baseline/features/feat_001_demo.md"
+            before = (
+                "Swift String.count 按字素簇计数。\n"
+                "使用 `Array.from(value).slice(0, 40).join('')` 与 iOS 一致。\n"
+                "不要用 `Array.from(value).length` 作为字素计数。\n"
+            )
+            write(feature, before)
+            gate_path = project / ".migbot/bin/scripts/linters/gate_spec_complete.py"
+            command = [sys.executable, "-B", str(gate_path), str(project), "--report-only"]
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            detail, = json.loads(result.stdout)["findings"]
+            self.assertEqual(detail["rule"], "SPEC.SWIFT_GRAPHEME_MAPPING")
+            self.assertTrue(detail["subject_ref"].endswith(":2"))
+            ledger = project / "spec/.i2h/open-findings.json"
+            self.assertFalse(ledger.exists())
+            normal = subprocess.run(command[:-1], capture_output=True, text=True)
+            self.assertEqual(normal.returncode, 2, normal.stdout + normal.stderr)
+            self.assertIn(detail["finding_key"], ledger.read_text(encoding="utf-8"))
+            write(feature, before.replace("Array.from(value).slice(0, 40).join('')", "characterPrefix(value, 40)"))
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(json.loads(result.stdout)["findings"], [])
+
+    def test_installed_ut_inputs_read_ios_feature_specs(self):
+        with tempfile.TemporaryDirectory() as temp:
+            project = Path(temp)
+            result = install(project)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            scripts = project / ".claude/skills/arkts-ut-verifier/scripts"
+            baseline = project / "spec/baseline/features"
+            first = write(baseline / "feat_001_local_library.md",
+                          "# F001 Local library\n\n## 验收标准\n- [ ] F001-AC01 Open library\n")
+            second = write(baseline / "feat_f010_pet_health.md",
+                           "# F010 Pet health\n\n## Acceptance Criteria\n- [x] F010-AC03 Edit record\n")
+            feature_run = subprocess.run(
+                [sys.executable, "-B", "-X", "utf8", str(scripts / "feature_inputs.py"),
+                 "--project-root", "."],
+                cwd=project, capture_output=True, text=True, encoding="utf-8",
+            )
+            self.assertEqual(feature_run.returncode, 0, feature_run.stderr)
+            features = json.loads(feature_run.stdout)["features"]
+            self.assertEqual([row["feature_file"] for row in features], [str(first.resolve()), str(second.resolve())])
+            ac_run = subprocess.run(
+                [sys.executable, "-B", "-X", "utf8", str(scripts / "ac_inputs.py"),
+                 "--feature-file", features[1]["feature_file"], "--feature-id", "F010"],
+                cwd=project, capture_output=True, text=True, encoding="utf-8",
+            )
+            self.assertEqual(ac_run.returncode, 0, ac_run.stderr)
+            self.assertEqual([row["source_ac_id"] for row in json.loads(ac_run.stdout)], ["F010-AC03"])
+            for script, argument, option in (
+                ("generation_inventory.py", "--help", "--registered-ids"),
+                ("hypium_results.py", "parse", "--expected-ids"),
+                ("hypium_results.py", "metrics", "--input"),
+            ):
+                flags = [argument, "--help"] if argument != "--help" else [argument]
+                command = [sys.executable, "-B", "-X", "utf8", str(scripts / script), *flags]
+                result = subprocess.run(command, cwd=project, capture_output=True, text=True, encoding="utf-8")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(option, result.stdout)
+
+    def test_installs_apple_sign_in_skill_with_its_references(self):
+        with tempfile.TemporaryDirectory() as temp:
+            project = Path(temp)
+            result = install(project)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            skill = Path("ios-apple-sign-in-to-huawei")
+            for name in ("SKILL.md", "references/account-kit.md", "references/HuaweiIdSignIn.ets"):
+                supplied = ROOT / "migbot/skills" / skill / name
+                installed = project / ".claude/skills" / skill / name
+                self.assertEqual(installed.read_bytes(), supplied.read_bytes())
+
+    def test_installed_batch_writeback_and_coverage(self):
+        with tempfile.TemporaryDirectory() as temp:
+            project = Path(temp)
+            installed = install(project)
+            self.assertEqual(installed.returncode, 0, installed.stdout + installed.stderr)
+            packet = "slice-01-F001"
+            ac = "F001-AC01"
+            deferred = "F001-AC02"
+            other = "F002-AC01"
+            other_packet = "slice-02-F002"
+            write_json(project / "spec/.i2h/plan-coverage.json", {"packets": [{
+                "packet_id": packet, "requirement_ids": [ac, deferred],
+                "requirement_digests": {ac: "digest", deferred: "deferred-digest"},
+            }, {
+                "packet_id": other_packet, "requirement_ids": [other],
+                "requirement_digests": {other: "other-digest"},
+            }]})
+            write_json(project / "spec/.i2h/requirements-index.json", {"requirements": [
+                {"requirement_id": ac, "digest": "digest"},
+                {"requirement_id": deferred, "digest": "deferred-digest"},
+                {"requirement_id": other, "digest": "other-digest"},
+            ]})
+            outputs = []
+            for name in ("First.ets", "Second.ets"):
+                write(project / name, "// implementation\n")
+                intent = write_json(project / (name + ".intent"), {
+                    "packets": {packet: {"requirement_ids": [ac], "files": [name]}},
+                })
+                output = project / (name + ".json")
+                result = gate(project, "build_writeback.py", str(intent), "--project-root", ".",
+                              "--claims-only", "--out", str(output))
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                manifest = json.loads(output.read_text(encoding="utf-8"))["impl_claims"]
+                self.assertEqual(manifest["executed_packets"], [packet])
+                self.assertEqual([claim["requirement_id"] for claim in manifest["claims"]], [ac])
+                outputs.append(str(output))
+            result = gate(project, "apply_writeback.py", *outputs, "--project-root", ".", "--merge-evidence")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            ledger = json.loads((project / "spec/.i2h/impl-claims.json").read_text(encoding="utf-8"))
+            self.assertEqual(ledger["claims"][0]["files"], ["First.ets", "Second.ets"])
+            ledger_path = project / "spec/.i2h/impl-claims.json"
+            before = ledger_path.read_bytes()
+            bad = write_json(project / "bad.json", {"impl_claims": {"claims": [
+                {**ledger["claims"][0], "files": []},
+            ]}})
+            for mode in ([], ["--merge-evidence"]):
+                result = gate(project, "apply_writeback.py", str(bad), "--project-root", ".", *mode)
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("MISSING_IMPLEMENTATION_FILES", result.stderr)
+                self.assertEqual(ledger_path.read_bytes(), before)
+            result = gate(project, "apply_writeback.py", *outputs, "--project-root", ".", "--merge-evidence")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(ledger_path.read_bytes(), before)
+            write(project / "spec/decision-ledger.md", f"## D-101 Scope\n\n- **延期 AC**: {deferred}\n")
+            result = gate(project, "lint_execute_coverage.py", "--project-root", ".", "--final", "--report-only")
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            findings = json.loads(result.stdout)["sections"]["execute"]["findings"]
+            self.assertEqual(findings, [
+                {"rule": "EXECUTE.REQUIREMENT_DEFERRED", "subject": deferred,
+                 "packet_id": packet, "decision_id": "D-101"},
+                {"rule": "EXECUTE.REQUIREMENT_UNCLAIMED", "subject": other, "packet_id": other_packet},
+            ])
+            injected = {**ledger["claims"][0], "packet_id": other_packet, "requirement_id": other,
+                        "files": [], "requirement_digest": "other-digest"}
+            for overrides, rule in (({}, "MISSING_IMPLEMENTATION_FILES"),
+                                    ({"files": ["First.ets"], "requirement_digest": "old"},
+                                     "STALE_REQUIREMENT_DIGEST")):
+                with self.subTest(rule=rule):
+                    ledger["claims"] = [ledger["claims"][0], {**injected, **overrides}]
+                    write_json(ledger_path, ledger)
+                    result = gate(project, "lint_execute_coverage.py", "--project-root", ".", "--final", "--report-only")
+                    self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                    rows = json.loads(result.stdout)["sections"]["execute"]["findings"]
+                    self.assertEqual({row["rule"] for row in rows if row["subject"] == other}, {
+                        f"EXECUTE.{rule}", "EXECUTE.REQUIREMENT_UNCLAIMED",
+                    })
+                    self.assertFalse((project / "spec/.i2h/open-findings.json").exists())
+
+    def test_installed_structured_writeback_round_trip(self):
+        with tempfile.TemporaryDirectory() as temp:
+            project = Path(temp)
+            installed = install(project)
+            self.assertEqual(installed.returncode, 0, installed.stdout + installed.stderr)
+            inventory, _, _, _ = delivery_fixture(project)
+            frozen = inventory.read_bytes()
+            packet, ac = "slice-01-F001", "F001-AC01"
+            write_json(project / "spec/.i2h/plan-coverage.json", {"packets": [{
+                "packet_id": packet, "requirement_ids": [ac], "requirement_digests": {ac: "digest"},
+            }]})
+            write_json(project / "spec/.i2h/requirements-index.json", {
+                "requirements": [{"requirement_id": ac, "digest": "digest"}],
+            })
+            registry = write(project / "spec/placeholder-registry.md",
+                             "| P-ID | resolve_by | status | kind |\n"
+                             "| P-S1-001 | Stage 3 | registered | forward-ref |\n")
+            draft = write(project / "draft.md", "# Group 01\n\n## Slice 1 (F-001)\n- final_state: PASS\n")
+            brief = project / "spec/execution/briefs/group_01_brief.md"
+            intent_data = {
+                "mode": "group", "id": "01",
+                "packets": {packet: {"whole_packet": True, "files": ["entry/src/main/ets/pages/Home.ets"]}},
+                "feature_index": {"implemented": ["F001"]},
+                "ui_manifest": {"converted": ["home"]},
+                "registry": {"resolve": ["P-S1-001"], "retag": [
+                    {"pid": "P-S1-001", "column": "resolve_by", "value": "D-001"},
+                ]},
+                "brief": {"path": str(brief.relative_to(project).as_posix()), "content_file": "draft.md"},
+            }
+            intent = write_json(project / "intent.json", intent_data)
+            manifest = project / "manifest.json"
+            built = gate(project, "build_writeback.py", str(intent), "--project-root", ".", "--out", str(manifest))
+            self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
+            valid = manifest.read_bytes()
+            ledger = project / "spec/.i2h/impl-claims.json"
+            original_registry = registry.read_bytes()
+            for invalid in (
+                {"brief": {"path": "spec/baseline/ui-manifest.md", "content": "# invalid"}},
+                {"ui_manifest": {"converted": ["home"], "verified": ["home"]}},
+                {"feature_index": {"implemented": ["F999"]}},
+            ):
+                mutated = {**json.loads(valid), **invalid}
+                write_json(manifest, mutated)
+                applied = gate(project, "apply_writeback.py", str(manifest), "--project-root", ".")
+                self.assertEqual(applied.returncode, 1, applied.stdout + applied.stderr)
+                self.assertEqual(registry.read_bytes(), original_registry)
+                self.assertFalse(ledger.exists())
+                self.assertFalse(brief.exists())
+            manifest.write_bytes(valid)
+            planned = gate(project, "apply_writeback.py", str(manifest), "--project-root", ".", "--dry-run")
+            self.assertEqual(planned.returncode, 0, planned.stdout + planned.stderr)
+            self.assertFalse(ledger.exists())
+            self.assertFalse(brief.exists())
+            self.assertEqual(registry.read_bytes(), original_registry)
+            applied = gate(project, "apply_writeback.py", str(manifest), "--project-root", ".")
+            self.assertEqual(applied.returncode, 0, applied.stdout + applied.stderr)
+            document = json.loads(ledger.read_bytes())
+            self.assertEqual(document["closeout"], {"ui_converted": ["p-home"], "features_implemented": ["F001"]})
+            self.assertEqual([row["requirement_id"] for row in document["claims"]], [ac])
+            self.assertEqual(brief.read_bytes(), draft.read_bytes())
+            self.assertIn("| D-001 | resolved |", registry.read_text(encoding="utf-8"))
+            paths = (brief, registry, ledger)
+            snapshot = [(path.read_bytes(), path.stat().st_mtime_ns) for path in paths]
+            applied = gate(project, "apply_writeback.py", str(manifest), "--project-root", ".")
+            self.assertEqual(applied.returncode, 0, applied.stdout + applied.stderr)
+            self.assertEqual(snapshot, [(path.read_bytes(), path.stat().st_mtime_ns) for path in paths])
+            self.assertEqual(inventory.read_bytes(), frozen)
+            result = gate(project, "lint_execute_coverage.py", "--project-root", ".", "--final", "--report-only")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_installed_ui_batch_writeback_without_function_plan(self):
+        with tempfile.TemporaryDirectory() as temp:
+            project = Path(temp)
+            installed = install(project)
+            self.assertEqual(installed.returncode, 0, installed.stdout + installed.stderr)
+            delivery_fixture(project)
+            brief = "spec/execution/briefs/batch_01_brief.md"
+            intent = write_json(project / "intent.json", {
+                "mode": "batch", "ui_manifest": {"converted": ["card"]},
+                "brief": {"path": brief, "content": "# Batch 01\n"},
+            })
+            manifest = project / "manifest.json"
+            result = gate(project, "build_writeback.py", str(intent), "--project-root", ".", "--out", str(manifest))
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            result = gate(project, "apply_writeback.py", str(manifest), "--project-root", ".")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual((project / brief).read_text(encoding="utf-8"), "# Batch 01\n")
+            data = json.loads((project / "spec/.i2h/impl-claims.json").read_text(encoding="utf-8"))
+            self.assertEqual(data["closeout"]["ui_converted"], ["p-card"])
+            self.assertEqual(data["claims"], [])
+
     def test_installed_functional_verify_and_recheck(self):
         with tempfile.TemporaryDirectory() as temp:
             project = Path(temp)
@@ -104,6 +352,15 @@ class InstallRuntimeTests(unittest.TestCase):
                 cwd=project, capture_output=True, encoding='utf-8', timeout=45,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+            tests = project / '.claude/skills/i2h-verify/scripts/tests'
+            result = subprocess.run(
+                [sys.executable, '-E', '-B', '-X', 'utf8', '-m', 'unittest', 'discover',
+                 '-s', str(tests), '-p', 'test_uitest_*.py'],
+                cwd=project, capture_output=True, encoding='utf-8', timeout=45,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('Ran ', result.stderr)
 
     def test_installed_plan_checks_tab_hosts_and_approves_one_manifest(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -177,11 +434,20 @@ class InstallRuntimeTests(unittest.TestCase):
                  "IOSVisualGateTests.test_summary_requires_existing_g1_and_replays_all_proof",
                  "IOSVisualGateTests.test_summary_preserves_latest_visual_on_an_idempotent_historical_replay",
                  "IOSVisualGateTests.test_native_next_preserves_compile_budget_across_changed_scope_paths",
+                 "IOSVisualGateTests.test_capture_index_requires_bound_frames_and_stops_before_judgement",
+                 "IOSVisualGateTests.test_verify_replays_bound_visual_and_rejects_changed_artifacts",
+                 "IOSVisualGateTests.test_appearance_receipt_replays_group_and_image_identity",
                  "IOSVisualGateTests.test_native_smoke_checks_cold_start_formal_coverage_and_same_installation",
                  "IOSVisualGateTests.test_visual_rounds_limit_critical_repairs_across_rebuilds"],
                 cwd=project, capture_output=True, text=True, encoding="utf-8", timeout=45,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            reuse = subprocess.run(
+                [sys.executable, "-E", "-B", "-X", "utf8",
+                 str(project / SCRIPTS / "tests/test_visual_review_reuse.py")],
+                cwd=project, capture_output=True, text=True, encoding="utf-8", timeout=45,
+            )
+            self.assertEqual(reuse.returncode, 0, reuse.stdout + reuse.stderr)
             (project / SCRIPTS / "lib/ios_stage1_summary.py").unlink()
             broken = gate(project, "stage1_acceptance.py", "--project-root", str(project), "--kind", "summary")
             self.assertEqual(broken.returncode, 3, broken.stderr)
@@ -246,6 +512,9 @@ class InstallRuntimeTests(unittest.TestCase):
             completed = install(project)
             self.assertEqual(completed.returncode, 0, completed.stderr)
             inventory, (home, valid_home), (card, valid_card), (report, report_data) = delivery_fixture(project)
+            visual_help = gate(project, "stage1_visual_report.py", "--help")
+            self.assertEqual(visual_help.returncode, 0, visual_help.stderr)
+            self.assertIn("review-worklist", visual_help.stdout)
             for entry in ("ui_stage1_gate.py", "ui_delivery_gate.py"):
                 help_result = gate(project, entry, "--help")
                 self.assertEqual(help_result.returncode, 0, help_result.stderr)
@@ -258,11 +527,10 @@ class InstallRuntimeTests(unittest.TestCase):
                 self.assertEqual(summary["wired_units"], ["home", "card"])
                 self.assertFalse(summary["stage1_complete"])
 
-            alternate_inventory = write(project / "spec/baseline/ui-approved-alt.json", inventory.read_text(encoding="utf-8"))
             compatibility = gate(project, "ui_delivery_gate.py", "--project-root", str(project),
-                                 "--wiring-contract", str(alternate_inventory))
+                                 "--wiring-contract", str(inventory))
             self.assertEqual(compatibility.returncode, 0, compatibility.stdout + compatibility.stderr)
-            self.assertEqual(json.loads(compatibility.stdout)["inventory"], alternate_inventory.relative_to(project).as_posix())
+            self.assertEqual(json.loads(compatibility.stdout)["inventory"], inventory.relative_to(project).as_posix())
 
             output = project / "reports/gate.json"
             for code, damage, restore in [
@@ -329,7 +597,9 @@ class InstallRuntimeTests(unittest.TestCase):
             self.assertEqual(install(project).returncode, 0)
             inventory, _, _, _ = delivery_fixture(project)
             index = project / "spec/execution/ui-inputs/index.json"
-            packet_index = {"schema_version": 2, "inventory_source": {"sha256": hashlib.sha256(inventory.read_bytes()).hexdigest()},
+            packet_index = {"schema_version": 2, "inventory_source": {
+                                "path": inventory.relative_to(project).as_posix(),
+                                "sha256": hashlib.sha256(inventory.read_bytes()).hexdigest()},
                             "packets": [{"unit_id": "home"}, {"unit_id": "card", "dispatch_id": "fixture-card-1"}]}
             write_json(index, packet_index)
             args = ("--project-root", str(project), "--inputs-index", str(index))
@@ -354,7 +624,7 @@ class InstallRuntimeTests(unittest.TestCase):
             candidate = root / "candidate"
             skill = candidate / "migbot/skills/i2h-execute"
             shutil.copytree(EXECUTE, skill)
-            for name in ("lib/ios_stage1_summary.py", "capability_gate.py"):
+            for name in ("lib/ios_stage1_summary.py", "capability_gate.py", "lib/execute_claims.py"):
                 with self.subTest(file=name):
                     damaged = skill / "scripts" / name
                     original = damaged.read_bytes()

@@ -23,6 +23,7 @@ REGISTRY: dict[str, dict[str, Any]] = {
     "SPEC.DIALOG_UNACCOUNTED": {"gate": "spec.dialog-closure", "class": "inference", "hard": False},
     "SPEC.UNCOVERED_ANCHOR_FILE": {"gate": "spec.coverage", "class": "inference", "hard": False},
     "SPEC.AC_LINE_UNPARSEABLE": {"gate": "spec.coverage", "class": "exact", "hard": False},
+    "SPEC.SWIFT_GRAPHEME_MAPPING": {"gate": "spec/gate-complete", "class": "exact", "hard": False},
     "PLAN.REQUIREMENT_UNOWNED": {"gate": "plan.coverage", "class": "exact", "hard": False},
     "ROUTE_PARAM_KEY_MISMATCH": {"gate": "closure.arkui-safety", "class": "exact", "hard": True},
     "NAV_ROOT_COUNT": {"gate": "closure.arkui-safety", "class": "inference", "hard": True},

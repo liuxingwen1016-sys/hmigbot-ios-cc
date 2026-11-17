@@ -15,7 +15,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[4]
+_SCRIPT_DIR = Path(__file__).resolve().parent
+_PROJECT_ROOT = _SCRIPT_DIR.parents[3]
+# Isolated Python does not add the script directory to sys.path.
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
 # ``migbot-install.py`` copies shared helpers into the project-local
 # ``.migbot/bin`` tree, while source-tree tests import them from ``migbot``.
 # Keep both layouts importable so the command works after a real install as
@@ -143,12 +147,10 @@ def _validate_marker_artifacts(root: Path, stage: str, marker: dict[str, Any]) -
         if not any(name.endswith(("spec/.i2h/resources-inventory.json", "spec/.i2h/target-input.json")) for name in names):
             return ["marker_required_spec_evidence_missing"]
     elif stage == "i2h-plan":
-        delivery_names = {
-            candidate.relative_to(root).as_posix()
-            for candidate in _delivery_candidates(root)
-        }
-        if not any(name in delivery_names for name in names):
+        selected = _delivery_path(root)
+        if selected is None or selected.relative_to(root).as_posix() not in names:
             return ["marker_required_delivery_missing"]
+        marker["artifact_set_sha256"] = payload["content_sha256"]
     elif stage == "i2h-execute":
         if not any(name.endswith("migration-report.md") for name in names):
             return ["marker_required_migration_report_missing"]
@@ -156,26 +158,6 @@ def _validate_marker_artifacts(root: Path, stage: str, marker: dict[str, Any]) -
         if not any("retrospect-report" in name and name.endswith(".md") for name in names):
             return ["marker_required_retrospect_report_missing"]
     return []
-
-
-def _spec_handoff_mismatches(root: Path) -> list[str]:
-    """Return spec marker artifacts changed by the completed plan handoff."""
-    marker_path = root / "spec/baseline/spec-complete.txt"
-    payload = _read_json(marker_path)
-    if not payload:
-        return []
-    mismatches: list[str] = []
-    for item in payload.get("artifacts", []):
-        if not isinstance(item, dict):
-            continue
-        relative = item.get("path")
-        expected = normalize_hash(item.get("sha256"))
-        if not isinstance(relative, str) or not expected:
-            continue
-        path = root / relative
-        if path.is_file() and normalize_hash(file_sha256(path)) != expected:
-            mismatches.append(relative)
-    return sorted(mismatches)
 
 
 def validate_delivery(root: Path, input_hash: str | None, *, require_runtime_plan: bool = False) -> dict[str, Any]:
@@ -367,8 +349,80 @@ def _verify_summary(text: str) -> dict[str, str]:
     return checks
 
 
-def _verify_report(root: Path, require_visual_and_ut: bool, require_behavior: bool = False) -> dict[str, Any]:
+def _execute_script_path() -> None:
+    execute = str(Path(__file__).resolve().parents[2] / "i2h-execute/scripts")
+    if execute not in sys.path:
+        sys.path.insert(0, execute)
+
+
+def _current_ui_delivery(root: Path, delivery: Path | None) -> dict[str, Any]:
+    try:
+        _execute_script_path()
+        from lib.ios_stage1_scope import gate_from_inventory
+
+        if delivery is None:
+            raise ValueError("approved UI delivery is missing")
+        gate = gate_from_inventory(root, delivery.relative_to(root).as_posix(), None, None)
+    except (ImportError, OSError, ValueError, KeyError, TypeError) as exc:
+        return {"complete": False, "errors": ["current_ui_delivery_invalid"], "diagnostic": str(exc)}
+    findings = gate["failure_findings"]
+    result = {"complete": gate["status"] == "PASS", "status": gate["status"],
+              "errors": [finding["code"] for finding in findings], "failure_findings": findings}
+    missing = {finding["unit_id"] for finding in findings if finding["code"] == "conversion_report_missing"}
+    if missing:
+        result["dispatch_diagnostic"] = _missing_conversion_inputs(root, delivery, missing)
+    return result
+
+
+def _missing_conversion_inputs(root: Path, delivery: Path, missing: set[str]) -> dict[str, Any]:
+    """Explain whether missing reports can be recovered using current frozen inputs."""
+    try:
+        from lib.ios_ui_dispatch import check_required_inputs
+
+        dispatch = check_required_inputs(root, unit_ids=missing)
+        if dispatch["inventory_sha256"] != file_sha256(delivery):
+            raise ValueError("frozen dispatch inputs use a different approved inventory")
+        units = dispatch["units"]
+        if {unit["unit_id"] for unit in units} != missing:
+            raise ValueError("frozen dispatch inputs do not cover every missing report")
+    except (ImportError, OSError, ValueError, KeyError, TypeError) as exc:
+        return {"status": "UNAVAILABLE", "detail": str(exc)}
+    return {"status": "CHECKED", "inventory_sha256": dispatch["inventory_sha256"], "units": units}
+
+
+def _bound_visual(root: Path, lines: list[str]) -> dict[str, Any]:
+    # Load the same Stage 1 verifier from the selected checkout or installation.
+    _execute_script_path()
+    from lib.ios_stage1_summary import read_visual
+    from lib.ios_ui_delivery_gate import _project_file
+
+    def binding(label: str) -> str:
+        prefix = label + ": "
+        values = [line[len(prefix):].strip() for line in lines if line.startswith(prefix)]
+        if len(values) != 1 or not values[0]:
+            raise ValueError(f"verify report requires one {label} binding")
+        return values[0]
+
+    scope = _project_file(root, binding("visual-scope"))
+    expected = binding("visual-comparison-sha256")
+    visual, archive, requires_smoke = read_visual(root, scope.read_bytes(), None)
+    if visual is None or visual["report_sha256"] != expected:
+        raise ValueError("current visual archive does not match the Verify report")
+    if requires_smoke:
+        raise ValueError("bound Verify requires fresh comparison evidence for every pair")
+    if visual["status"] != "PASS" or visual["passed_pairs"] != visual["required_pairs"]:
+        raise ValueError(f'visual archive is {visual["status"]}: '
+                         f'{visual["passed_pairs"]}/{visual["required_pairs"]} pairs passed')
+    pair = visual["pairs"][0]
+    return {"archive": archive, "report_sha256": expected, "pairs": visual["required_pairs"],
+            "hap_sha256": pair["hap_sha256"], "device": pair["device_id"]}
+
+
+def _verify_report(root: Path, require_visual_and_ut: bool, require_behavior: bool = False,
+                   require_bound_visual: bool = False) -> dict[str, Any]:
     required = VERIFY_CHECKS[:4] if require_visual_and_ut else ()
+    if require_bound_visual and "CHECK-3" not in required:
+        required += ("CHECK-3",)
     if require_behavior:
         required += ("CHECK-5",)
     result = {
@@ -382,6 +436,7 @@ def _verify_report(root: Path, require_visual_and_ut: bool, require_behavior: bo
         result["errors"].append("verify_report_missing")
         return result
     result["path"] = path.relative_to(root).as_posix()
+    result["report_sha256"] = file_sha256(path)
     text = path.read_text(encoding="utf-8", errors="replace")
     if "CHECK-1" not in text:
         result["errors"].append("verify_check1_missing")
@@ -394,6 +449,33 @@ def _verify_report(root: Path, require_visual_and_ut: bool, require_behavior: bo
     }
     if any(check in result["unpassed_checks"] for check in required):
         result["errors"].append("required_verify_checks_not_passed")
+    host_handoff = root / "spec/verify/host-installation.json"
+    host = None
+    host_bindings = [line for line in text.splitlines() if line.startswith("host-installation-sha256:")]
+    if host_handoff.is_file() or host_bindings:
+        try:
+            _execute_script_path()
+            from lib.host_verify_handoff import validate
+            from lib.ios_ui_delivery_gate import _project_file
+
+            host_handoff = _project_file(root, "spec/verify/host-installation.json")
+            if host_bindings != [f"host-installation-sha256: {file_sha256(host_handoff)}"]:
+                raise ValueError("Verify report does not bind the current host installation")
+            host = validate(root, _read_json(host_handoff))
+            result["host_installation"] = host
+        except (OSError, ValueError, ImportError, KeyError, TypeError, AttributeError) as exc:
+            result["errors"].append("host_installation_invalid")
+            result["host_installation_diagnostic"] = str(exc)
+    if require_bound_visual and checks.get("CHECK-3") == "PASS":
+        try:
+            visual = _bound_visual(root, text.splitlines())
+            if host and any(visual[key] != host[key] for key in ("hap_sha256", "device")):
+                raise ValueError("visual archive uses a different host installation")
+            result["visual_evidence"] = visual
+        except (OSError, ValueError, KeyError, TypeError, AttributeError, ImportError) as exc:
+            result["errors"].append("visual_receipt_invalid")
+            result["visual_diagnostic"] = str(exc)
+            result["unpassed_checks"]["CHECK-3"] = "UNVERIFIED"
     if require_behavior and checks.get("CHECK-5") == "PASS":
         evidence = root / BEHAVIOR_REPORT
         evidence_error = None
@@ -406,6 +488,19 @@ def _verify_report(root: Path, require_visual_and_ut: bool, require_behavior: bo
                 report = _read_json(evidence)
                 if replay_behavior(root, report) != report:
                     evidence_error = "behavior_receipt_stale"
+                elif host and any(report[key] != host[key] for key in ("hap_sha256", "device")):
+                    evidence_error = "behavior_host_installation_mismatch"
+                elif "visual_evidence" in result and any(
+                    report[key] != result["visual_evidence"][key] for key in ("hap_sha256", "device")
+                ):
+                    evidence_error = "behavior_visual_installation_mismatch"
+                else:
+                    result["behavior_evidence"] = {
+                        "report_sha256": file_sha256(evidence),
+                        "hap_sha256": report["hap_sha256"], "device": report["device"],
+                        "plan_sha256": report["plan_sha256"],
+                        "scenario_total": report["scenario_total"], "criterion_total": report["criterion_total"],
+                    }
             except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
                 evidence_error = "behavior_receipt_invalid"
                 result["behavior_diagnostic"] = str(exc)
@@ -442,7 +537,7 @@ def _report(root: Path, stage: str) -> dict[str, Any]:
 
 def pipeline_status(root: str | Path, *, allow_legacy: bool = True,
                     require_visual_and_ut: bool = False, require_runtime_plan: bool = False,
-                    require_behavior: bool = False) -> dict[str, Any]:
+                    require_behavior: bool = False, require_bound_visual: bool = False) -> dict[str, Any]:
     root = Path(root).expanduser().resolve()
     input_hash = target_input_hash(root)
     stages: list[dict[str, Any]] = []
@@ -478,9 +573,11 @@ def pipeline_status(root: str | Path, *, allow_legacy: bool = True,
             delivery = _delivery_path(root)
             checks["ownership"] = _ownership_receipt(root, _read_json(delivery) if delivery else None)
             checks["immersive_safearea"] = validate_immersive_gate(root, _read_json(delivery) if delivery else None)
+            if require_bound_visual and delivery:
+                checks["current_ui_delivery"] = _current_ui_delivery(root, delivery)
         elif stage == "i2h-verify":
             # verify-report.md is the report itself, not a JSON marker.
-            checks["report"] = _verify_report(root, require_visual_and_ut, require_behavior)
+            checks["report"] = _verify_report(root, require_visual_and_ut, require_behavior, require_bound_visual)
         elif stage == "i2h-retrospect":
             checks["report"] = _report(root, stage)
         complete = all(bool(item.get("valid", item.get("complete", False))) for item in checks.values())
@@ -493,7 +590,8 @@ def pipeline_status(root: str | Path, *, allow_legacy: bool = True,
     # Preserve the mismatch as an auditable warning.  Source/spec mutations
     # outside this allow-list remain fail-closed and still resume at i2h-spec.
     spec_row, plan_row = stages[0], stages[1]
-    handoff_mismatches = _spec_handoff_mismatches(root)
+    handoff_mismatches = sorted({row["path"] for row in spec_row["checks"]["marker"].get("artifact_findings", [])
+                                 if row["code"] == "artifact_hash_mismatch"})
     if (
         not spec_row["complete"]
         and plan_row["checks"]["marker"]["valid"]
@@ -525,7 +623,11 @@ def pipeline_status(root: str | Path, *, allow_legacy: bool = True,
 
 def status_summary(result: dict[str, Any], report_path: Path | None = None) -> dict[str, Any]:
     check_fields = ("valid", "complete", "status", "path", "paths", "legacy", "missing", "errors", "warnings",
-                    "required_checks", "reported_checks", "unpassed_checks", "handoff_only", "handoff_mismatches")
+                    "required_checks", "reported_checks", "unpassed_checks", "handoff_only", "handoff_mismatches",
+                    "visual_evidence", "visual_diagnostic", "behavior_evidence", "behavior_diagnostic",
+                    "host_installation", "host_installation_diagnostic",
+                    "artifact_set_sha256", "report_sha256", "artifact_findings", "failure_findings", "diagnostic",
+                    "dispatch_diagnostic")
     stages = []
     for stage in result["stages"]:
         checks = {name: {field: check[field] for field in check_fields if field in check}
@@ -552,16 +654,31 @@ def main(argv: list[str] | None = None) -> int:
                         help="require runtime arrivals and planned verification states before execute")
     parser.add_argument("--require-behavior", action="store_true",
                         help="require CHECK-5 PASS with replayable native UITest evidence")
+    parser.add_argument("--require-bound-visual", action="store_true",
+                        help="replay every approved CHECK-3 visual pair against the current inputs")
     parser.add_argument("--timing", choices=("start", "finish"))
     parser.add_argument("--timing-stage", choices=STAGES[:4])
     parser.add_argument("--timing-run")
+    parser.add_argument("--timing-report", action="store_true", help="report one recorded run without changing it")
     args = parser.parse_args(argv)
+    if args.timing_report:
+        if not args.timing_run or args.timing or args.timing_stage or args.out:
+            parser.error("--timing-report requires --timing-run and emits a read-only report to stdout")
+        from pipeline_timing import report
+
+        try:
+            timing = report(Path(args.project_root).expanduser().resolve(), args.timing_run)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            parser.exit(2, f"pipeline timing: {exc}\n")
+        print(json.dumps(timing, ensure_ascii=False))
+        return 0
     if bool(args.timing) != bool(args.timing_stage) or (args.timing_run and not args.timing):
         parser.error("use --timing and --timing-stage together")
     result = pipeline_status(args.project_root, allow_legacy=not args.strict,
                              require_visual_and_ut=args.require_visual_and_ut,
                              require_runtime_plan=args.require_runtime_plan,
-                             require_behavior=args.require_behavior)
+                             require_behavior=args.require_behavior,
+                             require_bound_visual=args.require_bound_visual)
     path = None
     if args.out:
         path = Path(args.out)
@@ -574,7 +691,7 @@ def main(argv: list[str] | None = None) -> int:
         from pipeline_timing import record
 
         flags = {"runtime_plan": args.require_runtime_plan, "visual_and_ut": args.require_visual_and_ut,
-                 "behavior": args.require_behavior}
+                 "behavior": args.require_behavior, "bound_visual": args.require_bound_visual}
         try:
             output["timing"] = record(Path(result["project_root"]), result, flags,
                                       args.timing, args.timing_stage, args.timing_run)

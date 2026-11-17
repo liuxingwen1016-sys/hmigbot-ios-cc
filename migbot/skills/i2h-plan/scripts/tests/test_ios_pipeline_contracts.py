@@ -19,11 +19,63 @@ from gate_plan_complete import GateCheck, PlanCompletionGate
 
 
 class IOSPipelineContractTest(unittest.TestCase):
+    def test_strict_approval_binds_unit_and_state_native_source_bytes(self):
+        ios = self.root / "ios"
+        ios.mkdir()
+        swift = ios / "Home.swift"
+        swift.write_text("struct Home {}\n", encoding="utf-8")
+        ref = {"file": "Home.swift", "line": 1}
+        state_ref = dict(ref)
+        unit = {"unit_id": "u", "page_id": "p", "owned_ui_roles": ["content"],
+                "presentation_role": "routed_page",
+                "output": {"file": "entry/src/main/ets/Home.ets", "symbol": "Home"},
+                "source_refs": [ref], "required_states": [
+                    {"state_id": "normal", "arrival_mode": "formal", "source_refs": [state_ref]}
+                ]}
+        inventory = {"schema_version": 2, "status": "draft", "source_project_root": str(ios), "units": [unit]}
+        draft = ui_delivery.add_visual_pairs(inventory)
+        missing = ui_delivery.validate(self.root, draft, require_runtime_plan=True)["validation"]["errors"]
+        self.assertEqual(len(missing), 2)
+        self.assertEqual({i["code"] for i in missing}, {"NATIVE_SOURCE_REF_DIGEST_MISSING"})
+        self.assertEqual(missing[1]["state_id"], "normal")
+        ref["sha256"] = state_ref["sha256"] = sha256(swift.read_bytes()).hexdigest()
+        draft = ui_delivery.add_visual_pairs(inventory)
+        self.assertEqual(ui_delivery.approve(self.root, draft, "fixture", require_runtime_plan=True)["status"], "approved")
+        swift.write_text("struct Changed {}\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "NATIVE_SOURCE_REF_DIGEST_MISMATCH"):
+            ui_delivery.approve(self.root, draft, "fixture", require_runtime_plan=True)
+
+    def test_formal_scope_retains_approved_source_component_across_id_changes(self):
+        def inventory(page, owner, mode):
+            return {"schema_version": 2, "units": [
+                {"unit_id": owner, "page_id": page, "component": "ios.HomeView",
+                 "required_states": [{"state_id": "normal", "arrival_mode": "formal"}]}
+            ], "verification_states": [
+                {"verification_id": owner + "-normal", "owner": owner, "page_id": page,
+                 "state_id": "normal", "arrival_mode": mode}
+            ]}
+
+        original = {**inventory("page_0001_HomeView", "old", "formal"),
+                    "status": "approved", "approval": {"confirmation_ref": "confirmed"}}
+        rewritten = inventory("page_0002_HomeView", "new", "formal")
+        self.assertEqual(ui_delivery.compare_formal_scope(original, rewritten)["retained_count"], 1)
+        rewritten["verification_states"][0]["arrival_mode"] = "preview"
+        result = ui_delivery.compare_formal_scope(original, rewritten)
+        self.assertEqual(result["status"], "INCOMPLETE")
+        self.assertEqual(result["missing"], [{"component": "ios.HomeView", "state_id": "normal",
+                                              "previous_page_id": "page_0001_HomeView"}])
+        rewritten["verification_states"][0]["arrival_mode"] = "formal"
+        rewritten["verification_states"].append({**rewritten["verification_states"][0],
+                                                 "verification_id": "another-id"})
+        with self.assertRaisesRegex(ValueError, "ambiguous formal scope binding"):
+            ui_delivery.compare_formal_scope(original, rewritten)
+
     def test_strict_visual_validation_refuses_unpaired_draft_before_approval(self):
         manifest = self.root / "draft.json"
         receipt = self.root / "receipt.json"
         inventory = {"schema_version": 2, "status": "draft", "units": [
             {"unit_id": "u", "page_id": "p", "owned_ui_roles": ["content"],
+             "presentation_role": "routed_page",
              "output": {"file": "entry/src/main/ets/Home.ets", "symbol": "Home"},
              "required_states": [{"state_id": "normal", "arrival_mode": "formal"}]}
         ], "verification_states": [
@@ -186,6 +238,12 @@ class IOSPipelineContractTest(unittest.TestCase):
         draft = self.root / "draft.json"
         inventory = ui_delivery.draft(self.root, draft)
         units = {unit["output"]["symbol"]: unit for unit in inventory["units"]}
+        host = units["RootView"]["output"]
+        units["OtherView"]["integration"] = {
+            "host_file": host["file"], "host_builder": f'{host["symbol"]}.sheetContent',
+            "child_symbol": "OtherView",
+        }
+        ui_delivery.write(draft, inventory)
         self.assertNotIn("swiftui_tab_roots", units["OtherView"]["presentation"])
         errors = ui_delivery.validate_tab_integrations(self.root, inventory)
         self.assertEqual([(row["child"], row["source_ref"]["line"]) for row in errors],

@@ -16,7 +16,8 @@ color: cyan
 1. **随读文件**：每模式首步先读 `spec/.i2h/_common.md`（如有），按其指令行事（罕用，应急口，主线程危机干预）。
 2. **单写者纪律**：只你能写接线文件（Router.ets、AppStorage、共享 ViewModel）、修改资源引用、同步 `spec/impl-claims.md`。Worker/converter 留 hook 由你解除。
 3. **Writeback manifest 机制**：所有变更经 `build_writeback.py` 产 `writeback-{mode}.json` → return → 主线程 `apply_writeback.py` 落盘，不直接写盘。
-4. **impl_claims 认领机制**：每模式末写 `spec/impl-claims.md` + manifest `feature_index.implemented`（feat）、`ui_pages_implemented`（UI），声明本批/组覆盖范围。
+   功能覆盖意图逐包列出本轮实际实现文件与 `requirement_ids`。整包收口用 `whole_packet: true`，末组补翻也只列实际纳入的包。同包有多个业务场景时，按依赖汇合改动和条款证据，在集中门禁统一编译并安排设备回归。
+4. **impl_claims 认领机制**：用 `packets` 逐条声明本组 AC，整项收口用 `feature_index.implemented`，UI 用 `ui_manifest.converted`。主线程从 manifest 写入执行台账。
 
 ---
 
@@ -49,6 +50,8 @@ color: cyan
 | AppStorage | 写共享 key 到 `AppStorage.ets` |
 
 每解一个 hook，删行注释，留实现。
+
+同时按已批准的交互与能力义务核对组件事件绑定，即使没有 FWD-REF 注释。对系统分享、选图、登录等用户可触发的跨文件动作，从页面控件追到宿主绑定和真实接收端。空默认回调不能完成义务。将宿主文件与实现位置记入接线证据，并把点按后的可见结果交给 Verify。
 
 ### 步骤 2：资源解析校验
 
@@ -84,22 +87,7 @@ color: cyan
 
 ### 步骤 5：产 writeback manifest + 账本认领
 
-写 `spec/writeback-group-{group_id}.json`：
-
-```json
-{
-  "mode": "group",
-  "group_id": "feat-user-profile",
-  "modified_files": ["pages/ProfilePage.ets", "viewmodels/UserViewModel.ets"],
-  "feature_index.implemented": ["feat-user-profile"],
-  "ui_pages_implemented": ["ProfilePage"],
-  "resolved_hooks": ["P-NAV-001", "P-VM-002"],
-  "brief": {
-    "path": "spec/group-closure-briefs/feat-user-profile.md",
-    "content": "# Group Closure: feat-user-profile\n\n## Resolved Dependencies\n- P-NAV-001: Navigation to SettingsPage\n- P-VM-002: UserViewModel.fetchProfile\n\n## Resource Completion\n- Added user_avatar.png\n- Added profile_title string\n"
-  }
-}
-```
+写 `spec/execution/writeback/intent-group-{group_id}.json`，按 [收尾契约](../skills/i2h-execute/references/brief-schemas.md#4-writeback-manifest三模式通用closer-唯一账本出口) 填写结构化字段。组 brief 使用 `spec/execution/briefs/group_NN_brief.md`。运行 `build_writeback.py` 生成 manifest，交主线程应用。
 
 Return（主线程 apply 落盘）。
 
@@ -127,4 +115,4 @@ Return（主线程 apply 落盘）。
 
 信封：`final_state / loops_json_path / writeback_manifest / escalation|NONE`。
 
-Return JSON：`{mode: "final", final_state, brief.path, brief.content, feature_index.implemented, ui_pages_implemented, [fv1_unconverged]}`
+Return JSON：`{mode: "final", final_state, brief.path, brief.content, feature_index.implemented, ui_manifest.converted, [fv1_unconverged]}`

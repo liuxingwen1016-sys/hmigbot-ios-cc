@@ -21,7 +21,7 @@ except ImportError:  # pragma: no cover - package/installed-tree fallback
     from .ui_obligations import declaration_slice, parse_ui_obligations  # type: ignore
 
 
-TOOL_VERSION = "i2h-source-index/1.2"
+TOOL_VERSION = "i2h-source-index/1.8"
 SCHEMA_VERSION = 1
 DEFAULT_TEMPLATE_GLOBS = ("templates/**/*.md", "references/**/*.md")
 
@@ -141,10 +141,298 @@ def _routes(text: str) -> list[dict[str, Any]]:
     return result
 
 
+_SYMBOL_LITERAL = r'"([A-Za-z0-9][A-Za-z0-9._-]*)"'
+_SYMBOL_CALL = re.compile(
+    r'\b(?:Image|UIImage)\s*\(\s*systemName\s*:\s*'
+    r'|\bLabel\s*\(\s*"(?P<label>(?:[^"\\]|\\.)*)"\s*,\s*systemImage\s*:\s*'
+)
+_SYMBOL_CONDITION = re.compile(
+    r'\s*([A-Za-z_][\w.]*\s*(?:>=|<=|==|!=|>|<)\s*(?:[A-Za-z_][\w.]*|\d+))'
+    r'\s*\?\s*' + _SYMBOL_LITERAL + r'\s*:\s*' + _SYMBOL_LITERAL + r'\s*\)'
+)
+_SYMBOL_DIRECT = re.compile(_SYMBOL_LITERAL + r'\s*(?=[,)])')
+_INLINE_MODIFIER = re.compile(r'\s*\.([A-Za-z_]\w*)\s*\(')
+_NUMBER = r'([0-9]+(?:\.[0-9]+)?)'
+_MODIFIER_TOKEN = re.compile(r'"(?:[^"\\]|\\.)*"|[()]')
+
+
+def _direct_modifiers(text: str, offset: int) -> Iterable[tuple[str, str]]:
+    """Walk only modifiers attached to the same literal SwiftUI expression."""
+    while match := _INLINE_MODIFIER.match(text, offset):
+        depth = 1
+        start = match.end()
+        for token in _MODIFIER_TOKEN.finditer(text, start):
+            if token[0] == '(':
+                depth += 1
+            elif token[0] == ')':
+                depth -= 1
+            if depth == 0:
+                yield match[1], text[start:token.start()]
+                offset = token.end()
+                break
+        else:
+            return
+
+
+def swift_system_symbol_facts(text: str) -> list[dict[str, Any]]:
+    """Extract literal SF Symbols and scoped literal modifiers without guessing dynamic values."""
+    hidden = re.compile(r'"(?:[^"\\]|\\.)*"|//[^\n]*|/\*.*?\*/', re.S)
+    excluded = iter(hidden.finditer(text))
+    current = next(excluded, None)
+    result: list[dict[str, Any]] = []
+    for call in _SYMBOL_CALL.finditer(text):
+        while current is not None and current.end() <= call.start():
+            current = next(excluded, None)
+        if current is not None and current.start() <= call.start():
+            continue
+        literal = _SYMBOL_DIRECT.match(text, call.end())
+        conditional = _SYMBOL_CONDITION.match(text, call.end()) if literal is None else None
+        bound = literal or conditional
+        if bound is None:
+            continue
+        facts: dict[str, Any] = {'kind': 'system_symbol', 'line': _line(text, call.start())}
+        if (label := call["label"]) and "\\" not in label:
+            is_tab = re.search(r"\.tabItem\s*\{\s*$", text[max(0, call.start() - 160):call.start()])
+            facts.update(role="tab" if is_tab else "label", label=label)
+        modifier_start = bound.end() + 1 if literal else bound.end()
+        for name, args in _direct_modifiers(text, modifier_start):
+            if name == 'font' and (size := re.match(r'\s*\.system\s*\(\s*size\s*:\s*' + _NUMBER + r'(?=\s*[,)]|\s*$)', args)):
+                facts['symbol_font_pt'] = float(size[1])
+            elif name == 'frame':
+                frame: dict[str, float] = {}
+                for field in ('width', 'height', 'minWidth', 'minHeight'):
+                    if dimension := re.search(r'(?:^|,)\s*' + field + r'\s*:\s*' + _NUMBER + r'\s*(?=,|$)', args):
+                        frame[field] = float(dimension[1])
+                if frame:
+                    facts['frame_pt'] = frame
+            elif name in ('foregroundStyle', 'foregroundColor') and re.fullmatch(r'\s*\.?[A-Za-z_][\w.]*\s*', args):
+                facts['foreground_expression'] = args.strip()
+        if literal is not None:
+            result.append({**facts, 'name': literal[1]})
+        else:
+            condition, enabled, other = conditional.groups()
+            result.append({**facts, 'name': enabled, 'condition': condition, 'when': True})
+            result.append({**facts, 'name': other, 'condition': condition, 'when': False})
+    return result
+
+
+
+_PRIMARY_BUTTON_TARGETS = {
+    "arrow.right": "arrow_right",
+    "play.fill": "play_fill",
+    "timer": "timer",
+    "pencil.line": "pencil_line",
+    "checkmark": "checkmark",
+}
+_LABEL_SYMBOL_TARGETS = {"photo": "picture"}
+_SWIFT_TRIVIA = re.compile(
+    r'(?P<comment>//[^\r\n]*|/\*.*?\*/)|""".*?"""|"(?:[^"\\]|\\.)*"',
+    re.DOTALL,
+)
+_PRIMARY_BUTTON = re.compile(r"\bstruct\s+PrimaryButton\s*:\s*View\s*\{")
+_SYMBOL_DEFAULT = re.compile(r'\bvar\s+symbol\s*:\s*String\s*=\s*' + _SYMBOL_LITERAL + r"(?=[ \t]*(?:[;\r\n}]|$))")
+_PRIMARY_BUTTON_CALL = re.compile(r"(?<![\w.])PrimaryButton\s*\(\s*title\s*:")
+_PRIMARY_BUTTON_ARGUMENTS = re.compile(
+    r'\s*"(?P<label>[^"\\\r\n]+)"\s*(?:,\s*symbol\s*:\s*'
+    + _SYMBOL_LITERAL + r'\s*)?\)'
+)
+
+
+def _mask_swift(text: str, keep_literals: bool) -> str:
+    return _SWIFT_TRIVIA.sub(
+        lambda match: match[0] if keep_literals and match.lastgroup != "comment"
+        else re.sub(r"[^\r\n]", " ", match[0]), text,
+    )
+
+
+def _share_link_facts(text: str, line_offset: int) -> list[dict[str, Any]]:
+    code = _mask_swift(text, keep_literals=False)
+    literals = _mask_swift(text, keep_literals=True)
+    facts = []
+    for call in re.finditer(r"(?<![\w.])(?:SwiftUI\.)?ShareLink\s*\(\s*(items?)\s*:", code):
+        row = {"line": _line(text, call.start()) + line_offset, "payload_argument": call[1]}
+        depth = 1
+        for token in _MODIFIER_TOKEN.finditer(code, call.end()):
+            depth += (token[0] == "(") - (token[0] == ")")
+            if depth == 0:
+                label = re.match(r'\s*\{\s*(?:Label|Text)\s*\(\s*"([^"\\\r\n]+)"\s*(?=[,)])',
+                                 literals[token.end():])
+                if label:
+                    row["label"] = label[1]
+                facts.append(row)
+                break
+    return facts
+
+
+def _drawing_components(texts: dict[Path, str], root: Path) -> dict[str, dict[str, Any]]:
+    """Index unambiguous top-level views with a direct Canvas or local Shape call."""
+    definitions = {}
+    for path, text in texts.items():
+        code = _mask_swift(text, keep_literals=False)
+        depth, previous = 0, 0
+        for row in _declarations(code):
+            start = row["start_offset"]
+            prefix = code[previous:start]
+            depth += prefix.count("{") - prefix.count("}")
+            previous = start
+            if depth == 0 and row["kind"] != "extension":
+                definitions.setdefault(row["name"], []).append((path, code, row))
+    unique = {name: group[0] for name, group in definitions.items() if len(group) == 1}
+    shapes = {name: (path, row) for name, (path, _, row) in unique.items() if "Shape" in row["bases"]}
+    if shapes:
+        shape_call = re.compile(r"(?<![\w.])(" + "|".join(map(re.escape, shapes)) + r")\s*\(")
+    components = {}
+    for name, (path, code, row) in unique.items():
+        if "View" not in row["bases"]:
+            continue
+        body = declaration_slice(code, row["start_offset"])
+        used = sorted({match[1] for match in shape_call.finditer(body)}) if shapes else []
+        # Same-file Shape resolution is deterministic for common fileprivate
+        # drawing helpers. Cross-file or qualified type lookup needs review.
+        used = [shape for shape in used if shapes[shape][0] == path]
+        if not used and not re.search(r"\bCanvas\s*(?:\(|\{)", body):
+            continue
+        file = _relative(path, root)
+        components[name] = {
+            "component": name, "definition": {"file": file, "line": row["line"]},
+            "shape_definitions": [{"name": shape, "file": file, "line": shapes[shape][1]["line"]}
+                                  for shape in used],
+        }
+    return components
+
+
+def _drawing_calls(text: str, offset: int, components: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    if not components:
+        return []
+    names = "|".join(map(re.escape, components))
+    calls = re.compile(r"(?<![\w.])(" + names + r")\s*\(")
+    code = _mask_swift(text, keep_literals=False)
+    literals = _mask_swift(text, keep_literals=True)
+    facts = []
+    for call in calls.finditer(code):
+        depth = 1
+        for token in re.finditer(r"[()]", code[call.end():]):
+            depth += 1 if token[0] == "(" else -1
+            if depth == 0:
+                end = call.end() + token.start()
+                break
+        else:
+            continue
+        info = {**components[call[1]], "line": offset + _line(text, call.start())}
+        arguments = literals[call.end():end].strip()
+        if len(arguments) <= 240:
+            info["arguments"] = arguments
+        for modifier, value in _direct_modifiers(literals, end + 1):
+            if modifier != "frame":
+                continue
+            size = re.fullmatch(r"\s*width:\s*" + _NUMBER + r"\s*,\s*height:\s*" + _NUMBER + r"\s*", value)
+            if size:
+                info["frame_pt"] = {"width": float(size[1]), "height": float(size[2])}
+            break
+        facts.append(info)
+    return facts
+
+
+def _primary_button_definition(texts: dict[Path, str], root: Path) -> dict[str, Any] | None:
+    definitions = []
+    for path, text in texts.items():
+        if "PrimaryButton" not in text:
+            continue
+        code = _mask_swift(text, keep_literals=False)
+        for declaration in _PRIMARY_BUTTON.finditer(code):
+            body = declaration_slice(code, declaration.start())
+            if not re.search(r"\bImage\s*\(\s*systemName\s*:\s*symbol\s*\)", body):
+                continue
+            literal_body = _mask_swift(text[declaration.start():declaration.start() + len(body)], keep_literals=True)
+            if default := _SYMBOL_DEFAULT.search(literal_body):
+                definitions.append({
+                    "file": _relative(path, root),
+                    "line": _line(text, declaration.start() + default.start()),
+                    "default_symbol": default[1],
+                })
+    return definitions[0] if len(definitions) == 1 else None
+
+
+def _primary_button_facts(text: str, line_offset: int, definition: dict[str, Any]) -> list[dict[str, Any]]:
+    code = _mask_swift(text, keep_literals=False)
+    literals = _mask_swift(text, keep_literals=True)
+    result = []
+    for call in _PRIMARY_BUTTON_CALL.finditer(code):
+        if args := _PRIMARY_BUTTON_ARGUMENTS.match(literals, call.end()):
+            source_symbol = args[2] or definition["default_symbol"]
+            target = _PRIMARY_BUTTON_TARGETS.get(source_symbol)
+            result.append({
+                "role": "primary_button", "line": line_offset + _line(text, call.start()),
+                "label": args["label"], "source_symbol": source_symbol,
+                "origin": "explicit" if args[2] else "component_default",
+                "component_definition": definition,
+                **({"target_symbol": target} if target else {}),
+            })
+    return result
+
+
+def view_ui_obligations(
+    text: str, line_offset: int, primary_button: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    obligations = parse_ui_obligations(text, line_offset=line_offset)
+    facts = swift_system_symbol_facts(text)
+    fidelity = []
+    for fact in facts:
+        source_line = fact["line"] + line_offset
+        if fact.get("role") == "tab" and fact["name"] == "square.stack.3d.up":
+            fidelity.append({
+                "role": "tab", "line": source_line, "label": fact["label"],
+                "source_symbol": fact["name"], "target_symbol": "square_stack_3d_fill",
+            })
+        if fact.get("role") == "label" and "condition" not in fact:
+            label = {"role": "label", "line": source_line, "label": fact["label"], "source_symbol": fact["name"]}
+            if target := _LABEL_SYMBOL_TARGETS.get(fact["name"]):
+                label["target_symbol"] = target
+            fidelity.append(label)
+        if fact["name"] != "star.fill" or fact.get("when") is not True:
+            continue
+        alternate = any(
+            row["name"] == "star" and row["line"] == fact["line"]
+            and row.get("condition") == fact["condition"] and row.get("when") is False
+            for row in facts
+        )
+        frame = fact.get("frame_pt", {})
+        size = fact.get("symbol_font_pt")
+        button_label = re.search(r"\bButton\s*\{[^{}]*\}\s*label:\s*\{\s*$",
+                                 "\n".join(text.splitlines()[:fact["line"] - 1]))
+        if (alternate and ">=" in fact["condition"] and button_label and size
+                and frame.get("minWidth") and frame.get("minHeight")):
+            fidelity.append({
+                "role": "rating", "line": source_line, "condition": fact["condition"],
+                "source_symbols": ["star.fill", "star"], "target_symbols": ["star_fill", "star"],
+                "symbol_font_pt": size, "minimum_button_pt": [frame["minWidth"], frame["minHeight"]],
+            })
+    if primary_button and "PrimaryButton" in text:
+        fidelity.extend(_primary_button_facts(text, line_offset, primary_button))
+    if fidelity:
+        obligations["system_symbol_fidelity"] = fidelity
+    date_formats = [
+        {"line": _line(text, match.start()) + line_offset,
+         "value_path": re.sub(r"\s+", "", match["value"]),
+         "slot": "text" if match["text"] else "subtitle",
+         "date_style": match["date"], "time_style": match["time"]}
+        for match in re.finditer(
+            r"(?<![\w.])(?:(?P<text>Text)\s*\(\s*|SectionHeading\s*\(\s*title\s*:\s*,\s*subtitle\s*:\s*)"
+            r"(?P<value>[A-Za-z_]\w*(?:\s*\.\s*\w+)*)\s*\.\s*formatted\s*\(\s*"
+            r"date\s*:\s*\.(?P<date>omitted|numeric|abbreviated|long|complete)\s*,\s*"
+            r"time\s*:\s*\.(?P<time>omitted|shortened|standard|complete)\s*\)\s*(?=[,)])",
+            _mask_swift(text, keep_literals=False),
+        )
+    ]
+    if date_formats:
+        obligations["date_format_calls"] = date_formats
+    if share_links := _share_link_facts(text, line_offset):
+        obligations["share_link_calls"] = share_links
+    return obligations
+
 def _resources(text: str) -> list[dict[str, Any]]:
     patterns = {
         "image": r"\bImage\s*\(\s*\"([^\"]+)\"|\bUIImage\s*\(named:\s*\"([^\"]+)\"",
-        "system_symbol": r"\bImage\s*\(\s*systemName:\s*\"([^\"]+)\"|\bUIImage\s*\(\s*systemName:\s*\"([^\"]+)\"",
         "color": r"\bColor\s*\(\s*\"([^\"]+)\"",
         "localization": r"\bNSLocalizedString\s*\(\s*\"([^\"]+)\"",
     }
@@ -154,6 +442,7 @@ def _resources(text: str) -> list[dict[str, Any]]:
             name = next((group for group in match.groups() if group), None)
             if name:
                 result.append({"kind": kind, "name": name, "line": _line(text, match.start())})
+    result.extend(swift_system_symbol_facts(text))
     return result
 
 
@@ -228,6 +517,9 @@ def build_index(
         for declaration in _declarations(texts[path]):
             declarations_by_name.setdefault(declaration["name"], _relative(path, root))
 
+    primary_button = _primary_button_definition(texts, root)
+    drawing_components = _drawing_components(texts, root)
+
     entries: list[dict[str, Any]] = []
     pages: list[dict[str, Any]] = []
     components: list[dict[str, Any]] = []
@@ -267,11 +559,15 @@ def build_index(
                     "declaration_line": declaration["line"],
                     "dependencies": dependencies,
                     "surface": surface,
-                    "ui_obligations": parse_ui_obligations(
+                    "ui_obligations": view_ui_obligations(
                         declaration_text,
                         line_offset=int(declaration["line"]) - 1,
+                        primary_button=primary_button,
                     ),
                 }
+                calls = _drawing_calls(declaration_text, int(declaration["line"]) - 1, drawing_components)
+                if calls:
+                    view["ui_obligations"]["drawing_component_calls"] = calls
                 if surface == "screen":
                     pages.append(view)
                 else:

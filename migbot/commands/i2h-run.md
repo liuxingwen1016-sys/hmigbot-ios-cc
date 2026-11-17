@@ -4,6 +4,8 @@ description: Run the full i2h migration pipeline (spec → plan → execute → 
 
 `$ARGUMENTS` may contain `--require-runtime-plan`, `--require-visual-and-ut`, and `--require-behavior`. Pass the requested flags to every preflight call. Visual and UT mode selects CHECK-3/4. Behavior mode also requires passing runtime evidence for CHECK-5 before acceptance can finish.
 
+For full timing, also pass `--require-bound-visual` on every call. Record `visual-scope: <project-relative path>` and `visual-comparison-sha256: <comparison report digest>` in the Verify report after archiving the current comparisons. Preflight replays the approved pairs and checks that visual and behavior evidence use the same signed HAP and device.
+
 ## Goal
 
 Sequence the five pipeline-stage skills end-to-end for iOS → HarmonyOS migration.
@@ -55,6 +57,12 @@ diagnostic is retained. Apply each dispatched Skill's own prerequisites and stop
 advancing if the post-stage check still reports it incomplete. A stale UI delivery
 contract must be resolved in Plan before Execute can consume it.
 
+With bound visual verification enabled, `current_ui_delivery.dispatch_diagnostic`
+shows the frozen input status for units with missing conversion reports. Recover
+READY units through the normal Execute dispatch. For BLOCKED units, resolve the
+listed inputs before retrying. Follow the original Execute checks when the
+diagnostic is UNAVAILABLE. The stage remains incomplete while reports are missing.
+
 ## 3. Run each stage
 
 For each stage from the resume target through stage 5:
@@ -68,13 +76,34 @@ For each stage from the resume target through stage 5:
 
 For Spec through Verify, time the actual dispatch with the same preflight command and the same gate flags.
 Before stage-specific preparation and Skill invocation, add `--timing start --timing-stage <stage>`.
+A return code of 1 reports an incomplete pipeline; when JSON contains a running `timing` receipt, the start succeeded.
+
 Save the returned `timing.run_id` and pass it as `--timing-run <id>` to subsequent timing calls.
 Use `--timing finish --timing-stage <stage> --timing-run <id>` for step 4, after any device runs,
 visual comparisons and repairs for that attempt have returned. Also finish normally failed attempts.
 Keep the timing ID for retries within the same invocation. For a new invocation start a new timing ID.
 If execution is interrupted without a finish, the receipt retains the running attempt and unknown end time.
 Timing measures this invocation through passing Verify, including time between stage attempts.
+Use `timing.observed_wall_seconds` for the elapsed span through the last finished
+attempt, including failed attempts and gaps. `timing.observed_until` identifies its
+cutoff during a retry or interruption. The two-hour result requires passing Verify.
+Use `first_verify_ready_seconds` for the first preflight that admits Verify,
+`first_verify_start_seconds` for dispatch, and `observed_after_first_verify_seconds`
+for the measured span from that dispatch through the latest finished attempt.
+Use `pipeline_resume.py --project-root <project> --timing-report --timing-run <id>`
+to read one recorded run and summarize attempt durations by stage, gaps between
+attempts, and time since the first Verify dispatch. Running attempts keep an
+unknown duration. Use the original operation receipts for model, device, and
+visual-review breakdowns within attempts.
+New receipts compare monotonic time with the UTC elapsed time. A difference
+over two seconds marks the measurement partial. Both elapsed values must be
+below 7,200 seconds to meet the deadline.
+Full timing binds the approved Plan artifact set and the replayed visual and behavior
+receipts. If the Plan changes, the evidence is missing, or a pre-existing receipt
+is retained unchanged, report the recorded duration with `scope_gaps`.
 A run resumed after Spec or missing any strict gate flag has partial timing.
+Timing binds the active CC scripts and instructions at the first start. If they change, retain the
+original receipt and start a new measured run. Historical receipts without this fingerprint can record partial timing.
 
 Before invoking `i2h-execute`, consume the approved UI delivery contract and
 write the ownership receipt. Use the `path` returned in

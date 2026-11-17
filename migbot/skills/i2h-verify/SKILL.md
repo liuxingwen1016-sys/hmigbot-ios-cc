@@ -118,6 +118,11 @@ CHECK-1/2 的具体规则见 [静态分析与 App 身份](references/static-and-
 
 视觉分数与功能完备度分开判断。可用 `scripts/visual_rubric.py` 对截图配对结果生成 report-only rubric。`design_difference` 或 `config_difference` 只有在绑定 source/target manifest 与截图哈希、且原因属于系统状态栏、系统导航栏、字体栅格、系统材质、safe-area、原生滚动物理时才可逐项豁免。缺证据的差异得分为 `null`。缺控件、错状态、错路由、错误弹窗和交互失效不能通过视觉豁免。
 
+启用 `--require-bound-visual` 时，CHECK-3 使用 `stage1_acceptance.py --kind visual` 归档当前批准范围的比较报告。
+从该次归档记录 `report_sha256`，在 Verify 报告中各写一行：
+`visual-scope: <项目内范围路径>` 和 `visual-comparison-sha256: <report_sha256>`。
+全部批准状态需要当前签名包的有效取证，并与 CHECK-5 的包摘要、目标设备一致。
+
 视觉轴达到 0.95 才能记为 visual PASS。页面、控件、状态、路由、交互和关键功能仍按各自门禁要求达到 100%。pHash 或 SSIM 只作为图像测量输入，不能单独宣布 UI 完备度。
 
 **实现方式**：在 i2h-verify 主对话中执行双端截图对比（不依赖 arkts-visual-verify）
@@ -188,33 +193,16 @@ CHECK-1/2 的具体规则见 [静态分析与 App 身份](references/static-and-
 
 ## CHECK-4：单元测试
 
-调用 `arkts-ut-verifier`，传入：
-- `--ios-source-root <ios-project-root>`（参数名适配，实际传 iOS 路径）
-- `--harmonyos-root <harmonyos-project-root>`
-- `--mode verify_fix` / `verify_only`（默认 `verify_fix`）
-- `--skip-oracle true`（跳过 Android Oracle 采集，或设置 `UT_ANDROID_ORACLE=off`）
-- `--test-framework xctest`（指定测试框架）
+从当前已批准的 Feature 与 AC 范围核对逻辑设计。用原版 Swift/Objective-C 可执行路径、原生测试、源锚点和已批准平台差异确认预期。证据不足的义务留为待复核。目标测试使用 ArkTS Hypium，由签名测试 HAP 在授权设备上执行。XCTest 作为 iOS 源端证据。
 
-**iOS 特性适配**：
-- iOS 测试位置：`<Project>Tests/` (单元测试)、`<Project>UITests/` (UI 测试)
-- 文件命名：`*Tests.swift`
-- 测试框架：XCTest
+使用安装在项目 `.claude/skills/arkts-ut-verifier/scripts/` 中的 Python 命令：
 
-读取 `spec/verify/ut/ut-report.md`、`_state.yaml` 和当前轮 `_ut_summary.md`；进入修复循环且已有退出摘要时一并读取 `round-N/final-summary.md`。不要要求 `verify_only` 生成修复循环专属产物。
+1. `feature_inputs.py --project-root <根目录>` 和 `ac_inputs.py --feature-file <主规格> --feature-id <ID>` 生成准确输入。
+2. 对照实际测试注册清单运行 `generation_inventory.py --feature-inputs <清单> --registered-ids <ID数组>`。生成记录与注册 ID 分别取证。
+3. 逐运行组执行 `hypium_results.py parse --log <原始日志> --expected-ids <该组注册ID数组>`。使用 `hypium_results.py metrics --input <指标输入>` 分别统计原始通过率、设计验证率、AC 完成率。
+4. 已有签名包及原始回执可使用 `i2h-plan/scripts/acceptance_plan.py evaluate-hypium --draft <AC绑定> --run <回执> --signed-hap <应用HAP> --signed-test-hap <测试HAP> --device <ID>` 复核。原样记录包摘要、设备、原始日志及 AC 匹配。局部绑定只证明对应 AC。
 
-**判定**：
-- 全范围实际 GREEN，且无未验证设计点、待补测或复核项 → PASS
-- 有实际 RED、ERROR 或最终 FAIL → FAIL，分别记录产品、测试和环境原因
-- CONVERGED、缺证据、外部前置阻塞或尚未复测的修复 → PARTIAL；保留原始退出状态，已确认失败仍按 FAIL 报告
-
-通过率、设计验证率和 AC 完成率按报告原口径引用，不能把已执行用例通过率当作全设计范围已验证。
-
-**限制**：
-- 由于跳过 Oracle 采集，测试用例需要手动编写或基于 Spec
-- 不自动生成测试用例
-- 以 Spec 为准（而非 iOS 实际行为）
-
-详细见 [设备验证](references/device-verification.md) 的 CHECK-4 章节。
+按实际结果更新 `spec/verify/ut/ut-report.md`。全范围实际 GREEN 且逻辑设计与必要接线均核验完成时记 PASS。实跑 RED 或 ERROR 记 FAIL。缺结果、未绑定、Ignore、未复测或前置受阻记 PARTIAL 或 DEFERRED，并保留已实跑的失败。命令参数错误保留退出码与诊断。详见 [统计合同](../arkts-ut-verifier/references/result-statistics.md)。
 
 ## CHECK-5：行为验证（可选，非门控）
 
@@ -257,6 +245,8 @@ CHECK-1/2 的具体规则见 [静态分析与 App 身份](references/static-and-
 4. 每段结束后读取本次报告、当前轮摘要和必要证据，保留原始状态。verifier 的内部修复由其自身调度，i2h-verify 不另派同类 fixer，也不重置内部轮数。
 5. 仍需由执行阶段处理的失败按 [失败处理](references/failure-loop.md) 回到 `i2h-execute`；CHECK-5 状态不触发该回环。包括 CHECK-5 在内的源码修复结束后，复检 CHECK-1、受影响的 CHECK-2 及已选 CHECK-3/4；未复测的受影响设备项记 PARTIAL，已确认失败保留。
 6. 汇总到 `spec/verify-report.md`，使用 [报告模板](references/verify-report-template.md)。
+
+若宿主已发布 `spec/verify/host-installation.json`，先在受限会话用已安装的 `i2h-execute/scripts/host_build_checkpoint.py --project-root . --check-installation` 只读复核。使用该 HAP 和设备继续原有视觉、单测与行为验收。报告写入一行 `host-installation-sha256: <文件的 SHA-256>`。规约、签名身份或设备用例未获证据时按实际状态记录。宿主构建与安装的命令见 [宿主编译检查点](../i2h-execute/references/build-loop.md#宿主编译检查点)。
 
 构建、签名和安装由所选 verifier 按自身契约处理；构建或运行失败按实际结果记录，不新增独立编译检查。后续修复改变已测代码或配置时，复检受影响项；未复检的旧结果注明未覆盖当前改动。
 

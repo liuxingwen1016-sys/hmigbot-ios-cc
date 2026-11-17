@@ -32,6 +32,8 @@ import source_layout  # noqa: E402
 sys.path.insert(0, str(REPO / "migbot/bin/scripts/pipeline"))
 import marker_contract  # noqa: E402
 import pipeline_resume  # noqa: E402
+from generate_execute_coverage import build as build_coverage  # noqa: E402
+from acceptance_plan import current_requirements, seal  # noqa: E402
 
 
 STAGES = (
@@ -168,12 +170,16 @@ def run_fixture() -> dict:
         # Draft defaults are intentionally conservative. The fixture makes
         # ownership explicit before validation rather than accepting a shared
         # `default/content` state for two source views.
-        for unit, state_id, output_file in zip(
-            delivery["units"], ("home", "detail"), ("entry/src/main/ets/pages/HomeView.ets", "entry/src/main/ets/pages/DetailViewController.ets")
-        ):
-            unit["required_states"][0]["state_id"] = state_id
+        for unit in delivery["units"]:
+            symbol = unit["output"]["symbol"]
+            # This static fixture previews each generated component on its own.
+            # Declare that reviewed role instead of keeping the draft's embedded
+            # UIKit hint, which would require a real integration host.
+            unit["presentation_role"] = "routed_page"
+            unit["presentation"].update({"source": "fixture_preview", "harmony_mapping": "NavDestination"})
+            unit["required_states"][0]["state_id"] = {"HomeView": "home", "DetailViewController": "detail"}[symbol]
             unit["required_states"][0]["arrival_mode"] = "preview"
-            unit["output"]["file"] = output_file
+            unit["output"]["file"] = f"entry/src/main/ets/pages/{symbol}.ets"
         delivery["presentation"].update({"runtime_required": False, "mode": "static-only"})
         checked = ui_delivery.validate(harmony, delivery)
         assert checked["status"] == "validated", checked
@@ -182,6 +188,16 @@ def run_fixture() -> dict:
         ownership = ui_state_ownership.review(harmony, approved)
         assert ownership["status"] == "PASS", ownership
         _write(harmony / "spec/execution/ui-state-ownership.json", ownership)
+
+        _write(harmony / "spec/baseline/features/feat_001_fixture.md",
+               "# F001: Fixture\n\n## Acceptance Criteria\n\n- [ ] F001-AC01 Show fixture content\n")
+        _write(harmony / "spec/baseline/plans/slices/slice-01-F001.md",
+               "feature_id: F001\n\nmodifies_files:\n  - entry/src/main/ets/pages/HomeView.ets\n")
+        requirements, coverage = build_coverage(harmony)
+        acceptance = seal(current_requirements(harmony), {"schema_version": 1, "bindings": []})
+        _write(harmony / "spec/.i2h/requirements-index.json", requirements)
+        _write(harmony / "spec/.i2h/plan-coverage.json", coverage)
+        _write(harmony / "spec/baseline/plans/acceptance-plan.json", acceptance)
 
         _marker(
             harmony,
@@ -195,7 +211,8 @@ def run_fixture() -> dict:
             harmony / "spec/baseline/plans/complete.txt",
             "i2h-plan",
             target_hash,
-            ["spec/baseline/ui-delivery-approved.json"],
+            ["spec/baseline/ui-delivery-approved.json", "spec/.i2h/requirements-index.json",
+             "spec/.i2h/plan-coverage.json", "spec/baseline/plans/acceptance-plan.json"],
         )
         assert next_stage(harmony, target_hash) == "i2h-execute"
         _make_reports(harmony, target_hash)

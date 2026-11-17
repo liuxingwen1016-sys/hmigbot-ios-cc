@@ -10,6 +10,89 @@ from ui_obligation_gate import evaluate  # noqa: E402
 
 
 class UiObligationGateTests(unittest.TestCase):
+    def test_shared_drawing_must_be_reached_from_each_planned_page(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+
+            def write(name, content):
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content, encoding="utf-8")
+                return path
+
+            definition = {"file": "Theme.swift", "line": 7}
+            shared = "entry/src/main/ets/components/ReusableArt.ets"
+            write(shared, "export struct ReusableArt { build() { Canvas() } }\n")
+            units = []
+            for symbol in ("FirstPage", "SecondPage"):
+                path = f"entry/src/main/ets/pages/{symbol}.ets"
+                host = write(path, "import { ReusableArt as Art } from '../components/ReusableArt';\n"
+                             f"struct {symbol} {{ build() {{ this.Card() }} "
+                             "@Builder Card() { Art() } }\n")
+                units.append({"unit_id": symbol, "output": {"file": path, "symbol": symbol},
+                              "source_obligations": {"drawing_component_calls": [{"definition": definition}]}})
+            data = {"units": units, "drawing_component_bindings": [
+                {"definition": definition, "output": {"file": shared, "symbol": "ReusableArt"}}]}
+            inventory = write("spec/baseline/ui-delivery-approved.json", json.dumps(data))
+            self.assertEqual(evaluate(root, inventory)["status"], "PASS")
+
+            original = host.read_text()
+            host.write_text(original.replace("this.Card()", "Text('fallback')"))
+            errors = evaluate(root, inventory)["errors"]
+            self.assertEqual([(row["code"], row["unit_id"]) for row in errors],
+                             [("shared_drawing_not_rendered", "SecondPage")])
+            write(shared.replace("ReusableArt.ets", "PageCopy.ets"),
+                  "export struct ReusableArt { build() { Canvas() } }\n")
+            host.write_text(original.replace("../components/ReusableArt", "../components/PageCopy"))
+            errors = evaluate(root, inventory)["errors"]
+            self.assertEqual([(row["code"], row["unit_id"]) for row in errors],
+                             [("shared_drawing_not_rendered", "SecondPage")])
+            host.write_text(original)
+            write(shared, "export struct ReusableArt { build() {} }\n")
+            self.assertEqual([row["code"] for row in evaluate(root, inventory)["errors"]],
+                             ["drawing_implementation_missing"])
+            data["drawing_component_bindings"].append(data["drawing_component_bindings"][0])
+            inventory.write_text(json.dumps(data))
+            self.assertIn("drawing_binding_invalid", [row["code"] for row in evaluate(root, inventory)["errors"]])
+
+    def test_traceable_rawfile_must_be_staged_with_its_consuming_module(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            approved = root / "spec/baseline/ui-delivery-approved.json"
+            approved.parent.mkdir(parents=True)
+            approved.write_text('{"units":[]}', encoding="utf-8")
+            resources = root / "spec/.i2h/resources-inventory.json"
+            resources.parent.mkdir()
+            resources.write_text(json.dumps({"resources": {"standalone_assets": [{
+                "path": "Resources/sample-bean.png", "exists": True, "sha256": "a" * 64,
+            }]}}), encoding="utf-8")
+            source = root / "entry/src/main/ets/services/PhotoRecognition.ets"
+            source.parent.mkdir(parents=True)
+            source.write_text(
+                "export const SAMPLE: string = 'sample-bean.png';\n"
+                "const log = \"mgr.getRawFileContent('sample-bean.png')\";\n"
+                "// mgr.getRawFileContent('sample-bean.png');\n"
+                "function load(mgr: ResourceManager) { return mgr.getRawFileContent(SAMPLE); }\n",
+                encoding="utf-8",
+            )
+            result = evaluate(root, approved)
+            self.assertEqual([row["code"] for row in result["errors"]], ["source_rawfile_missing"])
+            self.assertIn("entry/src/main/resources/rawfile/sample-bean.png", result["errors"][0]["detail"])
+            rawfile = root / "entry/src/main/resources/rawfile/sample-bean.png"
+            rawfile.parent.mkdir(parents=True)
+            rawfile.write_bytes(b"image")
+            self.assertEqual(evaluate(root, approved)["status"], "PASS")
+            rawfile.unlink()
+            source.write_text(
+                "const SAMPLE = 'sample-bean.png';\n"
+                "function load(SAMPLE: string) { return mgr.getRawFileContent(SAMPLE); }\n"
+                "mgr.getRawFileContent('optional-image.png');\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(evaluate(root, approved)["status"], "PASS")
+            source.write_text("mgr.getRawFdSync('sample-bean.png');\n", encoding="utf-8")
+            self.assertEqual(evaluate(root, approved)["errors"][0]["code"], "source_rawfile_missing")
+
     def run_gate(self, source: str, obligations: dict, presentation=None):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -23,6 +106,120 @@ class UiObligationGateTests(unittest.TestCase):
                 unit["presentation"] = presentation
             inventory.write_text(json.dumps({"units": [unit]}), encoding="utf-8")
             return evaluate(root, inventory)
+
+    def test_mapped_tab_checks_the_symbol_on_the_labeled_call(self):
+        obligations = {"system_symbol_fidelity": [{
+            "role": "tab", "line": 59, "label": "豆档案", "source_symbol": "square.stack.3d.up",
+            "target_symbol": "square_stack_3d_fill",
+        }]}
+        good = "Tabs().tabBar({ text: '豆档案', icon: $r('sys.symbol.square_stack_3d_fill') })"
+        self.assertEqual(self.run_gate(good, obligations)["status"], "PASS")
+        wrong = good.replace("square_stack_3d_fill", "square_grid_2x2")
+        wrong += "\nunused('豆档案', $r('sys.symbol.square_stack_3d_fill'))"
+        errors = self.run_gate(wrong, obligations)["errors"]
+        self.assertEqual([row["code"] for row in errors], ["mapped_system_symbol_mismatch"])
+        self.assertIn("Swift line 59", errors[0]["detail"])
+        shared = """
+          function symbolOf(key: string): Resource {
+            switch (key) { case 'square.stack.3d.up': return $r('sys.symbol.square_stack_3d_fill'); }
+          }
+          this.floatingTabItem(1, 'ignored', 'ignored')
+          this.floatingTabItem('豆档案', 'square.stack.3d.up')
+        """
+        self.assertEqual(self.run_gate(shared, obligations)["status"], "PASS")
+        self.assertEqual(self.run_gate(shared.replace("square_stack_3d_fill", "square_grid_2x2"), obligations)["status"], "FAIL")
+
+    def test_mapped_rating_checks_state_and_the_separate_size_bindings(self):
+        obligations = {"system_symbol_fidelity": [{
+            "role": "rating", "line": 31, "target_symbols": ["star_fill", "star"],
+            "symbol_font_pt": 28, "minimum_button_pt": [44, 44],
+        }]}
+        good = """
+          const SYMBOL_SIZE: number = 28;
+          const TOUCH_SIZE = 44;
+          Button() {
+            SymbolGlyph(this.rating >= index ? $r('sys.symbol.star_fill') : $r('sys.symbol.star'))
+              .fontSize(SYMBOL_SIZE)
+          }.width(TOUCH_SIZE).height(TOUCH_SIZE)
+        """
+        self.assertEqual(self.run_gate(good, obligations)["status"], "PASS")
+        for wrong in (
+            good.replace(".width(TOUCH_SIZE)", ".width(SYMBOL_SIZE)"),
+            good.replace(".fontSize(SYMBOL_SIZE)", ".fontSize(TOUCH_SIZE)"),
+            good.replace("star_fill", "square_grid_2x2"),
+            good.replace(">= index", "< index"),
+            "// " + good.strip().replace("\n", "\n// "),
+        ):
+            with self.subTest(wrong=wrong):
+                self.assertEqual(self.run_gate(wrong, obligations)["errors"][0]["code"], "mapped_system_symbol_mismatch")
+
+    def test_mapped_label_requires_its_glyph_in_the_same_reachable_layout(self):
+        obligations = {"system_symbol_fidelity": [
+            {"role": "label", "line": 37, "label": "Open album", "source_symbol": "photo", "target_symbol": "picture"},
+            {"role": "label", "line": 39, "label": "Share", "source_symbol": "square.and.arrow.up"},
+        ]}
+        good = """
+          struct Test {
+            build() { Column() { this.album() } }
+            @Builder album() {
+              Row() {
+                SymbolGlyph($r('sys.symbol.picture')).fontSize(17)
+                Text('Open album')
+              }.onClick(() => this.pickPhoto())
+            }
+          }
+        """
+        result = self.run_gate(good, obligations)
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual([row["label"] for row in result["symbol_review_required"]], ["Share"])
+        for wrong in (
+            good.replace("sys.symbol.picture", "sys.symbol.camera"),
+            good.replace("SymbolGlyph($r('sys.symbol.picture')).fontSize(17)", ""),
+            good.replace("SymbolGlyph($r('sys.symbol.picture')).fontSize(17)",
+                         "Row() { SymbolGlyph($r('sys.symbol.picture')) }"),
+            good.replace("SymbolGlyph($r('sys.symbol.picture')).fontSize(17)",
+                         "// SymbolGlyph($r('sys.symbol.picture'))"),
+            good.replace("this.album()", "Text('Open album')"),
+        ):
+            with self.subTest(wrong=wrong):
+                errors = self.run_gate(wrong, obligations)["errors"]
+                self.assertEqual([row["code"] for row in errors], ["mapped_system_symbol_mismatch"])
+                self.assertIn("Swift line 37", errors[0]["detail"])
+
+    def test_shared_primary_button_uses_the_expected_icon_for_each_action(self):
+        obligations = {"system_symbol_fidelity": [
+            {"role": "primary_button", "line": 11, "label": "Continue",
+             "source_symbol": "arrow.right", "target_symbol": "arrow_right"},
+            {"role": "primary_button", "line": 12, "label": "Begin",
+             "source_symbol": "play.fill", "target_symbol": "play_fill"},
+            {"role": "primary_button", "line": 13, "label": "Scan", "source_symbol": "viewfinder"},
+        ]}
+        good = """
+          function symbolOf(key: string): Resource {
+            switch (key) {
+              case 'arrow.right': return $r('sys.symbol.arrow_right');
+              case 'play.fill': return $r('sys.symbol.play_fill');
+            }
+          }
+          struct PrimaryButton {
+            @Param trailingSymbol: string = 'arrow.right';
+            build() { SymbolGlyph(symbolOf(this.trailingSymbol)) }
+          }
+          PrimaryButton({ title: 'Continue', onAction: () => next() })
+          PrimaryButton({ title: 'Begin', trailingSymbol: 'play.fill', onAction: () => start() })
+        """
+        result = self.run_gate(good, obligations)
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual([row["label"] for row in result["symbol_review_required"]], ["Scan"])
+        for wrong in (
+            good.replace("trailingSymbol: 'play.fill'", "trailingSymbol: 'arrow.right'"),
+            good.replace("trailingSymbol: 'play.fill', ", ""),
+            good.replace("'sys.symbol.play_fill'", "'sys.symbol.arrow_right'"),
+            good.replace("this.trailingSymbol", "'arrow.right'"),
+            good.replace("string = 'arrow.right'", "string = 'play.fill'"),
+        ):
+            with self.subTest(wrong=wrong):
+                self.assertEqual(self.run_gate(wrong, obligations)["errors"][0]["code"], "mapped_system_symbol_mismatch")
 
     def test_runner_action_id_requires_an_actual_modifier(self):
         contract = {"runner_action_ids": ["openPreferences"]}
@@ -49,6 +246,20 @@ class UiObligationGateTests(unittest.TestCase):
         result = self.run_gate(good, obligations)
         self.assertEqual(result["status"], "PASS")
 
+    def test_foreground_safearea_ignores_comments_and_requires_an_applied_inset(self):
+        expanded = ".expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP])"
+        comment_only = "// 豆档案详情\nColumn() { Text('认识这袋豆') }" + expanded
+        self.assertEqual(self.run_gate(comment_only, {})["status"], "PASS")
+        commented_expansion = "Row() { Text('豆档案') }\n// " + expanded
+        self.assertEqual(self.run_gate(commented_expansion, {})["status"], "PASS")
+        base = "Column() { Row() { Text('豆档案').onClick(() => {}) } }"
+        insufficient = "import { WindowModel } from './WindowModel';\n" + base + expanded + (
+            "\n// .safeAreaPadding({ top: 20 })\nconst note = 'windowTopPadding';"
+        )
+        self.assertIn("foreground_safearea_missing",
+                      [row["code"] for row in self.run_gate(insufficient, {})["errors"]])
+        applied = base + ".padding({ top: this.windowModel.windowTopPadding })" + expanded
+        self.assertEqual(self.run_gate(applied, {})["status"], "PASS")
     def test_toolbar_search_and_chart_have_structural_markers(self):
         obligations = {
             "searchable": True,
@@ -150,6 +361,72 @@ class UiObligationGateTests(unittest.TestCase):
         )
         result = self.run_gate(good, obligations)
         self.assertEqual(result["status"], "PASS")
+
+    def test_date_subtitle_checks_only_the_matching_rendered_slot(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            view = root / "Home.ets"
+            inventory = root / "inventory.json"
+            inventory.write_text(json.dumps({"units": [{
+                "unit_id": "home",
+                "output": {"file": "Home.ets", "symbol": "Home"},
+                "source_obligations": {"date_format_calls": [{
+                    "line": 10, "slot": "subtitle", "value_path": "latest.startedAt",
+                    "date_style": "abbreviated", "time_style": "omitted",
+                }]},
+            }]}))
+            view.write_text("""struct Home { build() {
+                SectionHeading({ title: 'Recent', subtitle: new Date(latest.startedAt).toLocaleString() })
+            } }""")
+            self.assertEqual([e["code"] for e in evaluate(root, inventory)["errors"]],
+                             ["date_format_unqualified_locale"])
+            view.write_text("""struct Home { build() {
+                Text(new Date(latest.startedAt).toLocaleString())
+                SectionHeading({ title: 'Recent', subtitle: formatDay(latest.startedAt) })
+            } }""")
+            self.assertEqual(evaluate(root, inventory)["status"], "PASS")
+
+    def test_sheet_close_gate_requires_the_mounted_local_dismiss_action(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            pages = root / "entry/src/main/ets/pages"
+            pages.mkdir(parents=True)
+            host, page = (pages / f"{name}.ets" for name in ("Host", "Recipe"))
+            inventory = root / "inventory.json"
+            inventory.write_text(json.dumps({"units": [
+                {"unit_id": "recipe", "output": {"file": str(page.relative_to(root)), "symbol": "Recipe"}},
+            ]}))
+            page.write_text("""export struct Recipe {
+                build() { this.toolbar() }
+                @Builder toolbar() { Text('关闭').onClick(() => this.onClose()) }
+            }""")
+            base = """import { Recipe as MountedRecipe } from './Recipe';
+            struct Host {
+              build() { Column() {}.bindSheet(this.open, this.content()OPTIONS) }
+              @Builder content() { MountedRecipe() }
+            }"""
+            for options in ("", ", { showClose: true }", ", { height: SheetSize.LARGE }",
+                            ", { onDisappear: () => consume({ showClose: false }) }"):
+                host.write_text(base.replace("OPTIONS", options))
+                self.assertEqual(
+                    [(row["code"], row["unit_id"]) for row in evaluate(root, inventory)["errors"]],
+                    [("duplicate_sheet_close_action", "recipe")],
+                )
+            for options in (", { showClose: false }", ", { showClose: this.mode !== MODE_RECIPE }",
+                            ", { ...this.sheetOptions }", ", { 'showClose': false }",
+                            ", { showClose: false, onDisappear: () => consume({ showClose: true }) }"):
+                host.write_text(base.replace("OPTIONS", options))
+                self.assertEqual(evaluate(root, inventory)["status"], "PASS")
+            host.write_text(base.replace("OPTIONS", "").replace("MountedRecipe() }", "Text('other') }"))
+            self.assertEqual(evaluate(root, inventory)["status"], "PASS")
+            host.write_text(base.replace("OPTIONS", "").replace("./Recipe", "./Other"))
+            self.assertEqual(evaluate(root, inventory)["status"], "PASS")
+            host.write_text(base.replace("OPTIONS", ""))
+            page.write_text("""export struct Recipe {
+                build() { Text('设置') }
+                @Builder unused() { Text('关闭').onClick(() => this.onClose()) }
+            }""")
+            self.assertEqual(evaluate(root, inventory)["status"], "PASS")
 
     def test_hosted_presentation_can_use_centralized_binding_file(self):
         with tempfile.TemporaryDirectory() as temp:

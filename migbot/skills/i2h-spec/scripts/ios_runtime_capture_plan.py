@@ -19,6 +19,8 @@ from typing import Any
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
 CAPTURE_SCRIPT = SCRIPT_DIR / "ios_runtime_capture.py"
 
 
@@ -67,11 +69,24 @@ def load_plan(path: Path) -> dict[str, Any]:
             anchors = navigation.get("anchors", [])
             if not isinstance(anchors, list):
                 raise ValueError(f"states[{index}].navigation.anchors must be an array")
+            if "anchor_wait_seconds" in navigation:
+                wait = navigation["anchor_wait_seconds"]
+                if type(wait) not in (int, float) or not 0 < wait <= 8 or not anchors:
+                    raise ValueError(f"states[{index}].navigation.anchor_wait_seconds requires anchors and a number in (0, 8]")
             for anchor_index, anchor in enumerate(anchors):
                 if not isinstance(anchor, dict) or anchor.get("element") not in {"button", "tab_button", "static_text", "text_field", "search_field", "navigation_bar", "switch", "any"}:
                     raise ValueError(f"states[{index}].navigation.anchors[{anchor_index}] has an invalid element")
                 if not any(isinstance(anchor.get(key), str) and anchor.get(key) for key in ("identifier", "label", "label_contains")):
                     raise ValueError(f"states[{index}].navigation.anchors[{anchor_index}] needs identifier, label, or label_contains")
+                if "value" in anchor and not isinstance(anchor["value"], str):
+                    raise ValueError(f"states[{index}].navigation.anchors[{anchor_index}].value must be a string")
+        if "launch_mode" in state and state["launch_mode"] not in ("ui_testing", "standard"):
+            raise ValueError(f"states[{index}].launch_mode must be ui_testing or standard")
+        if "capture_mode" in state:
+            if state["capture_mode"] != "xctest_app":
+                raise ValueError(f"states[{index}].capture_mode must be xctest_app when set")
+            if not navigation or not navigation.get("anchors"):
+                raise ValueError(f"states[{index}].capture_mode=xctest_app requires navigation anchors")
     return payload
 
 
@@ -150,23 +165,33 @@ def run_state(
         }
 
 
-def write_manifests(project_root: Path, output_root: Path, manifest: dict[str, Any]) -> dict[str, str]:
-    """Write the capture manifest and a project-local downstream handoff."""
-    output_manifest = output_root / "capture-plan-manifest.json"
-    output_manifest.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
-    handoff_dir = project_root / "spec/execution/ios-runtime-capture"
-    handoff_manifest = handoff_dir / "capture-plan-manifest.json"
-    handoff_dir.mkdir(parents=True, exist_ok=True)
-    if handoff_manifest.resolve() != output_manifest.resolve():
-        handoff_manifest.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    return {"output_manifest": str(output_manifest), "handoff_manifest": str(handoff_manifest)}
+def write_manifests(
+    project_root: Path, output_root: Path, manifest: dict[str, Any], source_root: Path | None = None,
+    *, output_manifest_only: bool = False,
+) -> dict[str, str]:
+    """Publish the capture without writing a handoff into the read-only iOS root."""
+    output_manifest = (output_root / "capture-plan-manifest.json").resolve()
+    handoff = (project_root / "spec/execution/ios-runtime-capture/capture-plan-manifest.json").resolve()
+    if source_root is not None and output_manifest.is_relative_to(source_root):
+        raise ValueError("capture manifest must stay outside the iOS source root")
+    if output_manifest_only or (source_root is not None and handoff.is_relative_to(source_root)):
+        handoff = output_manifest
+    manifest["handoff_manifest"] = str(handoff)
+    content = json.dumps(manifest, ensure_ascii=False, indent=2) + "\n"
+    for path in {output_manifest, handoff}:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    return {"output_manifest": str(output_manifest), "handoff_manifest": str(handoff)}
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--plan", required=True, help="JSON capture plan")
     parser.add_argument("--output-root", required=True)
+    parser.add_argument("--validate-only", action="store_true",
+                        help="check plan and batch inputs without writing output or contacting a simulator")
+    parser.add_argument("--output-manifest-only", action="store_true",
+                        help="keep the manifest with the captured evidence without updating the project handoff")
     parser.add_argument("--project-root", required=True)
     parser.add_argument("--project", required=True)
     parser.add_argument("--scheme", required=True)
@@ -181,18 +206,45 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--xctest-target", default="CuikeUITests")
     parser.add_argument("--xctest-test-source", default="Tests/UITests/CuikeUITests.swift")
     parser.add_argument("--source-root")
+    parser.add_argument("--expected-source-sha256", help="frozen iOS source fingerprint from a capture job")
     parser.add_argument("--configuration-id", default="Debug")
     parser.add_argument("--scenario-id", default="default")
     args = parser.parse_args(argv)
     if args.xctest_batch_size is not None and args.xctest_batch_size < 1:
         parser.error("--xctest-batch-size must be positive")
+    if args.expected_source_sha256 and not args.xctest_batch_size:
+        parser.error("--expected-source-sha256 requires --xctest-batch-size")
 
     try:
         started = time.monotonic()
         started_at = utc_now()
         plan_path = Path(args.plan).expanduser().resolve()
         plan = load_plan(plan_path)
+        if args.xctest_batch_size is None and any(state.get("capture_mode") for state in plan["states"]):
+            raise ValueError("capture_mode=xctest_app requires --xctest-batch-size")
+        if args.xctest_batch_size is None and any("launch_mode" in state for state in plan["states"]):
+            raise ValueError("launch_mode requires --xctest-batch-size")
         output_root = Path(args.output_root).expanduser().resolve()
+        source_root = Path(args.source_root).expanduser().resolve() if args.source_root else None
+        if source_root is not None and any(
+            path.is_relative_to(source_root)
+            for path in (output_root, Path(args.derived_data).expanduser().resolve())
+        ):
+            raise ValueError("capture output and DerivedData must stay outside the iOS source root")
+        if args.xctest_batch_size is not None:
+            from ios_runtime_capture_batch import run_batches, validate_batch
+
+            validated = validate_batch(args, plan["states"], output_root)
+            if args.validate_only and args.expected_source_sha256:
+                from ios_evidence_protocol import source_identity
+
+                if source_identity(validated[0]) != args.expected_source_sha256:
+                    raise ValueError("iOS source differs from the frozen capture fingerprint")
+        if args.validate_only:
+            print(json.dumps({"status": "validated", "state_count": len(plan["states"]),
+                              "mode": "xctest_batch" if args.xctest_batch_size else "single",
+                              "plan_path": str(plan_path)}, ensure_ascii=False))
+            return 0
         output_root.mkdir(parents=True, exist_ok=True)
         base_args = [
             "--project-root", args.project_root,
@@ -207,9 +259,7 @@ def main(argv: list[str] | None = None) -> int:
                 base_args.extend([f"--{name}", value])
 
         if args.xctest_batch_size is not None:
-            from ios_runtime_capture_batch import run_batches
-
-            results = run_batches(args, plan["states"], output_root)
+            results = run_batches(args, plan["states"], output_root, validated)
         else:
             for name in ("source-root", "configuration-id", "scenario-id"):
                 value = getattr(args, name.replace("-", "_"))
@@ -236,12 +286,8 @@ def main(argv: list[str] | None = None) -> int:
         }
         if args.xctest_batch_size is not None:
             manifest["xctest_session_count"] = (len(results) + args.xctest_batch_size - 1) // args.xctest_batch_size
-        manifest_paths = write_manifests(Path(args.project_root).expanduser().resolve(), output_root, manifest)
-        manifest["handoff_manifest"] = manifest_paths["handoff_manifest"]
-        # Keep both copies self-describing.  The handoff path is consumed by
-        # stage1_visual_scope when the capture output lives outside the project.
-        for path in {Path(manifest_paths["output_manifest"]), Path(manifest_paths["handoff_manifest"])}:
-            path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        write_manifests(Path(args.project_root).expanduser().resolve(), output_root, manifest, source_root,
+                        output_manifest_only=args.output_manifest_only)
         print(json.dumps(manifest, ensure_ascii=False, indent=2))
         return 0 if not blocked else 2
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:

@@ -81,13 +81,21 @@ Read: <ios_file> 的 imports
    - `ui-delivery-approved.json` 中 unit 的 `output.file` 与 `output.symbol` 是交付契约，必须按原路径和符号写入。根页面即使由 `EntryAbility` 通过 `pages/Index.ets` 启动，也要把实际根组件写到规格指定的 `pages/RootView.ets`。`Index.ets` 可以只做兼容入口转发，也可以作为全工程唯一的 `WindowModel`/avoid-area 安全区宿主，但不得把 `Index.ets` 当作 RootView 的替代产物或让各页面重复测量系统栏。不得仅修改 inventory 来掩盖 output 路径不一致。
    - iOS `.sheet()` 必须转换为宿主拥有的模态层，优先使用 `bindSheet($$state, builder, options)`。在目标 API 26 上必须用真机 smoke 验证打开、取消、保存和程序化关闭都能生效。如果 `bindSheet` 的 `isShow=false` 不关闭、系统关闭 X 无法隐藏，或关闭后留下空白层，改用根宿主的自绘 overlay 作为等价实现，并把 sheet 内容、遮罩、关闭回写和安全区一起放在同一宿主层。iOS `.fullScreenCover()` 必须转换为 `bindContentCover` 或规格明确且可关闭的全屏容器。禁止把这两类页面默认登记为 `NavDestination`，也不能保留已知失效的原生绑定作为唯一实现。
    - 同一个 ArkUI 组件只绑定一个 `bindSheet`。多个由根协调的 sheet 分别绑定到不同、稳定挂载的组件节点，或者通过一个 sheet 宿主和互斥状态选择内容。独立的布尔状态无法修复在同一组件上串接 `bindSheet` 的覆盖问题。运行时逐个打开各 sheet，不能用最后一个绑定成功推导其他入口可达。
+   - 根级全屏有独立的普通入口（例如冷启动首页恢复卡）时，把 `bindContentCover` 放到稳定的根容器，把 `bindSheet` 留在单独的宿主节点。由同一可观察所有者控制互斥和关闭回写。实际验证中，Tabs 上串接两种绑定时曾出现点击已到宿主、全屏状态已置位、设备仍留在首页。不要用写入布尔值或通过配方 sheet 间接打开全屏的结果代替直接入口验收。
+   - 源 SwiftUI sheet 使用独立导航栏且正文可输入时，核对键盘弹出后的标题、取消入口和焦点控件。如果目标键盘避让使普通页内标题移出视口，可将源标题和工具栏操作接到 `SheetOptions.title` 的自定义构建器，正文保留在可滚动内容区。标题构建器复用宿主的关闭动作。按目标 SDK 和实际回执选 `keyboardAvoidMode`，并验证键盘显示时标题及取消入口在屏内、输入可读、收起键盘后仍能保存或取消。既有记录和新增场景共用弹层时逐个验证。
    - 跨模态转场必须保留 iOS 的生命周期顺序。若源 `.sheet(..., onDismiss:)` 的回调会打开 `.fullScreenCover`，sheet 内容的关闭动作只能清除 sheet state，不能在 `close*`/`dismiss*` 路由方法中提前写入 cover state。把 cover 的打开动作放在宿主 `bindSheet` 的 `onDisappear`（或等价的完成回调）中，确保 sheet 已经卸载后再触发 full-screen。生成后必须用真实设备验证“开始冲煮 → sheet 消失 → BrewView 出现”和“冷启动 pending → resume → BrewView 出现”两条路径。
    - 只有 iOS `NavigationLink`、push、独立全屏流程或规格明确的 routed dialog 才能登记 `NavDestination` 和 `NavPathStack` 路由。`pageMap` 只能登记这些真实路由目标，不能把 sheet 页面批量加入。
    - sheet builder 必须挂在拥有状态的根宿主节点上，使用 `$$` 双向绑定，关闭时回写 `false`，并保留 iOS 的取消、保存和确认生命周期。不要把 sheet 内容放到 Navigation 内部再用普通 push 伪装模态。
    - 任何 `Stepper`/加减控件都必须保留可区分的增加与减少语义。不要用容易被 ArkUI 字体裁剪的单字符 `+`/`-` 作为唯一视觉图标。优先使用明确的自绘横线/竖线组合、系统 Symbol 或带稳定 accessibility id 的图标按钮，并在真机 dump 与点击 smoke 中分别验证增加和减少会改变正确的值。
    - 源代码中的图标和图片是 UI 事实。优先读取 source index/resource facts 中的 image asset、SF Symbol 名称、SVG 几何和 accessibility frame，迁移到对应的 `app.media`、`SymbolGlyph`、`Path`/Canvas vector 或等价资源，并保留尺寸、颜色、填充/描边和可访问标签。禁止把有源资源或线稿图标降级为 emoji、Unicode 字符、随机 glyph 或纯文字占位符。若目标平台只能用替代图标，必须记录 asset mapping 和几何偏差，不能把替代品标为像素等价。
+   - 转换任务包含 `system_symbol_fidelity` 时，使用批准行的 SDK 资源、状态和尺寸。堆叠 Tab 在带源标签的 `tabBar` 或 `floatingTabItem` 调用中绑定资源。五星使用同一个 `Button` 内的 `SymbolGlyph`，按源比较条件给两种资源，图标和按钮分别声明字号与宽高。数字可使用当前文件内独立的字面常量。实际像素占比仍以代表状态截图核对。
+   - 对 `role: primary_button`，读取调用点与源组件定义，保留源默认值和各动作覆盖。已映射的动作通过共享 `PrimaryButton` 的 `trailingSymbol` 参数及 `symbolOf` 绑定资源。只在与源语义相同的动作上复用默认值。缺 `target_symbol` 的动作需要选型及代表截图复核，记录真实目标图形与依据。
+   - 对 `role: label`，在同一个可达布局内将源标签的 `Text` 与已映射的 `SymbolGlyph($r('sys.symbol.…'))` 配对，保留原操作。缺 `target_symbol` 的标签需要选型并记录截图证据。
+   - 对 source index / UI evidence 中带 `condition` 的 `system_symbol`，消费两条状态变体并保留原布尔方向。分别把 `symbol_font_pt` 用于图标和 `frame_pt` 用于其源布局框。只有源锚点确认框在按钮控制链上时，才把框当点击区。缺字段时回读实际调用或共用组件，不用截图像素替换已确认源值。
    - 源代码中的 `Shape`、`InsettableShape`、`Path`、`Canvas` 和 `.path(in:)` 是几何事实。必须读取 source trigger 的几何锚点，把曲线、圆角/不规则轮廓、内层 label、渐变、字体和阴影迁移为 ArkUI `Shape`/`Path`/Canvas 或等价自绘实现。禁止用一个 `RoundedRectangle`、纯文字、emoji 或 Unicode 图标覆盖整块源形状来充当占位符。目标 SDK 暂时无法表达时，保留最接近的自绘路径并在 decision ledger 记录几何差异和待办，不得把占位实现标为视觉等价。
    - 浮动 Tab、底部胶囊和其他根宿主常驻元素的可见性必须按原始 presentation 决定。sheet 覆盖时保留 iOS 背景上下文和 dim 行为，full-screen 或 pushed 页面显示期间隐藏被覆盖的常驻元素，返回根页后恢复。
+   - 新增 ArkUI API 前，对照实际 SDK 声明中的组件与 `@since`，再核对项目最低兼容版本。标准 `Tabs.barFloatingStyle` 的 API 26 要求与 HDS Tabs 同名方法的版本要求分别核对。最低版本不满足时，按该组件的兼容方案保留现有路由和选中状态，并在最低目标镜像冷启动和切换页签。编译成功时仍需检查构建日志中的 `supported since SDK version` 警告。
+   - 源页面订阅 `.onOpenURL` 时，交付报告要标出目标 `UIAbility` 的冷启动和运行中接收入口、初始化期间的路由保留位置，以及数据就绪后的消费函数。跨文件由实际宿主接线，验证用源 URL 触发真实入口，并检查页面到达及不会意外触发业务操作。
    - 当根宿主使用 `expandSafeArea` 或 Layer 1 开启沉浸式窗口时，`expandSafeArea` 只负责背景延伸，不能替代前景避让。每个包含源 toolbar/navigationTitle 或可点击顶栏控件的 Tab/page 都必须在自己的前景容器使用共享 `WindowModel.windowTopPadding`、`safeAreaPadding` 或 `ImmersiveScaffold`。禁止只写固定 `padding({ top: 10 })`。EntryAbility 必须测量 `getWindowAvoidArea(TYPE_SYSTEM)` 并把 top/bottom inset 写入共享模型，页面顶部操作必须在 UI tree 中落在安全区内。
    - 根页面的顶部导航 chrome 也是源事实。若 iOS 根页没有可见的 app title、默认 toolbar 标题或 Harmony-only 品牌栏，目标页不得自行插入这些元素。保留源 toolbar 的按钮、顺序、尺寸和安全区位置，避免把顶部 chrome 推入 `Scroll` 或挤压源首屏内容。
    - SwiftUI `Form` 中的 `Picker` 默认映射为紧凑的可访问选择行，保留源标签、当前值、chevron 和稳定 `id`。只有源代码明确使用 segmented control 或 chip group 时才映射为 `TagPill`/多 chip 布局，不能把 Settings 外观或 BeanEditor 处理法、烘焙度、档案颜色自动展开成大块 chip 网格。
@@ -184,6 +192,22 @@ export struct HomePage {
 
 #### 3.2 生成 UI 组件
 
+同一 SwiftUI View、Shape 或 UIKit 自绘组件被多页引用时，按源声明和实际调用锚点识别共享实现。由 Plan 指定一个共享实现文件及写入者，各页面按自己的入参、尺寸和可访问性约定引用同一实现。保留源组件的绘制路径、状态分支及装饰语义。跨文件接线交给统一收尾，在 brief 中列出调用锚点和依赖。
+
+输入包含 `drawing_component_calls` 时，按 `definition.file` 和 `definition.line` 对齐共享组件身份。
+读取相应冻结源定义及 `shape_definitions`，同时核对调用点 `line`、`arguments` 与 `frame_pt`。
+表达式参数和动态布局回到源代码逐项核对。存在匹配的 `drawing_component_bindings` 时，
+调用其指定文件和导出符号，并沿用 Plan 的写入权。
+
+输入包含 `date_format_calls` 时，按行核对日期与时间档位，复用项目日期格式器，
+并用同一数据及设备语言、地区和时区比对源截图。已省略的部分保持省略。
+
+输入包含 `share_link_calls` 时，沿源码确认每条分享的内容、类型和数量。
+Stage 应用用目标 SDK 支持的 Share Kit 打开系统面板。纯文本使用
+`SharedData` 的 `utd: uniformTypeDescriptor.UniformDataType.TEXT` 和 `content`。
+复制仅用于 Spec 明确允许且分享能力不可用的情况。验证面板、预览和取消回到来源页面。
+[Share Kit 接口](https://developer.huawei.com/consumer/cn/doc/harmonyos-references/share-system-share)
+
 **UIKit → ArkTS 映射**:
 
 ```typescript
@@ -261,6 +285,8 @@ Button('详情')
 ```
 
 #### 3.3 生成 ViewModel
+
+迁移 Swift `String.count`、`prefix(n)` 用于姓名、可编辑文本或业务长度限制时，按扩展字素簇保留计数和截断。ArkTS `string.length`、`slice(0,n)` 按 UTF-16 代码单元计数，`Array.from(string)` 按 Unicode 码点展开。若 Feature Spec 中的目标示例把上述写法当作字素分段，记录来源并回查 iOS 行为。计数器、校验与截断共享相同分段逻辑。候选运行时 API 必须同时通过 SDK 编译与设备实跑，最少覆盖组合重音、ZWJ 表情、旗帜和中文的上限及上限加一。
 
 ```typescript
 // entry/src/main/ets/viewmodels/HomeViewModel.ets

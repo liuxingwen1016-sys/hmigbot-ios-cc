@@ -478,75 +478,7 @@ if __name__ == "__main__":
 
 ## CHECK-4：单元测试
 
-调用 `arkts-ut-verifier`，由其完成测试设计、生成和执行。
-
-### 调用准备
-
-传入参数：
-- `--ios-source-root <ios-project-root>`（适配参数名）
-- `--harmonyos-root <harmonyos-project-root>`
-- `--mode verify_fix` / `verify_only`（默认 `verify_fix`）
-- `--skip-oracle true`（或设置环境变量 `UT_ANDROID_ORACLE=off`）
-- `--test-framework xctest`（指定 iOS 测试框架）
-
-**iOS 特性适配**：
-- iOS 测试位置：`<Project>Tests/` (单元测试)、`<Project>UITests/` (UI 测试)
-- 文件命名：`*Tests.swift`
-- 测试框架：XCTest（使用 `XCTestCase`、`XCTAssert*` 等）
-
-### 输入要求
-
-| 输入 | 来源 | 缺失时的处理 |
-|------|------|-------------|
-| iOS 源码路径 | 项目配置或启动参数 | CHECK-4 记 DEFERRED |
-| HarmonyOS 工程路径 | 当前工作目录 | 必需，缺失则失败 |
-| Spec 文件 | `spec/baseline/` | 作为测试依据，缺失降级 |
-| XCTest 测试文件 | iOS 源码 `*Tests/` | 可选，影响 Oracle |
-
-### 产物读取
-
-主线程读取以下产物并保留原始状态：
-
-1. **主报告**：`spec/verify/ut/ut-report.md`
-2. **状态文件**：`spec/verify/ut/_state.yaml`
-3. **当前轮摘要**：`spec/verify/ut/round-N/_ut_summary.md`
-4. **修复循环退出摘要**（如有）：`spec/verify/ut/round-N/final-summary.md`
-
-**不要求** `verify_only` 模式生成修复循环专属产物。
-
-### 判定规则
-
-按 `spec/verify/ut/ut-report.md` 的实际结果判定：
-
-| 实际结果 | CHECK-4 状态 |
-|---|---|
-| 全范围实际 GREEN，且无未验证设计点、待补测或复核项 | PASS |
-| 有实际 RED、ERROR 或最终 FAIL | FAIL，分别记录产品、测试和环境原因 |
-| CONVERGED、缺证据、外部前置阻塞或尚未复测的修复 | PARTIAL；保留原始退出状态，已确认失败仍按 FAIL 报告 |
-| iOS 源码不可达或 skill 未安装 | DEFERRED |
-
-**引用统计**：
-- 通过率、设计验证率和 AC 完成率按报告原口径引用
-- 不能把已执行用例通过率当作全设计范围已验证
-- 区分"已执行测试通过"和"设计范围已验证"
-
-### 限制说明
-
-由于跳过 Android Oracle 采集（改为 iOS），存在以下限制：
-
-1. **测试用例需要手动编写或基于 Spec**
-   - 不自动从 iOS 源码生成测试
-   - 依赖 Spec 的验收标准
-
-2. **以 Spec 为准（而非 iOS 实际行为）**
-   - 功能预期来自 Spec，不是 iOS 实际运行行为
-   - 需要确保 Spec 准确反映需求
-
-3. **XCTest 框架识别**
-   - 需要识别 XCTest 测试语法
-   - 映射到 ArkTS 测试框架（@ohos/hypium）
-
----
+执行 [Verify 主技能的 CHECK-4](../SKILL.md#check-4单元测试)。iOS 源端使用 Swift/Objective-C 实现、原生测试与源锚点确认行为，目标在授权设备上执行签名 Hypium 测试 HAP。每个运行组保存当前包摘要、设备、独立注册清单及原始日志。按 [统计合同](../../arkts-ut-verifier/references/result-statistics.md) 对账逻辑义务。
 
 ## 设备交接纪律
 

@@ -197,7 +197,8 @@ def validate_plan_outputs(root: Path) -> dict[str, Any]:
         result["errors"].append("acceptance_plan_wrong_field_name")
         return result
 
-    if plan_data.get("schema_version") != 1:
+    version = plan_data.get("schema_version")
+    if type(version) is not int or version not in (1, 2):
         result["errors"].append("acceptance_plan_schema_version")
         return result
 
@@ -214,22 +215,18 @@ def validate_plan_outputs(root: Path) -> dict[str, Any]:
         if not isinstance(criterion, dict):
             result["errors"].append("acceptance_plan_criterion_not_object")
             continue
+        binding = {"requirement_id": criterion.get("requirement_id")}
+        if "hypium" in criterion:
+            binding["hypium"] = criterion["hypium"]
         if criterion.get("scenario") is not None:
-            binding = {
-                "requirement_id": criterion.get("requirement_id"),
-                "scenario": criterion.get("scenario"),
-                "assertions": criterion.get("assertions", [])
-            }
+            binding.update(scenario=criterion["scenario"], assertions=criterion.get("assertions", []))
+        if len(binding) > 1:
             bindings.append(binding)
 
     # Re-seal with current requirements
     try:
         current_reqs = current_requirements(root)
-        if bindings:
-            expected_plan = seal(current_reqs, {"schema_version": 1, "bindings": bindings})
-        else:
-            # Empty bindings case - seal produces all requirements with scenario=None
-            expected_plan = seal(current_reqs, {"schema_version": 1, "bindings": []})
+        expected_plan = seal(current_reqs, {"schema_version": 1, "bindings": bindings}, version=version)
 
         # Compare sealed plan to actual
         if plan_data != expected_plan:

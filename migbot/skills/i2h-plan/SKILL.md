@@ -38,6 +38,8 @@ Pipeline 第二步（在 i2h-spec 之后、i2h-execute 之前）：spec 已审�
 
 完整运行时计划在批准前逐个审阅 `embedded` 与 `hosted_destination`。依据原 iOS 宿主、呈现方式和调用点，为必交单元冻结 `integration.host_file`、`integration.host_builder` 与 `integration.child_symbol`。让计划中负责共享接线的 closer 按这一目标槽位交付。`--require-runtime-plan` 会列出未声明宿主的单元，需在 Plan 补齐后进入 Execute。
 
+同一个源自绘组件在多个页面的真实调用点出现时，在 UI 计划的共享组件项记录源声明锚点、调用页面与参数、目标文件和单一写入者。页面任务引用该文件，统一收尾核对各调用点的参数及接线。例如按源数据动态绘制的 Shape，其颜色分支和不同宿主尺寸属于组件契约。
+
 **禁止代码生成**：本阶段只产出计划，不写任何 `.ets` 代码（代码生成是 i2h-execute 职责）。
 
 ---
@@ -565,6 +567,11 @@ UI 交付清单只编写一次，保存到 `spec/baseline/ui-delivery-approved.j
 按验收绑定规程关联 AC 和设备证据。生成配对后再执行验证与审批。
 当流水线选择 `--require-runtime-plan` 时，把该参数传给下面两条命令。
 审批前即校验视觉配对覆盖，续跑使用同一规则复核。
+若本轮沿用已批准的正式视觉范围，审批前用 `ui_delivery.py compare-formal-scope --project-root . --before <上轮批准清单> --after <本轮草稿> --out <范围回执>`。
+
+严格运行时计划的单元和状态 `source_refs` 要绑定源根内的原生文件 SHA-256。保留源锚点行号，从本轮已冻结的源证据补齐摘要，再运行严格验证。摘要缺失、无法读取或与当前源文件不符都会在审批前报告，不能把缺摘要留给 Execute 派发。
+按源组件与状态 ID 对账，页面和 owner 编号变化不影响同一正式状态。回执列出的缺项需补齐或按已有范围变更流程核对后再审批。不同状态名的语义等价需源端复核。
+调用方可把上轮批准清单的副本固定在本项目内，再在 `.migbot/config.json` 设置 `prior_ui_approval` 对象，含相对于项目根的 `path` 和文件的 `sha256`。设定后，校验、审批及续跑预检自动按该范围检查；保留输入、摘要与缺项诊断。
 取得确认引用后原子更新同一文件到 `approved`。验证失败或未确认时保留候选原样。
 草稿中有 `presentation.swiftui_tab_roots` 时，逐条按源码确认目标宿主和 builder，
 把对应的 Swift 锚点写入 `integration.source_ref`。验证报
@@ -588,8 +595,8 @@ python3 .claude/skills/i2h-plan/scripts/ui_delivery.py approve --project-root . 
 - 骨架审计预演（WARN）
 - grill #2 决策清单
 
-本轮范围包含原生行为场景且已有真实 UITest runner 时，在 Plan 审批前按
-[原生验收绑定](./references/acceptance-plan.md) 写入场景、断言和原始证据约定，
+本轮范围已有真实 UITest 或 Hypium 用例时，在 Plan 审批前按
+[原生验收绑定](./references/acceptance-plan.md) 写入场景断言或 Hypium 套件与用例，
 使用 `acceptance_plan.py seal` 对照完整 AC 索引。将结果路径和未绑定数量纳入审批摘要。
 
 用户可以：

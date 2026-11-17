@@ -39,13 +39,18 @@ def read_signing_profile(build_profile: Path) -> Path | None:
     return Path(match.group(1)).expanduser()
 
 
+def literal_bundle_id(value: object) -> bool:
+    return isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9.-]+", value) is not None
+
+
 def source_bundle_id(source_root: Path) -> str | None:
+    candidates = set()
     for path in sorted(source_root.rglob("Info.plist")):
         try:
             with path.open("rb") as handle:
                 value = plistlib.load(handle).get("CFBundleIdentifier")
-            if isinstance(value, str) and value:
-                return value
+            if literal_bundle_id(value):
+                candidates.add(value)
         except (OSError, plistlib.InvalidFileException, ValueError):
             continue
     pattern = re.compile(r"PRODUCT_BUNDLE_IDENTIFIER\s*=\s*([^\s#]+)")
@@ -55,8 +60,10 @@ def source_bundle_id(source_root: Path) -> str | None:
         except (OSError, UnicodeError):
             continue
         if match:
-            return match.group(1).strip()
-    return None
+            value = match.group(1).strip().strip('"')
+            if literal_bundle_id(value):
+                candidates.add(value)
+    return next(iter(candidates)) if len(candidates) == 1 else None
 
 
 def profile_bundle_name(profile: Path, *, security_bin: str = "security") -> tuple[str | None, str | None]:
@@ -109,6 +116,9 @@ def evaluate(
     target_id = read_bundle_name(app_json) if app_json.is_file() else None
     profile = read_signing_profile(build_profile) if build_profile.is_file() else None
     source_id = source_id or (source_bundle_id(Path(source_root).expanduser().resolve()) if source_root else None)
+    source_unresolved = (source_root is not None or source_id is not None) and not literal_bundle_id(source_id)
+    if source_unresolved:
+        source_id = None
     profile_id, profile_issue = profile_bundle_name(profile, security_bin=security_bin) if profile else (None, "signing profile path not found")
 
     issues: list[str] = []
@@ -116,6 +126,8 @@ def evaluate(
         issues.append("target bundleName is missing")
     if profile_issue:
         issues.append(profile_issue)
+    if source_unresolved:
+        issues.append("source bundle identity unresolved; pass the selected Xcode target's resolved PRODUCT_BUNDLE_IDENTIFIER via --source-bundle-id")
     if source_id and target_id and source_id != target_id:
         issues.append("target bundleName differs from source CFBundleIdentifier")
     if target_id and profile_id and target_id != profile_id:

@@ -403,10 +403,14 @@ def check_app_identity(ios_root, harmonyos_root, locked_app_name=None):
 
 | 脚本 | 作用 | 优先级 |
 |------|------|--------|
-| `scripts/ios_static_analyzer.py` | 执行 15 项静态分析 | ⭐⭐⭐⭐⭐ |
+| `scripts/ios_static_analyzer.py` | 执行 16 项静态分析 | ⭐⭐⭐⭐⭐ |
 | `scripts/ios_config_parser.py` | 解析 iOS Info.plist 和 Assets | ⭐⭐⭐⭐⭐ |
 | `scripts/ios_icon_checker.py` | 检查图标文件 | ⭐⭐⭐⭐ |
 | `scripts/check_app_identity.py` | 完整身份校验流程 | ⭐⭐⭐⭐⭐ |
+
+`IOS.SWIFT_STRING_BOUNDARY` 提示显式 `string` 参数的辅助函数用 `Array.from` 计数或截断。
+按函数位置回查 Swift 的 `String.count` 或 `prefix`，再核对计数器、校验和截断的共同入口。
+该静态提示不代替实际的上限和上限加一用例。若源契约明确用码点，则保持原实现并记录依据。
 
 ---
 

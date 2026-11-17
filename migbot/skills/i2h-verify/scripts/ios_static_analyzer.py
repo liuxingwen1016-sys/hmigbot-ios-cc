@@ -2,15 +2,29 @@
 """
 iOS 静态分析工具
 
-执行 15 项静态分析检查（6 通用 + 9 iOS 特有）
+执行通用及 iOS 迁移静态分析检查
 """
 import subprocess
 import re
 import json
 import sys
+from contextlib import redirect_stdout
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple
 
+
+# Match quoted literals before reading comment delimiters inside them.
+NON_CODE = re.compile(
+    r"""//[^\n]*|/\*[\s\S]*?(?:\*/|\Z)|"(?:\\[\s\S]|[^"\\\n])*"|"""
+    r"""'(?:\\[\s\S]|[^'\\\n])*'|\x60(?:\\[\s\S]|[^\x60\\])*\x60"""
+)
+
+STRING_CODEPOINT_BOUNDARY = re.compile(
+    r"\b(?P<function>[A-Za-z_$][\w$]*)\s*\(\s*(?P<value>[A-Za-z_$][\w$]*)\s*:\s*string"
+    r"(?:\s*,\s*[A-Za-z_$][\w$]*\s*:\s*number)?\s*\)\s*(?::\s*(?:string|number))?\s*\{"
+    r"\s*return\s+(?P<expression>Array\s*\.\s*from\s*\(\s*(?P=value)\s*\)"
+    r"\s*\.\s*(?:length\b|slice\s*\(\s*0\s*,[^()]*\)\s*\.\s*join\s*\(\s*\)))"
+)
 
 # 检查规则定义
 STATIC_CHECKS = [
@@ -24,10 +38,9 @@ STATIC_CHECKS = [
     },
     {
         'id': 'COMMON.OLD_OHOS_IMPORT',
-        'pattern': r'@ohos\.',
+        'pattern': r'''\bimport\s+(?:[^"'\n]+?\bfrom\s+)?["']@ohos\.''',
         'level': 'WARN',
         'message': '使用旧的 @ohos.* 导入，建议迁移到新 API',
-        'context_check': lambda line: 'import' in line or 'from' in line
     },
     {
         'id': 'COMMON.SQL_CONCAT',
@@ -121,6 +134,13 @@ STATIC_CHECKS = [
         'level': 'ERROR',
         'message': 'iOS UI 框架，迁移未完成',
         'context_check': lambda line: 'import' in line and ('UIKit' in line or 'SwiftUI' in line)
+    },
+    {
+        'id': 'IOS.SWIFT_STRING_BOUNDARY',
+        'pattern': r'Array\s*\.\s*from\b',
+        'multiline_pattern': STRING_CODEPOINT_BOUNDARY,
+        'level': 'WARN',
+        'message': '字符串辅助函数按 Unicode 码点计数或截断；若迁移自 Swift String.count / prefix，请核对字素簇边界',
     }
 ]
 
@@ -130,29 +150,24 @@ class IOSStaticAnalyzer:
 
     def __init__(self, project_root: str):
         self.project_root = Path(project_root)
-        self.findings = []
+        self._sources: dict[str, tuple[list[str], list[str]]] = {}
 
-    def is_comment_or_string(self, line: str, match_pos: int) -> bool:
-        """判断匹配位置是否在注释或字符串中"""
-        # 检查是否在注释中
-        if '//' in line:
-            comment_pos = line.find('//')
-            if match_pos >= comment_pos:
-                return True
-
-        if '/*' in line or '*/' in line:
-            return True
-
-        # 简单检查是否在字符串中（不完美但足够）
-        before_match = line[:match_pos]
-        single_quotes = before_match.count("'")
-        double_quotes = before_match.count('"')
-
-        # 如果引号数量为奇数，可能在字符串中
-        if single_quotes % 2 == 1 or double_quotes % 2 == 1:
-            return True
-
-        return False
+    def source_lines(self, file_path: str) -> tuple[list[str], list[str]]:
+        """Return aligned lines for rule context and executable match starts."""
+        if file_path not in self._sources:
+            source = Path(file_path).read_text(encoding='utf-8')
+            context = list(source)
+            code = list(source)
+            for token in NON_CODE.finditer(source):
+                start, end = token.span()
+                blank = ''.join('\n' if char == '\n' else ' ' for char in token.group())
+                code[start:end] = blank
+                if token.group().startswith('/'):
+                    context[start:end] = blank
+            self._sources[file_path] = (
+                ''.join(context).split('\n'), ''.join(code).split('\n'),
+            )
+        return self._sources[file_path]
 
     def search_pattern(self, pattern: str) -> List[Tuple[str, int, str]]:
         """使用 rg 搜索模式"""
@@ -187,30 +202,34 @@ class IOSStaticAnalyzer:
             print(f"搜索失败: {pattern}, {e}", file=sys.stderr)
             return []
 
-    def verify_match(self, check: Dict, file_path: str, line_num: int, content: str) -> bool:
-        """验证匹配是否为真实违规"""
-        # 检查是否在注释或字符串中
-        pattern = check['pattern']
-        match = re.search(pattern, content)
-        if match:
-            match_pos = match.start()
-            if self.is_comment_or_string(content, match_pos):
-                return False
-
-        # 使用自定义的上下文检查
-        if 'context_check' in check:
-            return check['context_check'](content)
-
-        return True
+    def verify_match(self, check: Dict, file_path: str, line_num: int) -> bool:
+        contexts, executable = self.source_lines(file_path)
+        context = contexts[line_num - 1]
+        code = executable[line_num - 1]
+        # For example, SQL rules need literal text but must start in code.
+        if not any(code[match.start()].strip() for match in re.finditer(check['pattern'], context)):
+            return False
+        return 'context_check' not in check or check['context_check'](context)
 
     def analyze_check(self, check: Dict) -> List[Dict]:
         """执行单个检查"""
         matches = self.search_pattern(check['pattern'])
+        if pattern := check.get('multiline_pattern'):
+            findings = []
+            for path in sorted({path for path, _, _ in matches}):
+                raw, executable = self.source_lines(path)
+                code = '\n'.join(executable)
+                for match in pattern.finditer(code):
+                    line = code.count('\n', 0, match.start('expression')) + 1
+                    findings.append({'rule_id': check['id'], 'file': path, 'line': line,
+                                     'level': check['level'], 'message': check['message'],
+                                     'snippet': raw[line - 1].strip(), 'symbol': match['function']})
+            return findings
         findings = []
 
         for file_path, line_num, content in matches:
             # 验证匹配
-            if not self.verify_match(check, file_path, line_num, content):
+            if not self.verify_match(check, file_path, line_num):
                 continue
 
             # 记录违规
@@ -227,6 +246,7 @@ class IOSStaticAnalyzer:
 
     def analyze_all(self) -> Dict:
         """执行所有检查"""
+        self._sources.clear()
         results = {
             'project_root': str(self.project_root),
             'total_checks': len(STATIC_CHECKS),
@@ -347,7 +367,11 @@ def main():
 
     # 执行分析
     analyzer = IOSStaticAnalyzer(args.project_root)
-    results = analyzer.analyze_all()
+    if args.json:
+        with redirect_stdout(sys.stderr):
+            results = analyzer.analyze_all()
+    else:
+        results = analyzer.analyze_all()
 
     # 输出结果
     if args.json:

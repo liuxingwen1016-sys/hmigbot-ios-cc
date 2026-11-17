@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -31,6 +32,34 @@ class UiEvidenceTests(unittest.TestCase):
         skeleton = build_skeleton(payload)
         self.assertEqual(skeleton['source_file_count'], 2)
         self.assertEqual(skeleton['swift_files'], ['App/Views/Home.swift', 'Core/BrewDomain.swift'])
+
+    def test_inventory_cli_projects_existing_evidence_without_writing(self):
+        self.write('App/Views/Home.swift', 'struct HomeView: View { var body: some View { Image("logo") } }')
+        self.write('App/Preview/Home.swift', 'struct HomeView: View { var body: some View { Text("Preview") } }')
+        evidence = self.root / 'spec/.i2h/resources-inventory.json'
+        payload = run(str(self.root), str(evidence))
+        original = evidence.read_bytes()
+        command = [sys.executable, '-B', str(Path(__file__).resolve().parents[1] / 'ui_evidence.py'),
+                   '--inventory-view', str(evidence)]
+
+        def query(*flags):
+            process = subprocess.run([*command, *flags], cwd=self.root, capture_output=True, check=True)
+            return json.loads(process.stdout)
+
+        summary = query()
+        self.assertEqual(summary['inventory_sha256'], sha256_file(evidence))
+        self.assertEqual(summary['target_input_sha256'], payload['target_input_sha256'])
+        self.assertEqual(summary['summary'], payload['resources']['summary'])
+        self.assertEqual(len(summary['views']), 2)
+        self.assertNotIn('ui_obligations', summary['views'][0])
+        self.assertEqual(query('--view-name', 'HomeView')['views'], payload['views'])
+        self.assertEqual(query('--resource-section', 'code_references')['code_references'],
+                         payload['resources']['code_references'])
+        missing = subprocess.run([*command, '--view-name', 'Missing'], cwd=self.root, capture_output=True)
+        self.assertEqual(missing.returncode, 2)
+        self.assertIn(b'view not found', missing.stderr)
+        self.assertEqual(evidence.read_bytes(), original)
+        self.assertFalse((self.root / 'spec/.i2h/ui-evidence.json').exists())
 
     def test_standard_spec_scan_emits_style_evidence_bound_to_source_digest(self):
         source = self.write('App/Home.swift', 'struct HomeView: View { var body: some View { TabView(selection: $tab) {} } }')

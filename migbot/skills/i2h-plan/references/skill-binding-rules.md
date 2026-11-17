@@ -43,9 +43,12 @@
 
 ## 系统集成类（iOS 系统框架）
 
+Apple 专项以真实调用和业务会话链为准。仅 import、entitlement 或通用授权控制器出现时，核对源入口后再绑定。已确认选择华为账号的任务，把专项技能绑定到登录 UI、业务会话及账号绑定的实际 owner。保留原 AC 与已有用户恢复要求，其他独立登录方式走各自的任务。
+
 | Task 内容 / 业务类别 | suggested_skill | 典型 iOS 框架 / SDK |
 |-------------------|----------------|-------------------|
-| **登录 / 授权 / OAuth / Sign in with Apple** | `arkts-login` | Sign in with Apple, ASAuthorizationController |
+| 已核对的 Apple 账号登录或绑定入口 | `ios-apple-sign-in-to-huawei` | Sign in with Apple, SignInWithAppleButton, ASAuthorizationAppleIDProvider, ASAuthorizationAppleIDButton |
+| 通用登录 / 授权 / OAuth | `arkts-login` | 通用 OAuth |
 | **第三方登录（微信、支付宝、Facebook）** | `arkts-login` | 微信 SDK, 支付宝 SDK, Facebook SDK |
 | **支付 / 收银台 / 订单 / IAP / 订阅签约** | `arkts-payment` | StoreKit, Apple Pay, 微信支付, 支付宝 |
 | **推送通知 / APNs / 本地通知** | `arkts-notification` | UNUserNotificationCenter, UserNotifications |

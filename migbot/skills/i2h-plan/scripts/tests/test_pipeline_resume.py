@@ -1,8 +1,10 @@
 import json
+from hashlib import sha256
 import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 import sys
 
@@ -10,8 +12,9 @@ HERE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parents[2] / 'bin/scripts/pipeline'))
 
-from marker_contract import write_marker
 import pipeline_resume
+import marker_contract
+from marker_contract import write_marker
 
 
 class PipelineResumeTests(unittest.TestCase):
@@ -92,7 +95,6 @@ class PipelineResumeTests(unittest.TestCase):
         path.write_text(json.dumps({'schema_version': 2, 'status': status,
                                     'target_input_sha256': self.target if target is None else target,
                                     'units': units}), encoding='utf-8')
-        # Also create valid schema-1 outputs required by Plan validation
         self.schema1_outputs()
 
     def test_summary_preserves_decision_and_full_receipt(self):
@@ -188,6 +190,87 @@ class PipelineResumeTests(unittest.TestCase):
         self.assertFalse(result['complete'])
         self.assertEqual(result['unpassed_checks']['CHECK-3'], 'CONFLICT')
 
+    def test_verify_rejects_visual_and_behavior_from_a_different_host_installation(self):
+        pipeline_resume._execute_script_path()
+        path = self.root / 'spec/verify-report.md'
+        host_path = self.root / 'spec/verify/host-installation.json'
+        host_path.parent.mkdir(parents=True)
+        host_path.write_text('{}')
+        path.write_text('| CHECK-1 | static | PASS |\n| CHECK-3 | visual | PASS |\n'
+                        '| CHECK-5 | behavior | PASS |\n')
+        result = pipeline_resume._verify_report(self.root.resolve(), False)
+        self.assertIn('host_installation_invalid', result['errors'])
+        host_hash = pipeline_resume.file_sha256(host_path)
+        behavior = self.root / pipeline_resume.BEHAVIOR_REPORT
+        behavior.parent.mkdir(parents=True, exist_ok=True)
+        report = {'hap_sha256': 'target', 'device': 'different'}
+        behavior.write_text(json.dumps(report))
+        with path.open('a') as stream:
+            stream.write(f'host-installation-sha256: {host_hash}\n')
+            stream.write(f'behavior-summary-sha256: {pipeline_resume.file_sha256(behavior)}\n')
+        with patch('lib.host_verify_handoff.validate', return_value={'hap_sha256': 'target', 'device': 'sim'}), \
+             patch.object(pipeline_resume, '_bound_visual', return_value={'hap_sha256': 'other', 'device': 'sim'}), \
+             patch.object(pipeline_resume, 'replay_behavior', return_value=report):
+            result = pipeline_resume._verify_report(self.root.resolve(), False, require_behavior=True, require_bound_visual=True)
+        self.assertIn('visual_receipt_invalid', result['errors'])
+        self.assertIn('behavior_host_installation_mismatch', result['errors'])
+        self.assertEqual(result['unpassed_checks']['CHECK-3'], 'UNVERIFIED')
+        self.assertEqual(result['unpassed_checks']['CHECK-5'], 'UNVERIFIED')
+
+    def test_bound_resume_rechecks_current_ui_despite_valid_execute_marker(self):
+        self.delivery()
+        self.marker('spec/execution/stage5-complete.txt', 'i2h-execute', ['spec/migration-report.md'])
+        report = pipeline_resume.status_summary(
+            pipeline_resume.pipeline_status(self.root, require_bound_visual=True))
+        execute = report['stages'][2]['checks']
+        self.assertTrue(execute['marker']['valid'])
+        self.assertFalse(execute['current_ui_delivery']['complete'])
+        self.assertIn('output_missing', execute['current_ui_delivery']['errors'])
+
+    def test_bound_resume_distinguishes_input_gaps_from_ready_missing_reports(self):
+        self.delivery()
+        pipeline_resume._execute_script_path()
+        delivery = self.root / 'spec/baseline/ui-delivery-approved.json'
+        inventory_hash = sha256(delivery.read_bytes()).hexdigest()
+        units = [
+            {'unit_id': 'home', 'status': 'BLOCKED',
+             'input_gaps': [{'state_id': 'error', 'code': 'runtime_input_unavailable'}]},
+            {'unit_id': 'detail', 'status': 'READY', 'input_gaps': []},
+        ]
+        findings = [{'unit_id': unit, 'code': 'conversion_report_missing'} for unit in ('home', 'detail')]
+        with patch('lib.ios_stage1_scope.gate_from_inventory', return_value={
+            'status': 'BLOCKED', 'failure_findings': findings,
+        }), patch('lib.ios_ui_dispatch.check_required_inputs', return_value={
+            'inventory_sha256': inventory_hash, 'units': units,
+        }) as input_check:
+            status = pipeline_resume.pipeline_status(self.root, require_bound_visual=True)
+            check = pipeline_resume.status_summary(status)['stages'][2]['checks']['current_ui_delivery']
+            self.assertFalse(check['complete'])
+            self.assertEqual(check['failure_findings'], findings)
+            self.assertEqual(check['dispatch_diagnostic']['units'], units)
+            input_check.assert_called_once_with(self.root.resolve(), unit_ids={'home', 'detail'})
+            input_check.return_value['inventory_sha256'] = 'b' * 64
+            check = pipeline_resume._current_ui_delivery(self.root, delivery)
+            self.assertFalse(check['complete'])
+            self.assertEqual(check['dispatch_diagnostic']['status'], 'UNAVAILABLE')
+
+    def test_plan_marker_must_bind_the_selected_delivery_file(self):
+        self.delivery()
+        canonical = self.root / 'spec/baseline/ui-delivery-approved.json'
+        legacy = 'spec/baseline/plans/stage1-ui-delivery.json'
+        (self.root / legacy).parent.mkdir(exist_ok=True)
+        shutil.copyfile(canonical, self.root / legacy)
+        self.marker('spec/baseline/plans/complete.txt', 'i2h-plan', [legacy])
+        result = pipeline_resume.pipeline_status(self.root)
+        marker = result['stages'][1]['checks']['marker']
+        self.assertFalse(marker['valid'])
+        self.assertIn('marker_required_delivery_missing', marker['errors'])
+        canonical.unlink()
+        result = pipeline_resume.status_summary(pipeline_resume.pipeline_status(self.root))
+        marker = result['stages'][1]['checks']['marker']
+        self.assertTrue(marker['valid'])
+        self.assertIn('artifact_set_sha256', marker)
+
     def test_hash_tampering_blocks_resume(self):
         self.marker('spec/baseline/spec-complete.txt', 'i2h-spec', ['spec/.i2h/resources-inventory.json'])
         path = self.root / 'spec/baseline/spec-complete.txt'
@@ -228,6 +311,23 @@ class PipelineResumeTests(unittest.TestCase):
         self.assertEqual(strict['resume_stage'], 'i2h-plan')
         self.assertTrue(strict['stages'][0]['complete'])
 
+    def test_summary_reports_changed_and_missing_artifact_paths(self):
+        changed = 'spec/.i2h/resources-inventory.json'
+        missing = 'spec/baseline/ui-manifest.md'
+        old = self.marker('spec/baseline/spec-complete.txt', 'i2h-spec', [changed, missing])
+        (self.root / changed).write_text('updated artifact', encoding='utf-8')
+        (self.root / missing).unlink()
+        result = pipeline_resume.status_summary(pipeline_resume.pipeline_status(self.root))
+        self.assertEqual(result['resume_stage'], 'i2h-spec')
+        findings = result['stages'][0]['checks']['marker']['artifact_findings']
+        hashes = {item['path']: item['sha256'] for item in old['artifacts']}
+        self.assertEqual(findings, [
+            {'code': 'artifact_hash_mismatch', 'path': changed, 'expected_sha256': hashes[changed],
+             'actual_sha256': pipeline_resume.file_sha256(self.root / changed)},
+            {'code': 'artifact_missing', 'path': missing, 'expected_sha256': hashes[missing],
+             'actual_sha256': None},
+        ])
+
     def test_legacy_path_is_reported_but_schema2_marker_is_accepted_in_compat_mode(self):
         # A legacy *path* can be consumed when its marker is still
         # content-addressed.  Plain-text/schema-1 markers remain diagnostic
@@ -264,6 +364,40 @@ class PipelineResumeTests(unittest.TestCase):
         self.assertIn('schema2_delivery_ownership', result['errors'])
         self.assertEqual(result['ownership']['status'], 'FAIL')
 
+    def test_configured_formal_scope_blocks_resume_after_a_reduced_plan(self):
+        self.delivery()
+        path = self.root / 'spec/baseline/ui-delivery-approved.json'
+        prior = json.loads(path.read_text())
+        prior['approval'] = {'confirmation_ref': 'prior scope'}
+        prior['units'][0].update(component='ios.HomeView', page_id='old-page')
+        prior['units'][0]['required_states'][0]['arrival_mode'] = 'formal'
+        prior['verification_states'] = [
+            {'verification_id': 'previous', 'owner': 'home', 'page_id': 'old-page', 'state_id': 'home'},
+        ]
+        snapshot = self.root / 'spec/prior-ui-approval.json'
+        snapshot.write_text(json.dumps(prior))
+        config = self.root / '.migbot/config.json'
+        config.parent.mkdir()
+        config.write_text(json.dumps({'prior_ui_approval': {
+            'path': 'spec/prior-ui-approval.json', 'sha256': sha256(snapshot.read_bytes()).hexdigest(),
+        }}))
+        current = json.loads(json.dumps(prior))
+        current['units'][0]['page_id'] = 'new-page'
+        current['verification_states'][0]['page_id'] = 'new-page'
+        path.write_text(json.dumps(current))
+        accepted = pipeline_resume.validate_delivery(self.root, self.target, require_runtime_plan=True)
+        self.assertTrue(accepted['complete'], accepted)
+        self.assertEqual(accepted['contract']['retained_formal_scope']['retained_count'], 1)
+        current['verification_states'][0]['state_id'] = 'other'
+        current['units'][0]['required_states'][0]['state_id'] = 'other'
+        path.write_text(json.dumps(current))
+        rejected = pipeline_resume.validate_delivery(self.root, self.target, require_runtime_plan=True)
+        self.assertFalse(rejected['complete'])
+        self.assertEqual(rejected['contract']['errors'][0]['code'], 'APPROVED_FORMAL_SCOPE_REDUCED')
+        snapshot.write_text(snapshot.read_text() + '\n')
+        invalid = pipeline_resume.validate_delivery(self.root, self.target, require_runtime_plan=True)
+        self.assertEqual(invalid['contract']['errors'][0]['code'], 'PRIOR_UI_APPROVAL_INVALID')
+
     def test_runtime_plan_accepts_formal_arrival_and_verification_state(self):
         self.delivery()
         path = self.root / 'spec/baseline/ui-delivery-approved.json'
@@ -278,6 +412,13 @@ class PipelineResumeTests(unittest.TestCase):
         self.assertTrue(result['complete'], result)
         self.assertEqual(result['runtime_scope'], {'verification_state_count': 1, 'preview_only_units': []})
 
+        payload['verification_states'][0]['arrival_mode'] = 'preview'
+        path.write_text(json.dumps(payload), encoding='utf-8')
+        downgraded = pipeline_resume.validate_delivery(self.root, self.target, require_runtime_plan=True)
+        self.assertFalse(downgraded['complete'])
+        self.assertEqual(downgraded['runtime_scope']['visual_arrival_mode_mismatches'],
+                         [{'verification_id': 'home-pair', 'expected': 'formal', 'actual': 'preview'}])
+        del payload['verification_states'][0]['arrival_mode']
         payload['verification_states'][0]['owner'] = 'different-unit'
         path.write_text(json.dumps(payload), encoding='utf-8')
         broken = pipeline_resume.validate_delivery(self.root, self.target, require_runtime_plan=True)
@@ -347,7 +488,6 @@ class PipelineResumeTests(unittest.TestCase):
             {
                 'unit_id': 'home',
                 'page_id': 'page_home',
-                'presentation_role': 'routed_page',
                 'owned_ui_roles': ['content'],
                 'required_states': [{'state_id': 'default', 'arrival_mode': 'preview', 'responsibility': 'content'}],
                 'output': {'file': 'entry/src/main/ets/pages/Home.ets'},
@@ -355,7 +495,6 @@ class PipelineResumeTests(unittest.TestCase):
             {
                 'unit_id': 'settings',
                 'page_id': 'page_settings',
-                'presentation_role': 'routed_page',
                 'owned_ui_roles': ['content'],
                 'required_states': [{'state_id': 'default', 'arrival_mode': 'preview', 'responsibility': 'content'}],
                 'output': {'file': 'entry/src/main/ets/pages/Settings.ets'},
@@ -395,9 +534,10 @@ class PipelineResumeTests(unittest.TestCase):
         shutil.copy2(HERE / 'pipeline_resume.py', script)
         shutil.copy2(HERE / 'ui_state_ownership.py', ownership)
         shutil.copy2(HERE / 'ui_delivery.py', delivery)
-        for module in ('acceptance_plan.py', 'generate_execute_coverage.py', 'validate_plan_schema1.py'):
+        for module in ('acceptance_plan.py', 'generate_execute_coverage.py', 'hypium_evidence.py',
+                       'validate_plan_schema1.py'):
             shutil.copy2(HERE / module, script.parent / module)
-        shutil.copy2(HERE.parents[2] / 'bin/scripts/pipeline/marker_contract.py', marker)
+        shutil.copy2(Path(marker_contract.__file__), marker)
         result = subprocess.run(
             [sys.executable, str(script), '--project-root', str(project)],
             text=True, capture_output=True, check=False,

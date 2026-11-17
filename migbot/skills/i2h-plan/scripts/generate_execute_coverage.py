@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 
-AC_RE = re.compile(r"^\s*-\s*\[[ xX]\]\s+([A-Z][0-9]{3}-AC[0-9]{2})\s+(.+?)\s*$")
+AC_RE = re.compile(r"^([A-Z][0-9]{3}-AC[0-9]{2})\s+(.+)$")
 FEATURE_RE = re.compile(r"^\s*-\s*\*\*feature_id\*\*:\s*`?([A-Z][0-9]{3})`?\s*$")
 MODIFIES_RE = re.compile(r"^\s*-\s+([^#\s].*?)\s*$")
 
@@ -40,29 +40,68 @@ def _feature_id(path: Path, text: str) -> str:
     raise ValueError(f"cannot determine feature id from {path}")
 
 
-def _acceptance_criteria(path: Path, text: str, source_file: str | None = None) -> list[dict[str, str]]:
-    in_section = False
-    result: list[dict[str, str]] = []
-    for raw in text.splitlines():
-        line = raw.strip()
-        if line.startswith("## 验收标准") or line.startswith("## Acceptance Criteria"):
-            in_section = True
+def acceptance_checkboxes(text: str):
+    """Yield source line, checked flag and text within an acceptance heading."""
+    heading = re.compile(r"^(#{1,6})\s+(.+)$")
+    tick = re.compile(r"^\s*[-*+]\s+\[([ xX])\]\s*(.*?)\s*$")
+    fence = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+    depth = None
+    block = None
+    for number, raw in enumerate(text.splitlines(), 1):
+        if marker := fence.match(raw):
+            token, remainder = marker.groups()
+            if block is None:
+                block = token
+            elif token[0] == block[0] and len(token) >= len(block) and not remainder.strip():
+                block = None
             continue
-        if in_section and line.startswith("## "):
+        if block is not None:
+            continue
+        if section := heading.match(raw):
+            if depth is not None and len(section[1]) <= depth:
+                break
+            if depth is None and section[2].lower().startswith(("验收标准", "acceptance criteria")):
+                depth = len(section[1])
+            continue
+        if depth is not None and (criterion := tick.match(raw)):
+            yield number, criterion[1].lower() == "x", criterion[2]
+
+
+def _criterion_continuation(lines: list[str], line: int) -> list[str]:
+    """Read the indented content belonging to one Markdown checklist item."""
+    item = lines[line - 1].expandtabs(4)
+    indent = len(item) - len(item.lstrip()) + 2
+    continuation = []
+    for index in range(line, len(lines)):
+        raw = lines[index].expandtabs(4)
+        content = raw.strip()
+        if not content:
+            continue
+        if len(raw) - len(raw.lstrip()) < indent:
             break
-        if not in_section:
-            continue
-        match = AC_RE.match(raw)
+        continuation.append(content)
+    return continuation
+
+
+def _acceptance_criteria(path: Path, text: str, source_file: str | None = None, *,
+                         include_continuations: bool = False) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    lines = text.splitlines() if include_continuations else []
+    for line, _, body in acceptance_checkboxes(text):
+        match = AC_RE.fullmatch(body)
         if not match:
             continue
         requirement_id, statement = match.groups()
         canonical = f"{requirement_id} {statement}"
-        result.append({
+        criterion: dict[str, Any] = {
             "requirement_id": requirement_id,
             "statement": statement,
             "source_file": source_file or str(path),
             "digest": _digest(canonical),
-        })
+        }
+        if include_continuations:
+            criterion["continuation"] = _criterion_continuation(lines, line)
+        result.append(criterion)
     return result
 
 
@@ -101,7 +140,7 @@ def _slice_packet(path: Path, text: str, requirement_digests: dict[str, str], so
     }
 
 
-def build(project_root: str | Path) -> tuple[dict[str, Any], dict[str, Any]]:
+def build(project_root: str | Path, *, include_continuations: bool = False) -> tuple[dict[str, Any], dict[str, Any]]:
     root = Path(project_root).expanduser().resolve()
     feature_dir = root / "spec/baseline/features"
     slice_dir = root / "spec/baseline/plans/slices"
@@ -111,24 +150,27 @@ def build(project_root: str | Path) -> tuple[dict[str, Any], dict[str, Any]]:
         raise ValueError(f"missing slice directory: {slice_dir}")
 
     requirements: list[dict[str, Any]] = []
-    by_feature: dict[str, list[dict[str, str]]] = {}
+    by_feature: dict[str, list[dict[str, Any]]] = {}
     for path in sorted(feature_dir.glob("feat_*.md")):
         text = path.read_text(encoding="utf-8")
         feature_id = _feature_id(path, text)
         relative_path = str(path.relative_to(root))
-        criteria = _acceptance_criteria(path, text, relative_path)
+        criteria = _acceptance_criteria(path, text, relative_path, include_continuations=include_continuations)
         if not criteria:
             raise ValueError(f"no acceptance criteria found for {feature_id}: {path}")
         by_feature[feature_id] = criteria
         for criterion in criteria:
-            requirements.append({
+            row = {
                 "requirement_id": criterion["requirement_id"],
                 "feature_id": feature_id,
                 "status": "active",
                 "statement": criterion["statement"],
                 "source_file": criterion["source_file"],
                 "digest": criterion["digest"],
-            })
+            }
+            if include_continuations:
+                row["continuation"] = criterion["continuation"]
+            requirements.append(row)
 
     packets: list[dict[str, Any]] = []
     packet_features: set[str] = set()

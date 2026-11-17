@@ -6,7 +6,7 @@ import hashlib
 from pathlib import Path
 from typing import Any
 
-from .stage1_visual_scope import baseline, read_snapshot_meta
+from .stage1_visual_scope import approved_fixture_bindings, baseline, read_snapshot_meta
 from .ios_ui_delivery_gate import inspect_delivery
 from .stage1_contract import source_digest
 
@@ -235,6 +235,7 @@ def load_inventory(root: Path, value: str | None) -> tuple[Path, dict[str, Any]]
 def build_scope_from_inventory(root: Path | str, value: str | None) -> dict[str, Any]:
     root = Path(root).resolve()
     path, inventory = load_inventory(root, value)
+    fixtures = approved_fixture_bindings(root, path, inventory)
     units = []
     failures = []
     approved_pages = {}
@@ -263,6 +264,8 @@ def build_scope_from_inventory(root: Path | str, value: str | None) -> dict[str,
                 evidence_page = dict(page)
                 evidence_page["page_id"] = state.get("evidence_page_id") or page["page_id"]
                 evidence_page["state_id"] = evidence_state_id
+                if fixture := fixtures.get((evidence_page["page_id"], evidence_state_id)):
+                    evidence_page["fixture_capture_sha256"] = fixture
                 page["baseline"] = baseline(root, evidence_page)
             except (OSError, ValueError, json.JSONDecodeError) as exc:
                 page["baseline"] = {"status": "BLOCKED", "reason": str(exc)}

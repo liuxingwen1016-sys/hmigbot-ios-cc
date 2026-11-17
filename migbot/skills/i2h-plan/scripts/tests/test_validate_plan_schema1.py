@@ -65,7 +65,7 @@ modifies_files:
 """
             slice_path.write_text(content, encoding="utf-8")
 
-    def write_native_outputs_with_seal(self, bindings: list[dict] | None = None):
+    def write_native_outputs_with_seal(self, bindings: list[dict] | None = None, *, version: int = 2):
         """Generate and write outputs using native producers including sealed acceptance plan."""
         index, coverage = build(self.root)
         current_reqs = current_requirements(self.root)
@@ -74,7 +74,7 @@ modifies_files:
         if bindings is None:
             # Default: empty bindings = all requirements with scenario=None
             bindings = []
-        sealed_plan = seal(current_reqs, {"schema_version": 1, "bindings": bindings})
+        sealed_plan = seal(current_reqs, {"schema_version": 1, "bindings": bindings}, version=version)
 
         i2h_dir = self.root / "spec/.i2h"
         plan_dir = self.root / "spec/baseline/plans"
@@ -125,6 +125,41 @@ modifies_files:
         result = validator.validate_plan_outputs(self.root)
         self.assertFalse(result["complete"])
         self.assertIn("acceptance_plan_missing", result["errors"])
+
+    def test_legacy_acceptance_schema_remains_valid(self):
+        self.create_source_fixture(
+            features={"F001": ["Save data"]},
+            slices={"slice-01-F001": ("F001", ["page.ets"])}
+        )
+        self.write_native_outputs_with_seal(version=1)
+        self.assertTrue(validator.validate_plan_outputs(self.root)["complete"])
+
+    def test_hypium_binding_survives_admission_and_still_binds_criterion(self):
+        self.create_source_fixture(
+            features={"F001": ["Save data"]},
+            slices={"slice-01-F001": ("F001", ["page.ets"])}
+        )
+        _, _, plan = self.write_native_outputs_with_seal([
+            {"requirement_id": "F001-AC01", "hypium": {"suite": "StorageSuite", "test": "saveData"}},
+        ])
+        self.assertTrue(validator.validate_plan_outputs(self.root)["complete"])
+        plan["criteria"][0]["criterion_sha256"] = "a" * 64
+        (self.root / "spec/baseline/plans/acceptance-plan.json").write_text(json.dumps(plan))
+        result = validator.validate_plan_outputs(self.root)
+        self.assertFalse(result["complete"])
+        self.assertIn("acceptance_plan_seal_mismatch", result["errors"])
+
+    def test_unknown_acceptance_schema_is_rejected(self):
+        self.create_source_fixture(
+            features={"F001": ["Save data"]},
+            slices={"slice-01-F001": ("F001", ["page.ets"])}
+        )
+        _, _, plan = self.write_native_outputs_with_seal()
+        plan["schema_version"] = 3
+        (self.root / "spec/baseline/plans/acceptance-plan.json").write_text(json.dumps(plan))
+        result = validator.validate_plan_outputs(self.root)
+        self.assertFalse(result["complete"])
+        self.assertIn("acceptance_plan_schema_version", result["errors"])
 
     def test_missing_packet_rejected(self):
         """Missing packet in coverage is rejected."""

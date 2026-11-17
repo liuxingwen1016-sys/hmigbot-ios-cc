@@ -5,10 +5,6 @@ The runner owns the deterministic simulator steps. Accessibility trees are
 provided by an XCTest/XCUITest helper through ``--accessibility-command`` or
 an already-produced JSON file through ``--accessibility-json``. The runner
 never fabricates an accessibility tree when that evidence is unavailable.
-
-PATCHED: This version queries the actual installed app bundle during the
-foreground receipt/ACK handshake to bind the manifest to the true installed
-bundle digest rather than the requested input app.
 """
 from __future__ import annotations
 
@@ -223,6 +219,13 @@ def write_foreground_ack(path: Path, *, bundle_id: str, page_id: str, state_id: 
 
 
 def capture(args: argparse.Namespace) -> dict[str, Any]:
+    navigation = args.navigation_json or ""
+    if navigation:
+        if not navigation.lstrip().startswith("{"):
+            navigation = Path(navigation).expanduser().read_text(encoding="utf-8")
+        parsed_navigation = json.loads(navigation)
+        if not isinstance(parsed_navigation, dict) or not isinstance(parsed_navigation.get("steps"), list):
+            raise RuntimeError("navigation JSON must be an object with a steps array")
     project_root = Path(args.project_root).expanduser().resolve()
     output_dir = Path(args.output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -318,8 +321,8 @@ def capture(args: argparse.Namespace) -> dict[str, Any]:
                 "TEST_RUNNER_I2H_UI_JSON_OUT": str(ui_json),
                 "TEST_RUNNER_I2H_PAGE_ID": args.page_id,
                 "TEST_RUNNER_I2H_STATE_ID": args.state_id,
-                "I2H_NAVIGATION_JSON": args.navigation_json or "",
-                "TEST_RUNNER_I2H_NAVIGATION_JSON": args.navigation_json or "",
+                "I2H_NAVIGATION_JSON": navigation,
+                "TEST_RUNNER_I2H_NAVIGATION_JSON": navigation,
                 "I2H_FOREGROUND_RECEIPT_OUT": str(foreground_receipt),
                 "TEST_RUNNER_I2H_FOREGROUND_RECEIPT_OUT": str(foreground_receipt),
                 "I2H_FOREGROUND_CAPTURE_ACK_OUT": str(foreground_ack),
@@ -510,28 +513,32 @@ def write_capture_evidence(
     if actual_installed_identity:
         before_obs = actual_installed_identity.get("before_observation", {})
         after_obs = actual_installed_identity.get("after_observation", {})
+        phase = actual_installed_identity.get("observation_phase", "screenshot")
         raw["build_binding"] = {
             "requested_app_path": str(app),
             "requested_bundle_sha256": requested_bundle_sha256,
             "actual_installed_app_path": actual_installed_identity["app_path"],
             "actual_installed_bundle_sha256": actual_installed_identity["bundle_sha256"],
-            "before_screenshot": {
+            "before_" + phase: {
                 "observed_at": before_obs.get("observed_at"),
                 "bundle_sha256": before_obs.get("bundle_sha256"),
                 "build_identity": before_obs.get("build_identity"),
             },
-            "after_screenshot": {
+            "after_" + phase: {
                 "observed_at": after_obs.get("observed_at"),
                 "bundle_sha256": after_obs.get("bundle_sha256"),
                 "build_identity": after_obs.get("build_identity"),
             },
             "binding_stable": actual_installed_identity.get("binding_stable", False),
-            "binding_method": "foreground_receipt_double_check",
+            "binding_method": ("foreground_receipt_artifact_double_check" if phase == "artifact_validation"
+                               else "foreground_receipt_double_check"),
         }
 
     if receipt_payload is not None:
         raw["foreground_receipt"] = foreground_receipt.name
         raw["foreground_ack"] = foreground_ack.name
+        if receipt_payload.get("launch_mode"):
+            raw["launch_mode"] = receipt_payload["launch_mode"]
     if isinstance(ui_payload, dict) and not captured_nodes and isinstance(ui_payload.get("debug_description"), str):
         raw["debug_description"] = ui_payload["debug_description"]
     raw_path = output_dir / "capture.json"
@@ -563,6 +570,8 @@ def write_capture_evidence(
         },
     }
     if receipt_payload is not None:
+        if "launch_mode" in raw:
+            manifest["launch_mode"] = raw["launch_mode"]
         manifest["artifacts"]["foreground_receipt"] = {
             "path": foreground_receipt.name,
             "sha256": normalized.get("foreground_receipt_sha256"),
@@ -606,7 +615,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--checkpoint-id", help="explicit XCTest/Hypium checkpoint identity")
     parser.add_argument("--accessibility-json")
     parser.add_argument("--accessibility-command")
-    parser.add_argument("--navigation-json", help="JSON navigation steps consumed by the temporary XCTest probe")
+    parser.add_argument("--navigation-json", help="inline JSON or a JSON file with navigation steps for XCTest")
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--timeout", type=int, default=600)

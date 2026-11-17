@@ -4,6 +4,8 @@ description: 运行完整的 iOS → HarmonyOS 迁移流水线（spec → plan �
 
 `$ARGUMENTS` 可包含 `--require-runtime-plan`、`--require-visual-and-ut` 和 `--require-behavior`。每次前置检查均传入调用方指定的参数。指定视觉和 UT 门禁时，执行 CHECK-3/4。指定行为门禁时，CHECK-5 也必须有通过的实际行为证据才能完成正式验收。
 
+完整计时须额外传入 `--require-bound-visual`。在 Verify 报告中记录项目内的 `visual-scope: <路径>` 和 `visual-comparison-sha256: <比较报告摘要>`，重放当前批准范围的视觉归档，并核对视觉与行为使用同一签名包、同一设备。
+
 ## 目标
 
 按顺序执行五个流水线阶段 skill，完成从 iOS 到 HarmonyOS 的端到端迁移。
@@ -47,6 +49,10 @@ python3 "${CLAUDE_PLUGIN_ROOT:-.claude}/skills/i2h-plan/scripts/pipeline_resume.
 执行阶段自身的准入规则，收尾复查仍未完成时停止向下推进。
 过期的 UI 交付契约应在 Plan 处理，通过后再交 Execute。
 
+启用绑定视觉验收后，`current_ui_delivery.dispatch_diagnostic` 会列出缺转换报告的
+单元及其冻结输入状态。READY 单元可走正常 Execute 派发。BLOCKED 单元先处理列出的
+输入缺项再重试。UNAVAILABLE 时沿用原 Execute 检查。转换报告补齐前阶段保持未完成。
+
 ## 3. 运行各个阶段
 
 对于从恢复目标到阶段 5 的每个阶段：
@@ -58,12 +64,22 @@ python3 "${CLAUDE_PLUGIN_ROOT:-.claude}/skills/i2h-plan/scripts/pipeline_resume.
 5. 只有当前阶段显示 `complete` 才能自动推进。
 
 从 Spec 到 Verify 用同一预检命令和同一组门禁参数计时。阶段准备和 Skill 调用前，
-追加 `--timing start --timing-stage <阶段>`。保存返回的 `timing.run_id`，
+追加 `--timing start --timing-stage <阶段>`。
+退出码 1 表示流水线未完成。JSON 中若已有运行中的 `timing` 回执，则计时已启动。
+保存返回的 `timing.run_id`，
 后续计时调用都加 `--timing-run <ID>`。设备、判图和本次返修都实际结束后，
 第 4 步加 `--timing finish --timing-stage <阶段> --timing-run <ID>`。
 有明确失败结果也正常记录结束。同一次调用中的重试继续使用同一 ID。
 另一次调用使用新 ID。异常中断保留 running 和未知结束时间。
 连续时间统计到 Verify 通过，包含阶段间耗时。跳过 Spec 或缺少任何严格门禁时只记录局部计时。
+`timing.observed_wall_seconds` 记录截至最近一次阶段结束的累计实测时间，包含失败尝试和阶段间耗时。续跑或中断时用 `timing.observed_until` 核对实测截止点。两小时达标仍以完整范围的 Verify 通过为准。
+分别用 `first_verify_ready_seconds`、`first_verify_start_seconds` 记录首次达到 Verify 准入和首次派发，用 `observed_after_first_verify_seconds` 记录从首次派发到最近一次结束的累计时间。
+复盘时用同一命令入口运行 `pipeline_resume.py --project-root <项目> --timing-report --timing-run <ID>`。它只读一份原回执，
+按阶段列有效尝试、未完成尝试、阶段间间隔和首次 Verify 派发后的用时。未结束的尝试保留未知时长。
+阶段用时包括该次调用中的模型和工具操作。细分模型、设备和判图仍应读取该次调用的独立原始回执。
+新回执对照单调时钟与 UTC 墙钟。相差超过两秒时保留局部计时，两者均小于 7,200 秒才可判达标。
+正式计时绑定已批准的 Plan 产物和回放校验后的双端视觉与行为回执。Plan 变更、回执缺失或沿用计时前已可识别的同一份回执时，保留用时并输出 `scope_gaps`。
+首次计时会绑定本次 CC 脚本与指令的摘要。计时中升级或改动这些输入时，保留原回执并重新开始正式计时。历史无摘要回执可继续记录局部用时。
 
 调用 `i2h-execute` 前，必须消费已批准的 UI delivery 契约并生成 ownership 回执：
 使用 `stages[i2h-plan].checks.delivery.path` 中返回的路径；下面命令使用的是

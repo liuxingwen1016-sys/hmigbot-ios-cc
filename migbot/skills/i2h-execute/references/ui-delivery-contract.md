@@ -24,6 +24,15 @@ decision_ref。缺截图不能自动排除。只交付 smoke path 时显式使�
 Plan 已知项目原生 UITest 使用稳定目标控件 ID 时，将该单元的真实操作入口登记到
 `source_obligations.runner_action_ids`。图标按钮可同时保留源无障碍名称。
 静态门禁要求实际 `.id(...)` 修饰符，真机回执继续核对可点击和进入正确状态。
+
+静态索引保存可直接定位的 SwiftUI 日期显示 `date_format_calls`，包括原表达式、显示槽位、
+日期档位、时间档位及源码行。G0 和正式 UI 义务检查可定位同一显示槽位退化为
+无参数 `toLocaleString()` 的实现。字段改名、共享格式函数和显式本地化配置仍以实际输出复核。
+
+`share_link_calls` 保留 SwiftUI `ShareLink(item: ...)` 或 `ShareLink(items: ...)` 的
+行号、入参形态和可直接读取的按钮文案。G0 和 UI 义务门禁检查可确定绑定到本地纯复制
+处理器的同名按钮。共享服务、动态文案、分享数据和系统面板行为由实测核对。
+
 生成单元包含 unit_id、page_id、component、presentation_role、required_states、
 output={file,symbol,builder}、source_refs、generation_owner、integration_owner=closer。
 draft 会从源码 modifier 生成可审查的 `presentation` 提示。`.sheet()` 使用
@@ -34,6 +43,8 @@ draft 会从源码 modifier 生成可审查的 `presentation` 提示。`.sheet()
 供 execute 门禁检查生成文件是否真的使用 `bindSheet`/`bindContentCover`。目标 SDK 不支持
 原生绑定时，必须在宿主文件写入完整的 `presentation_fallback` 标记，声明 owner、state、
 scrim、corner、detent、dismissal 和 safe_area，不能只用 pageKey 或普通导航页代替模态层。
+页面已有关闭动作时，宿主应关闭 `bindSheet` 默认显示的关闭按钮。交付门禁在可解析的
+宿主接线中检查重复按钮，动态选项由实际状态的视觉和交互回执核对。
 嵌入单元增加 integration={host_file,host_builder,child_symbol}。
 同一内容经多个独立宿主呈现时，`integration` 可为对象数组。每个槽位独立核对，模态槽位可声明 `mount=bindSheet` 或 `mount=bindContentCover`，并绑定实际 Swift `source_ref`。
 
@@ -89,6 +100,42 @@ python3 <i2h-execute>/scripts/ui_delivery_inputs.py --project-root <absolute-pro
 
 ## Execute：脚本先声明输入
 
+使用 `ui_delivery_inputs.py --supplemental-capture-manifest <capture-plan-manifest.json>`
+在主采集清单基础上导入补采。可重复传入多个清单。成功行逐态校验原图和控件树摘要，
+同时核对主采集的源码摘要、设备、配置及 App。补采失败项继续显式记录，对应状态仍需真实证据。
+已有采集内容与补拍冲突时应先审定采用哪份正式证据，补采入口不会覆盖旧帧。
+重复导入会复核已落盘的取证。补采回执中的 state_count 包含本次导入和已验证复用的状态，
+imported_state_count 只统计新导入，reused_states 列出原样保留的状态。
+
+依赖隔离数据夹具的 `behavior` 状态可使用单独的 `spec/baseline/plans/ui-fixture-captures.json`。
+其中 `schema_version` 为 1，`inventory_sha256` 绑定现有批准清单，`confirmation_ref` 记录本次取证的批准，
+`bindings` 逐行给出 `page_id`、`state_id` 和状态目录内 `manifest.json` 的 `fixture_capture_sha256`。
+批准后将绑定文件和原批准清单一并写入 Plan 标记。原 UI 清单摘要保持不变。补采可以使用该状态的
+独立模拟器和配置，且必须使用相同 iOS 源码与 App。补采校验普通启动回执、原图、控件树和握手文件的
+摘要，只接受批准的页和状态。已有帧按原规则保留。后续输入冻结和视觉基线读取会再次校验。
+
+派发前只核对输入是否齐备时，运行 `ui_dispatch.py check-inputs --project-root . --unit-id <unit>`。
+该命令校验源码、截图和控件树摘要并报告缺项，不创建尝试、对象或派发事件。
+以 `--all-required` 替换 `--unit-id` 可一次返回所有必交单元的就绪数及缺项；需要证据细节时再按单元检查。
+批量检查共用一次冻结输入读取。带续跑查询时也共用一次派发事件链校验。如果冻结输入、
+批准清单或此次使用的事件链在检查期间变化，当前结果作废，重新读取后再决定续跑。
+主线程确认此前转换器已退出后，可在同一只读命令追加 `--resume-pending`。
+当 `pending_attempt` 返回最近一次已收口之后最早的等价 READY 派发，续用其中的
+dispatch ID、原始 prompt 和 packet 摘要，并在真实转换完成后按原 ID 收口。
+检查不重写已存在的输出、派发或归档。没有等价派发时，确定转换器接手后再用 `prepare` 创建尝试。
+
+当缺口仅涉及带独立 iOS 源码锚点的 behavior 状态，且本单元已有完整的运行态截图和树时，
+两条命令会报告 `conversion_scope=SOURCE_ONLY_BEHAVIOR_GAPS` 和 `source_only_states`。
+只在已采用 Stage 1 缺口策略的项目中，主线程可将该 packet 交给 converter，按源实现未采集的行为。
+未批准类型化 `input_alternatives` 时，准备状态和退出码仍为 BLOCKED/2；原样归档 G0，缺证条目仍阻断 G0/G1 与正式验收。
+已批准的确切状态类型化替代按前述执行域解析路由复验，只有真正缺失的运行态可返回 SOURCE_ONLY/0；
+它可进入 G1 结构验收，视觉仍为 BLOCKED，不能替代到达或 Stage 1 完整验收。
+当缺少正式/预览状态、显式要求的证据或证据校验失败时，不给出此范围。
+
+G1 对尚未完成的新尝试可沿用最近已完成的通过回执。新旧包除尝试号和派发 ID 外须完全一致，
+且现有输出与转换报告须与原始归档逐字节一致。新尝试已归档失败、输入或输出已变时须重做；
+G1 同时记录上述两个尝试 ID。
+
 ~~~sh
 python3 <i2h-execute>/scripts/ui_delivery_inputs.py --project-root <project> --inventory <inventory>
 python3 <i2h-execute>/scripts/validate_runtime_snapshots.py --project-root <project>
@@ -100,6 +147,9 @@ python3 <i2h-execute>/scripts/validate_runtime_snapshots.py --project-root <proj
 输入变更须回到准备步骤重新审阅，受影响单元 STALE，不能手写脚本批量重绑旧报告 hash。
 冻结命令先同步标准 iOS 批量采集清单，逐状态合并运行证据到 `ui-snapshots`，保留已有静态事实。
 只有 ui_dispatch.py reuse-metadata --dispatch-id <id> --packet <new-packet> 自动确认同内容后可复用。
+已有新清单派发时，可运行 `ui_dispatch.py recovery-review --project-root <project>`。
+输出按单元列出当前回执、上一份通过的历史 G0、派发字段差异、单元契约差异以及 ArkTS 字节是否变化。
+以该结果确定审阅范围，审阅完成后仍经 `complete` 生成当前回执。
 
 每个单元运行 `ui_dispatch.py prepare --project-root <project> --unit-id <id> --attempt <N>`，将 prompt_path
 内容完整加入 task prompt。该段列出准确 component/page/output、packet digest 和 resolved absolute image paths。
@@ -159,10 +209,13 @@ code_anchor 和描述符号仅诊断 WARN，不能因空行/行号漂移修改�
 它保留逐 attempt G0、packet/批准清单快照和派发 prompt；归档失败即 BLOCKED，成功前禁止 closer 修改该单元。
 schema 2 同时保存输入字节的内容寻址副本及 preflight 报告；便利缓存重建不能覆盖已消费的 G0 证据。
 全批结束 `stage1_acceptance.py --kind g0` 原子汇总首次归档；失败不得跳过。后续修复使用新 attempt，保留旧 G0。
+首次归档按批准清单的 SHA-256 和最早已有真实 complete 事件的尝试选取。仅 prepare 的历史记录保留原状；早于首次归档时，G1 单独标示其 ID。汇总写入 `dispatch/g0/<sha256>.json`。清单获批更新后，旧清单的回执保留供追溯，当前清单无派发的单元保持 STALE。首份 `dispatch/g0.json` 同样保留为不可覆写历史；当前结构结果单独报告 `structural_status`，SOURCE_ONLY 不使视觉通过。
 
 iOS Python 派发入口保存 `spec/execution/dispatch/<dispatch_id>/` 和 `dispatch/events.jsonl`。
 准备结果会列出缺失的状态证据，converter 按 packet 给出的 `comparison_id` 报告图片观察。
 G0 校验本单元原始输出、转换报告、输入和状态引用；宿主装配、编译、设备到达和视觉留给后续门禁。
+已有 SDK 映射的字面量标签要求文字和符号同在一个可达布局。G0 和 Stage 5 UI 事实门禁
+都会指出遗漏或错配，并附原 Swift 行。缺映射的标签进入符号选型复核。
 
 ## 验收和修复
 
@@ -193,12 +246,34 @@ import 统计只表示依赖。完整交付要求 100% required units/states 有
 
 visual scope 使用明确的 pair_id/page_id/state_id，每项直接引用 iOS PNG/XML。
 未到达或缺基线的状态保留在分母并报告 BLOCKED，不按 wiring 成功项缩减 scope。
-通过 arkts-visual-verify 的 stage1_delivery 模式获取当前源码 HAP 的 HarmonyOS PNG/dump。
+通过目标应用的原生 UITest 采集当前签名 HAP 的 HarmonyOS PNG/dump，复用状态就绪时的控件树。
 每个状态逐帧/区域 comparison 记录 comparison_id、ios_png_sha256、ios_region_px、harmony_png、harmony_xml 和 verdict；
 一个原图可覆盖多个区域，不能用一次宿主底栏比较代替子内容比较。
 文件引用都是相对 spec/ 的 {path,sha256}。
 
 arrival_receipt 有 pair_id、arrival_mode、status=PASS、build_receipt、install_receipt。
+原生采集器须额外记录 capture_run_id、device_id、observed_page_id、observed_state_id、
+landing_evidence 文件引用以及带图和树 SHA-256 的 frames。只有检查到业务状态后才写到达回执。
+判图前先运行 `stage1_visual_report.py capture-index --project-root <project> --scope <scope.json>
+--arrival <spec 相对路径> --out <capture-index.json>`，多份回执重复传 `--arrival`。
+检查范围、源码、HAP、设备、源图、目标图和树摘要，逐状态输出缺项。READY 后使用同一份索引组装判图报告。
+已有历史判图时，在派发前用 [review-worklist](ios-visual-acceptance.md#视觉返修的判图清单)
+复核可沿用的判定。遇到单对超时或平台归属校验失败时，将原判图回执通过
+`--review-receipt` 传入同一命令，并按 `labeled_recheck` 的状态处理定向补判。
+正式组装仍覆盖完整批准范围。
+
+Plan 为共享自绘组件选定目标实现时，可在批准清单保存 `drawing_component_bindings`。
+每项的 `definition` 沿用 `drawing_component_calls` 中的 `file` 和 `line`；
+`output` 指定目标 `.ets` 文件和它导出的 ArkUI `struct` 符号。Stage 5 的
+`ui_obligation_gate.py` 从各必交宿主的批准入口检查可达调用和实际导入文件。
+Plan 校验会列出跨页但尚未绑定的定义，拒绝重复、无来源或越界绑定。
+派发只携带当前单元使用的绑定，页面源码按该目标接线。
+页面调用改指同名私有副本，或只留下了未被入口调用的 builder，都会报出对应宿主。
+实际尺寸、变体、可访问性和视觉差异继续由原有逐态验收确认。
+`i2h-verify/scripts/uitest_checkpoint.py` 的 `capture_checkpoint` 在正式截图前后均检查目标应用前台和同一业务状态。
+两次检查通过才调用 `record_arrival(name, matched_tree)`，其中 `matched_tree` 是截图后的原始树。
+在回调中用 `write_visual_arrival` 绑定批准 pair、原图、该树及实际构建和安装回执。
+只对已配置业务状态断言的检查点注册该回调。
 构建/安装回执都有 status=PASS、scope_sha256、source_sha256、hap_sha256；必须来自实际操作。
 Stage 1 派发 hmos-builder 时传 STAGE_HINT=stage-1-ui-delivery、MAX_ITER=1，
 底层追加 --build-only。每次只构建一次，修代码/重建由外层统一计次，
@@ -215,7 +290,7 @@ FAIL 带 severity，BLOCKED 附 reason。失败比较也保留图片与到达收
 
 ~~~sh
 python3 <i2h-execute>/scripts/stage1_visual_report.py assemble --project-root <project> --scope <scope.json> \
-  --capture <capture-index.json> --judgements <judge-*.json> [--carry-from <N>] --out <comparison-report.json>
+  --capture <capture-index.json> --judgements <judge-*.json> --out <comparison-report.json>
 python3 <i2h-execute>/scripts/stage1_acceptance.py --project-root <project> \
   --scope <scope.json> --report <comparison-report.json> --kind visual
 ~~~
@@ -225,6 +300,12 @@ python3 <i2h-execute>/scripts/stage1_acceptance.py --project-root <project> \
 判图结果 `{"comparisons":[{"comparison_id","verdict","severity","appearance_report","relationship_report","notes"}]}`。
 两份判定工件必须分别绑定同一 comparison ID。`appearance_report` 绑定 `ios_png_sha256` 和 `harmony_png_sha256`。
 `relationship_report` 绑定 `ios_ui_sha256` 和 `harmony_ui_sha256`。PASS 需要两份工件都提供 `verdict=PASS`。
+
+布局返修时可单独运行 `ui_relationships.py --audit-viewport`。该诊断列出源端选定区域内
+唯一且完整可见的锚点在目标树中缺失或超出视口的情况。唯一匹配的交互控件若可见矩形
+被原始矩形包含且任一边裁去超过 1 个归一化 iOS 点，则同时报告两个矩形及
+`target_control_clipped`。同名候选需要人工结合截图消歧。
+正式 `relationship_report` 仍使用常规命令输出，由归档门禁重算。
 
 G0 是 converter 的强制交接门；静态装配与修复后用 --kind g1 归档。两份不可覆写。
 G1 验证每个必交单元首次归档仍可读，当前转换回执与最近的通过归档一致，当前组件及宿主槽位通过结构门。
@@ -252,10 +333,9 @@ archive 自动分配 round-0/1/2，记录首次结果，不能改任务 ID 或 c
 记入 accepted_differences，不再修，视觉记 PASS；critical 两轮修完仍在则终态 FAIL，按产物缺陷阻断。
 `stage1_acceptance.py --kind next` 给出本轮 repair_scope。
 
-复采：修复后先跑 `stage1_visual_report.py affected` —— 只重采改动影响到的单元（改到的页面、引用改动文件的页面、
-被改动的宿主/路由承载的页面、用到改动资源条目的页面）；入口、Ability、配置等无归属文件改动视为全局。
-其余 pair 用 `--carry-from <N>` 沿用上轮结论，记录脚本会再核对其相关文件确实没变。
-有沿用项时，结束前在最终 HAP 上跑一次整包冒烟（冷启动、各 Tab、每个正式页面能到达），用
+复采：换包、换设备或批准范围变化后，为当前安装建立新原生采集索引。同一安装的局部补采可使用
+`capture-index --base-capture`，由工具复核保留的图、树和回执。判图沿用走本轮索引的 `review-worklist`。
+结束前在最终 HAP 上跑一次整包冒烟（冷启动、各 Tab、每个正式页面能到达），用
 `--kind smoke` 登记，cases 覆盖全部正式 page_id；冒烟通过才算 Stage 1 完成。
 冒烟输入使用 `--report`，包含 `scope_sha256`、同一套 `build_receipt` 和 `install_receipt`、
 `cold_start` 及 `cases`。各 case 使用 `{page_id,arrived:true,evidence}`，evidence 引用真实到达回执。

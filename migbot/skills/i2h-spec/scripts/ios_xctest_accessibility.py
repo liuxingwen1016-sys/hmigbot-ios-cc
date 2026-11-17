@@ -23,6 +23,8 @@ PROBE_MARKER = "// i2h-external-accessibility-probe"
 PROBE_SOURCE = r'''
 
 // i2h-external-accessibility-probe
+import CryptoKit
+
 final class I2HAccessibilityCaptureTests: XCTestCase {
     private struct CaptureState: Decodable {
         let page_id: String
@@ -30,6 +32,8 @@ final class I2HAccessibilityCaptureTests: XCTestCase {
         let bundle_id: String
         let navigation_json: String
         let output_dir: String
+        let capture_mode: String?
+        let launch_mode: String?
     }
 
     @MainActor func testI2HAccessibilityCapture() throws {
@@ -66,15 +70,38 @@ final class I2HAccessibilityCaptureTests: XCTestCase {
         for state in states {
             let output = URL(fileURLWithPath: state.output_dir, isDirectory: true)
             let app = XCUIApplication(bundleIdentifier: state.bundle_id)
-            app.launchArguments = ["--uitesting"]
+            let launchMode = state.launch_mode ?? "ui_testing"
+            guard ["ui_testing", "standard"].contains(launchMode) else {
+                throw readinessError("unknown capture launch mode: \(launchMode)")
+            }
+            app.launchArguments = launchMode == "standard" ? [] : ["--uitesting"]
             app.launch()
             defer { app.terminate() }
             do {
-                try requireReady(app: app, page: state.page_id, navigationJSON: state.navigation_json)
+                let appCapture = state.capture_mode == "xctest_app"
+                try requireReady(app: app, page: state.page_id, navigationJSON: state.navigation_json,
+                                 immediateAnchors: appCapture)
+                let tree = output.appendingPathComponent("ios-accessibility.json")
+                let receipt = output.appendingPathComponent("foreground-receipt.json")
+                let screenshot = appCapture ? app.screenshot().pngRepresentation : nil
                 try writeAccessibility(app: app, page: state.page_id, stateID: state.state_id,
-                                       bundleID: state.bundle_id, to: output.appendingPathComponent("ios-accessibility.json"))
+                                       bundleID: state.bundle_id, to: tree)
+                var capture: [String: Any] = [:]
+                if let screenshot {
+                    guard let navigation = try JSONSerialization.jsonObject(with: Data(state.navigation_json.utf8)) as? [String: Any],
+                          let anchors = navigation["anchors"] as? [[String: Any]], !anchors.isEmpty,
+                          waitForAnchor(anchors, app: app, immediate: true),
+                          app.state == .runningForeground else {
+                        throw readinessError("target state changed during XCTest app capture")
+                    }
+                    try screenshot.write(to: output.appendingPathComponent("ios-runtime.png"), options: .atomic)
+                    capture = ["capture_mode": "xctest_app",
+                               "screenshot_sha256": hexDigest(screenshot),
+                               "ui_json_sha256": hexDigest(try Data(contentsOf: tree))]
+                }
+                if state.launch_mode != nil { capture["launch_mode"] = launchMode }
                 try writeForeground(page: state.page_id, stateID: state.state_id, bundleID: state.bundle_id,
-                                    to: output.appendingPathComponent("foreground-receipt.json"))
+                                    to: receipt, capture: capture)
                 try waitForAcknowledgement(at: output.appendingPathComponent("foreground-capture-ack.json"), timeout: 60)
             } catch {
                 try error.localizedDescription.write(to: output.appendingPathComponent("capture-error.txt"),
@@ -106,7 +133,12 @@ final class I2HAccessibilityCaptureTests: XCTestCase {
         try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted]).write(to: output, options: .atomic)
     }
 
-    private func writeForeground(page: String, stateID: String, bundleID: String, to receipt: URL) throws {
+    private func hexDigest(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func writeForeground(page: String, stateID: String, bundleID: String,
+                                 to receipt: URL, capture: [String: Any] = [:]) throws {
         let payload: [String: Any] = [
             "schema": "hmigbot-ios-foreground-receipt/1",
             "bundle_id": bundleID,
@@ -114,7 +146,7 @@ final class I2HAccessibilityCaptureTests: XCTestCase {
             "state_id": stateID,
             "state": "runningForeground",
             "ready": true,
-        ]
+        ].merging(capture) { old, _ in old }
         try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted]).write(to: receipt, options: .atomic)
     }
 
@@ -122,7 +154,8 @@ final class I2HAccessibilityCaptureTests: XCTestCase {
         NSError(domain: "i2h.accessibility", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
     }
 
-    @MainActor private func requireReady(app: XCUIApplication, page: String, navigationJSON: String) throws {
+    @MainActor private func requireReady(app: XCUIApplication, page: String, navigationJSON: String,
+                                         immediateAnchors: Bool = false) throws {
         guard app.waitForExistence(timeout: 10) else {
             throw readinessError("target app did not launch")
         }
@@ -140,7 +173,14 @@ final class I2HAccessibilityCaptureTests: XCTestCase {
                     throw readinessError("navigation step \(index + 1) did not complete")
                 }
             }
-            guard waitForAnchor(payload["anchors"] as? [[String: Any]], app: app) else {
+            let anchors = payload["anchors"] as? [[String: Any]]
+            let ready: Bool
+            if let seconds = payload["anchor_wait_seconds"] as? Double, seconds > 0, seconds <= 8 {
+                ready = awaitAnchors(anchors, app: app, seconds: seconds)
+            } else {
+                ready = waitForAnchor(anchors, app: app, immediate: immediateAnchors)
+            }
+            guard ready else {
                 throw readinessError("target page anchor did not become ready")
             }
             if (payload["keyboard_visible"] as? Bool) == true {
@@ -221,13 +261,29 @@ final class I2HAccessibilityCaptureTests: XCTestCase {
         element.tap(); return true
     }
 
-    @MainActor private func waitForAnchor(_ anchors: [[String: Any]]?, app: XCUIApplication) -> Bool {
+    @MainActor private func waitForAnchor(_ anchors: [[String: Any]]?, app: XCUIApplication,
+                                          immediate: Bool = false) -> Bool {
         guard let anchors else { return true }
         for anchor in anchors {
-            guard let element = find(target: anchor, app: app), element.waitForExistence(timeout: 8) else { return false }
+            guard let element = find(target: anchor, app: app),
+                  (immediate ? element.exists : element.waitForExistence(timeout: 8)) else { return false }
             if (anchor["hittable"] as? Bool) == true, !element.isHittable { return false }
+            if let expected = anchor["value"] as? String {
+                guard let observed = element.value, String(describing: observed) == expected else { return false }
+            }
         }
         return true
+    }
+
+    @MainActor private func awaitAnchors(_ anchors: [[String: Any]]?, app: XCUIApplication,
+                                         seconds: Double) -> Bool {
+        let deadline = ProcessInfo.processInfo.systemUptime + seconds
+        while true {
+            if waitForAnchor(anchors, app: app, immediate: true) { return true }
+            let remaining = deadline - ProcessInfo.processInfo.systemUptime
+            if remaining <= 0 || app.state != .runningForeground { return false }
+            Thread.sleep(forTimeInterval: min(0.10, remaining))
+        }
     }
 
     @MainActor private func find(target: [String: Any], app: XCUIApplication) -> XCUIElement? {

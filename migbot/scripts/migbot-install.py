@@ -30,7 +30,7 @@ INSTALL_SKILLS = {
     # iOS 特定 skills
     'ios-ui-graph-builder', 'ios-ui-graph-query', 'swiftui-to-arkui',
     'ios-api-inventory', 'ios-fact-tree', 'ios_fast_traverse',
-    'ios2hmos_resources_convert',
+    'ios2hmos_resources_convert', 'ios-apple-sign-in-to-huawei',
 
     # 通用工具 skills
     'app-relationship-tree', 'commit', 'dfr-fmea-general',
@@ -48,25 +48,36 @@ EXCLUDE_ARKTS_SKILLS = {'arkts-ad'}
 
 EXECUTE_SKILL = 'i2h-execute'
 UI_GATE_ENTRIES = {
+    'apply_writeback.py': ('--project-root', '--merge-evidence'),
+    'build_writeback.py': ('--project-root', '--claims-only'),
+    'lint_execute_coverage.py': ('--final', '--report-only'),
     'capability_gate.py': ('--project-root', '--output-json'),
     'ui_stage1_gate.py': ('--project-root', '--output-json'),
     'ui_delivery_gate.py': ('--project-root', '--output-json'),
-    'ui_dispatch.py': ('prepare', 'complete', 'reuse-metadata'),
+    'ui_dispatch.py': ('prepare', 'check-inputs', 'complete', 'reuse-metadata'),
     'stage1_acceptance.py': ('--project-root', '--kind', '--build-receipt'),
     'stage1_visual_scope.py': ('--project-root', '--out'),
-    'stage1_visual_report.py': ('--scope', 'assemble'),
+    'stage1_visual_report.py': ('--scope', 'assemble', 'capture-index'),
     'ui_relationships.py': ('--comparison-id', '--harmony-tree'),
+    'host_build_checkpoint.py': ('--project-root', '--log', '--out'),
+    'ui_obligation_gate.py': ('--project-root', '--inventory', '--output-json'),
+    'ui_delivery_inputs.py': ('--project-root', '--inventory', '--no-working-copies', '--supplemental-capture-manifest'),
 }
 UI_GATE_FILES = {
     *UI_GATE_ENTRIES,
     '_launcher.py',
-    'ui_delivery_inputs.py',
     'lib/__init__.py',
+    'lib/build_writeback.py',
+    'lib/execute_claims.py',
+    'lib/lint_execute_coverage.py',
     'lib/ios_stage1_scope.py',
+    'lib/host_verify_handoff.py',
+    'lib/ios_inventory_resolution.py',
     'lib/ios_stage1_acceptance.py',
     'lib/ios_stage1_progress.py',
     'lib/ios_stage1_summary.py',
     'lib/ios_stage1_visual_gate.py',
+    'lib/ios_swift_declaration_scope.py',
     'lib/ios_ui_delivery_gate.py',
     'lib/ios_ui_dispatch.py',
     'lib/ios_ui_relationships.py',
@@ -78,6 +89,7 @@ UI_GATE_FILES = {
     'lib/stage1_wiring_checks.py',
     'lib/ui_stage1_gate.py',
     'lib/ui_delivery_inputs_ios.py',
+    'lib/visual_review_reuse.py',
 }
 
 

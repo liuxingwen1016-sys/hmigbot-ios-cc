@@ -35,16 +35,23 @@ python3 "${CLAUDE_PLUGIN_ROOT:-.claude}/skills/i2h-spec/scripts/ui_evidence.py" 
   --res-index spec/baseline/res-index
 ```
 
-完成骨架扫描后，必须运行 i2h-spec 自带的静态 UI/资源证据脚本。iOS 没有
-Android UIAutomator 的统一 `view.xml`，因此该脚本负责生成可追溯的源代码和
-资源事实，供 Phase B 和 i2h-execute 消费：
+同一次调用生成骨架与静态 UI/资源证据，供 Phase B 和 i2h-execute 消费。
+
+### 按需读取扫描证据
+
+用扫描返回的统计和骨架了解项目范围。恢复会话可只读查询已有清单：
 
 ```bash
-python3 .claude/skills/i2h-spec/scripts/ui_evidence.py \
-  "$IOS_PATH" \
-  --output spec/.i2h/resources-inventory.json \
-  --res-index spec/baseline/res-index
+script="${CLAUDE_PLUGIN_ROOT:-.claude}/skills/i2h-spec/scripts/ui_evidence.py"
+inventory=spec/.i2h/resources-inventory.json
+python3 "$script" --inventory-view "$inventory"
+python3 "$script" --inventory-view "$inventory" --view-name HomeView
+python3 "$script" --inventory-view "$inventory" --resource-section code_references
 ```
+
+查询返回完整清单与目标输入的 SHA-256。页名如有重名，按 `file_path` 和声明行
+选择源锚点。资源类别还可选 `catalogs`、`source_files`、`localizations` 和
+`standalone_assets`。保留完整清单供机器门禁读取。
 
 脚本会同时生成 `values.json`、`drawables.json`、`usage.json`、
 `design-tokens.json` 和 `handoff.json`。所有文件带有相同的
@@ -286,3 +293,16 @@ Phase A 完成后必须产出：
 - [ ] `spec/.i2h/phase-a-report.md` — Phase A 总结报告
 
 所有路径基于 HarmonyOS 项目根目录。
+
+### 逐页语义检查点
+
+每页记录的文件名为 `<page_id>.json`。外层包含 `schema_version: 1`、
+当前 `target_input_sha256` 和只含本页的 `pages` 数组。每项记录
+`page_id`、`view_name`、`file_path`，以及经源代码审阅的 `purpose`、
+`complexity`、`confidence`、`ui_structure`、`state_management`、`interactions`、
+`conversion_strategy`、`ios_source_anchors`。可补充 `navigation_role` 和 `dependencies`。
+所有页面文件沿用同一外层元数据。如果从既有聚合清单拆分，保留同一份 `review` 等外层字段。
+
+检查点复用沿用已校验的源输入。主线程对 `ios_page_meta.py` 传入
+`--semantics-dir`、`--merged-semantics-out` 和 `--output-root`，一次生成
+兼容的聚合清单及各页 `meta.json`。旧工程可继续用 `--semantics` 读取既有聚合清单。

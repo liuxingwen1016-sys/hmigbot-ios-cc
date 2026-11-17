@@ -3,6 +3,31 @@
 
 # 编译修复流程细节
 
+## 宿主编译检查点
+
+在真实入口已经接线且本批代码写入结束时运行。复用现有目标项目构建命令及依赖缓存，输出原始日志和聚合诊断。
+
+```bash
+python3 .claude/skills/i2h-execute/scripts/host_build_checkpoint.py \
+  --project-root . --log spec/execution/host-build.log \
+  --out spec/execution/host-build.json -- ./hvigorw assembleHap --mode module
+```
+
+退出 0 表示 Hvigor 成功且前后生产源码摘要一致，1 表示编译或签名失败，2 表示宿主访问、工具或结果不确定。源摘要变动时，以无并发写入的同一快照重跑。宿主交接日志需要绑定输入摘要。此命令只输出诊断，正式构建验收和迁移账本沿用原有入口。
+
+需要把签名包与现有 Stage 1 / Verify 设备取证接线时，在已授权宿主执行以下命令。构建命令应产出或更新所选 HAP，SDK 验签和设备安装成功后才发布交接。
+
+```bash
+python3 .claude/skills/i2h-execute/scripts/host_build_checkpoint.py \
+  --project-root . --log spec/execution/host-build.log --out spec/execution/host-build.json \
+  --scope spec/execution/stage1-visual/scope.json --signed-hap "$HAP_PATH" \
+  --java "$JAVA_BIN" --sign-tool "$HAP_SIGN_TOOL_JAR" \
+  --hdc "$HDC_BIN" --device "$APPROVED_DEVICE" --bundle "$APPROVED_BUNDLE" \
+  -- ./hvigorw assembleHap --mode module
+```
+
+`spec/verify/host-installation.json` 索引正式 Stage 1 可消费的 build/install 证据，绑定当前生产源码、范围、签名 HAP、设备和已确认的应用版本。原始日志与阶段正式输入均受摘要保护。设备测试执行者继续使用相应的原生到态、视觉、单测及行为契约。宿主回执本身不代表上述测试通过，生产 App 身份仍由 CHECK-2 校验。可在无设备权限的会话执行 `--project-root . --check-installation` 复算。
+
 body 只留四句：派发 Agent `hmos-builder`（最多 20 轮）→ agent 返回结构化报告（PASS/FAIL）→ PASS 后主线程按 trigger 白名单回填 placeholder → FAIL 时调 arkts-knowledge-verifier 升级诊断。完整流程图与 trigger 6 类判定在此。
 
 ```

@@ -193,4 +193,28 @@ deferred_work: [P-S8-003, …]        # registry kind=deferred-work 行的引用
 
 **生产端** = closer 写意图 JSON 后跑 `scripts/build_writeback.py`（透传账本段、从 plan-coverage 展开 impl_claims、brief 从草稿文件读入、group 模式校验 slice 小节齐全）；**消费端** = `apply_writeback.py`。
 
+覆盖声明只来自意图中逐包列出的 `packets`。部分交付时，在对应包填写 `requirement_ids`
+和实际实现 `files`。整包认领时填写 `whole_packet: true`。功能收口另显式列入 `feature_index.implemented`。历史意图使用
+`feature_index.implemented` 显式声明完整功能时，仍可展开该功能已列出的包。
+同包分步交付时，先汇合逐条证据，再执行组收口。终检核对包与条款归属、冻结摘要、
+项目内实现文件及已提供的代码锚点。审计既有台账可运行
+`lint_execute_coverage.py --project-root . --final --report-only`。
+
 各段可省（mode=batch 通常仅 `ui_manifest.converted` + `brief`）；`feature_index.implemented` 只在结构 CONVERGED 时记入（编译结论由 execute §5f 门给出）（`ui_manifest.verified` execute 侧无生产者——`verified` 唯一写者 = i2h-verify §6.1）；defer 末组（`structural_verdict: deferred-to-FV`）不记该段，由 mode=final 的 manifest 补翻。`impl_claims` 与对应 mode 的收口前置一致：group 模式不伪造编译前置，仍受后续 §5f 集中门约束；`requirement_ids`/`requirement_digests` **抄自 plan-coverage.json 对应 packet，不由 LLM 手写**；落盘幂等键 = `(requirement_id, packet_id, attempt)`（apply_writeback.py §5，重跑 apply 不重复）。
+
+同包分步交付时，由 closer 用 `build_writeback.py <intent> --project-root . --claims-only --out <manifest>`
+生成各步纯 claim 清单。达到集中收口点后，主线程执行
+`apply_writeback.py <manifest-1> <manifest-2> --project-root . --merge-evidence`，
+一次合并到实现台账。同一键的摘要必须一致，文件、符号、代码锚点和运行证据引用按稳定顺序去重。
+常规写回和集中写回都会核对新增声明的归属、冻结摘要、实现文件及代码锚点。
+无效声明会拒绝整次写回，并保留原台账。既有记录可先用只读终检盘点。已有证据失效时用常规单清单写回显式更正该键。UI、占位、feature 状态和 brief 仍走常规收尾，
+执行覆盖率和正式 Verify 继续使用各自的门禁。
+在 CC iOS 中，`feature_index.implemented` 和 `ui_manifest.converted` 落入
+`spec/.i2h/impl-claims.json` 的 `closeout.features_implemented` 和 `closeout.ui_converted`。
+前者要求该功能所有计划条款已有有效声明，后者将批准清单的页面序号、unit ID 或 page ID 统一为 page ID。
+两者保留已冻结的 Spec 和 Plan 文件。UI 收口字段仅记录执行提交，Stage 1 交付门禁仍独立校验实现。
+常规入口在写盘前校验所有结构化段，逐文件原子替换。若写盘中断，使用原 manifest 重放。
+
+已批准的范围延期写入 `spec/decision-ledger.md` 的 `D-xxx` 决策小节，条款行格式为
+`- **延期 AC**: F001-AC02, F001-AC03`。覆盖率终检把关联的未认领项标为
+`EXECUTE.REQUIREMENT_DEFERRED` 并附决策编号，仍返回阻断。其他未认领项仍显示为待补。

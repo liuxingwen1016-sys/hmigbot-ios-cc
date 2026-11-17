@@ -103,6 +103,10 @@ python3 "${CLAUDE_PLUGIN_ROOT:-.claude}/skills/i2h-spec/scripts/ui_evidence.py" 
   --source-index-output spec/.i2h/cache/source-index.json
 ```
 
+项目概览读取 `project-skeleton.json` 和扫描命令返回的资源统计。恢复时用
+[`--inventory-view`](./references/phase-a-ios-scan.md#按需读取扫描证据) 查询已有清单，
+按页或资源类别展开。机器门禁继续读取完整清单。
+
 `ui_evidence.py` 同时生成内容寻址的 `spec/.i2h/cache/source-index.json`。索引包含
 全量 Swift 文件的 SHA256、声明行、属性包装器、方法、依赖、路由、资源引用和页面
 归属。索引把可导航屏幕写入 `pages[]`，把 PrimaryButton、BeanBag、
@@ -161,7 +165,7 @@ python3 .claude/skills/i2h-spec/scripts/ios_runtime_capture_plan.py \
 
 计划文件的每个状态必须提供 `page_id`、`state_id`，以及 `accessibility_command` 或已有的 `accessibility_json`。`accessibility_command` 负责在真实 Simulator 中执行确定性导航，并写入环境变量 `I2H_UI_JSON_OUT`。随后的 `I2H_FOREGROUND_RECEIPT_OUT` 必须由同一 XCTest 探针在应用前台且页面就绪后写出，采集器只在 JSON 与 receipt 同时存在时截图。一个状态失败时包装器继续采集其余状态，最终退出码为 2，并在 `capture-plan-manifest.json` 中记录 `blocked_reason`。下游只能把 `status=captured` 的状态作为运行时证据，不能把 partial 汇总伪装成全量通过。
 
-Cuike 可使用共享 XCUITest 会话采集。将 `--xctest-batch-size 6 --source-root <iOS 源根> --bundle-id com.cuike.brew --configuration-id Cuike.Debug.uitesting` 附加到上述包装器命令。需要明确指定已授权的模拟器 ID。包装器在临时源码副本中添加探针，一次编译测试包，按计划顺序执行每个状态。每个状态仍以 `--uitesting` 重新启动应用并使用自己的导航、锚点和前台截图握手。它使用实际测试应用的构建摘要。项目使用其他测试 target 或文件时，可通过 `--xctest-target` 和 `--xctest-test-source` 指定，仅在已核实该应用的冷启动夹具能独立复位时启用共享会话。
+Cuike 可使用共享 XCUITest 会话采集。将 `--xctest-batch-size 6 --source-root <iOS 源根> --bundle-id com.cuike.brew --configuration-id Cuike.Debug.uitesting` 附加到上述包装器命令。需要明确指定已授权的模拟器 ID。包装器在临时源码副本中添加探针，一次编译测试包，按计划顺序执行每个状态。每个状态默认以 `--uitesting` 重新启动应用并独立核对导航、锚点和前台截图握手。需要读取测试夹具的状态可指定 `"launch_mode": "standard"`，用独立测试应用数据执行普通启动。显式启动模式必须出现在实际前台回执中并与计划一致。它使用实际测试应用的构建摘要。项目使用其他测试 target 或文件时，可通过 `--xctest-target` 和 `--xctest-test-source` 指定，仅在已核实该应用的冷启动夹具能独立复位时启用共享会话。
 
 已冻结采集计划且宿主可访问已授权模拟器时，可按 [采集并行交接](./references/ios-capture-overlap.md)
 启动独立 XCUITest 作业。同时执行不消费运行时证据的静态事实、功能和 API 分析。运行时消费者
@@ -257,8 +261,8 @@ python3 "${CLAUDE_PLUGIN_ROOT:-.claude}/skills/i2h-spec/scripts/ios_xctest_acces
 
 #### Step A2a: 确定性骨架生成（脚本优先）
 
-页面的确定性骨架来自上一步 `ui_evidence.py` 的 `pages[]`。复用组件从
-`components[]` 作为共享组件输入，不能为组件创建独立页面或重复执行 runtime capture。
+页面和共享组件的确定性骨架来自上一步扫描。用 `--view-name` 读取分配给当前任务的
+记录，以 `surface` 区分页面与共享组件。不能为组件创建独立页面或重复执行 runtime capture。
 对每个页面 View
 仍必须完整读取源码，并由 LLM 补充用途、复杂度、依赖和导航语义。不存在
 可执行的 `ios-view-analyzer` 脚本时，不得引用悬空路径或把推断字段伪装成脚本事实。
@@ -293,12 +297,15 @@ python3 "${CLAUDE_PLUGIN_ROOT:-.claude}/skills/i2h-spec/scripts/ios_xctest_acces
 
 #### 补充字段到 meta.json
 
-将逐页审阅结果合并为 `spec/.i2h/ios-page-semantics.json`，包含 `schema_version: 1`、当前 `target_input_sha256` 和 `pages`。每项记录 `page_id`、`view_name`、`file_path`，以及经源代码审阅的 `purpose`、`complexity`、`confidence`、`ui_structure`、`state_management`、`interactions`、`conversion_strategy`、`ios_source_anchors`。可补充 `navigation_role` 和 `dependencies`。用随包脚本合成 `meta.json`，由脚本带入属性、行号、源摘要与 UI 义务。
+页面任务只写自己负责的 `spec/.i2h/checkpoints/pages/semantics/<page_id>.json`。
+主线程运行脚本合并索引并生成 `meta.json`，消费单页时读取该页元数据。
+字段与旧工程兼容方式见 [逐页语义检查点](./references/phase-a-ios-scan.md#逐页语义检查点)。
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT:-.claude}/skills/i2h-spec/scripts/ios_page_meta.py" \
   --inventory spec/.i2h/resources-inventory.json \
-  --semantics spec/.i2h/ios-page-semantics.json \
+  --semantics-dir spec/.i2h/checkpoints/pages/semantics \
+  --merged-semantics-out spec/.i2h/ios-page-semantics.json \
   --output-root spec/baseline/ui-snapshots
 ```
 

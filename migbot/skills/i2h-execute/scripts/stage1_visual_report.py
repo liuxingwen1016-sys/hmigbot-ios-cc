@@ -1,9 +1,10 @@
-"""CLI launcher for the bundled i2h-execute command ``stage1_visual_report``."""
-from lib.stage1_visual_report import main as python_main
-from _launcher import dispatch
+"""Python entry point for the CC iOS visual report."""
+from pathlib import Path
+import sys
 
-def main(argv=None):
-    return dispatch("stage1_visual_report", argv, fallback=python_main)
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from lib.stage1_visual_report import main
 
 if __name__ == "__main__":
     raise SystemExit(main())

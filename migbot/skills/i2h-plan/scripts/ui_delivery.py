@@ -287,11 +287,25 @@ def draft(project_root: str | Path, out: str | Path) -> dict[str, Any]:
             "harmony_mapping": "NavDestination",
         })
         source_obligations = view.get("ui_obligations", {})
-        source_presentations = (
-            source_obligations.get("presentations", [])
-            if isinstance(source_obligations, dict)
-            else []
-        )
+        if not isinstance(source_obligations, dict):
+            source_obligations = {}
+        source_refs = [source_ref(source_root, source_file)]
+        for symbol_fact in source_obligations.get("system_symbol_fidelity", []):
+            definition = symbol_fact.get("component_definition")
+            if definition:
+                component_file = definition["file"]
+                if not (source_root / component_file).resolve().is_relative_to(source_root):
+                    raise ValueError(f"symbol component definition outside source root: {component_file}")
+                ref = {**source_ref(source_root, component_file), "line": definition["line"]}
+                if ref not in source_refs:
+                    source_refs.append(ref)
+        drawing_files = {row["definition"]["file"]
+                         for row in source_obligations.get("drawing_component_calls", [])}
+        for file in sorted(drawing_files - {ref["file"] for ref in source_refs}):
+            if not (source_root / file).resolve().is_relative_to(source_root):
+                raise ValueError(f"drawing component definition outside source root: {file}")
+            source_refs.append(source_ref(source_root, file))
+        source_presentations = source_obligations.get("presentations", [])
         presentation_contract = {
             "source": hint["source"],
             "harmony_mapping": hint["harmony_mapping"],
@@ -316,11 +330,11 @@ def draft(project_root: str | Path, out: str | Path) -> dict[str, Any]:
             "immersive_safearea": immersive,
             "required": True,
             "required_states": [{"state_id": "default", "arrival_mode": "preview", "responsibility": "content", "source_refs": [source_ref(source_root, source_file)]}],
-            "source_refs": [source_ref(source_root, source_file)],
+            "source_refs": source_refs,
             # Static source obligations are a deterministic checklist for the
             # converter. They never replace runtime evidence for viewport or
             # geometry decisions.
-            "source_obligations": view.get("ui_obligations", {}),
+            "source_obligations": source_obligations,
             "generation_owner": "i2h-view-converter",
             "integration_owner": "closer",
             "owned_ui_roles": ["content", "behavior"],
@@ -361,7 +375,7 @@ def draft(project_root: str | Path, out: str | Path) -> dict[str, Any]:
 
 def visual_binding_gaps(units: list, verification: list) -> dict[str, list]:
     owners = {
-        (unit.get("unit_id"), unit.get("page_id"), state.get("state_id"))
+        (unit.get("unit_id"), unit.get("page_id"), state.get("state_id")): state.get("arrival_mode", "preview")
         for unit in units if isinstance(unit, dict) and unit.get("required") is not False
         for state in (unit["required_states"] if isinstance(unit.get("required_states"), list) else [])
         if isinstance(state, dict)
@@ -371,6 +385,7 @@ def visual_binding_gaps(units: list, verification: list) -> dict[str, list]:
     seen_ids = set()
     covered = set()
     unbound = []
+    arrival_mismatches = []
     for index, row in enumerate(verification):
         values = [row.get(key) for key in ("verification_id", "owner", "page_id", "state_id")] if isinstance(row, dict) else []
         if not values or not all(isinstance(value, str) and value for value in values):
@@ -381,11 +396,17 @@ def visual_binding_gaps(units: list, verification: list) -> dict[str, list]:
             unbound.append(index)
             continue
         seen_ids.add(pair_id)
+        declared = owners[(owner, page, state)]
+        if row.get("arrival_mode", declared) != declared:
+            arrival_mismatches.append({"verification_id": pair_id, "expected": declared,
+                                       "actual": row.get("arrival_mode")})
+            continue
         covered.add((page, state))
     return {
         "unbound_verification_rows": unbound,
         "missing_visual_states": [{"page_id": page, "state_id": state}
                                   for page, state in sorted({(p, s) for _, p, s in owners} - covered)],
+        "visual_arrival_mode_mismatches": arrival_mismatches,
     }
 
 
@@ -497,6 +518,47 @@ def _validate_integration_host(unit: dict[str, Any], errors: list[dict[str, Any]
                                    "child_symbol": child_symbol, "output_symbol": expected_symbol})
 
 
+def _validate_drawing_bindings(root: Path, units: list, bindings: Any) -> tuple[list[dict], list[dict]]:
+    def identity(row):
+        definition = row.get("definition") if isinstance(row, dict) else None
+        if not isinstance(definition, dict):
+            return None
+        file, line = definition.get("file"), definition.get("line")
+        if not isinstance(file, str) or not file or type(line) is not int or line < 1:
+            return None
+        return file, line
+
+    consumers = {}
+    for unit in units:
+        if not isinstance(unit, dict) or not unit.get("required", True):
+            continue
+        obligations = unit.get("source_obligations")
+        if not isinstance(obligations, dict) or not isinstance(obligations.get("drawing_component_calls"), list):
+            continue
+        for row in obligations["drawing_component_calls"]:
+            if key := identity(row):
+                consumers.setdefault(key, set()).add(str(unit.get("unit_id", "")))
+    if not isinstance(bindings, list):
+        return [{"code": "DRAWING_BINDINGS_INVALID", "message": "drawing_component_bindings must be an array"}], []
+    errors, bound = [], set()
+    for index, row in enumerate(bindings):
+        key = identity(row)
+        output = row.get("output") if isinstance(row, dict) else None
+        file = output.get("file") if isinstance(output, dict) else None
+        symbol = output.get("symbol") if isinstance(output, dict) else None
+        if (key not in consumers or key in bound or not isinstance(file, str) or not file.endswith(".ets")
+                or Path(file).is_absolute() or not (root / file).resolve().is_relative_to(root)
+                or not isinstance(symbol, str) or not re.fullmatch(r"[A-Za-z_$][\w$]*", symbol)):
+            errors.append({"code": "DRAWING_BINDING_INVALID", "index": index,
+                           "message": "expected a unique used definition and a project-relative ArkUI output"})
+            continue
+        bound.add(key)
+    warnings = [{"code": "SHARED_DRAWING_BINDING_UNSPECIFIED",
+                 "definition": {"file": file, "line": line}, "unit_ids": sorted(ids)}
+                for (file, line), ids in sorted(consumers.items()) if len(ids) > 1 and (file, line) not in bound]
+    return errors, warnings
+
+
 def validate(project_root: str | Path, inventory: dict[str, Any], *, require_runtime_plan: bool = False) -> dict[str, Any]:
     root = Path(project_root).expanduser().resolve()
     source_root = Path(str(inventory.get("source_project_root", root))).expanduser().resolve()
@@ -508,6 +570,9 @@ def validate(project_root: str | Path, inventory: dict[str, Any], *, require_run
     if not isinstance(units, list) or not units:
         errors.append({"code": "UNITS_EMPTY", "message": "units must contain at least one UI unit"})
         units = []
+    drawing_errors, drawing_warnings = _validate_drawing_bindings(root, units, inventory.get("drawing_component_bindings", []))
+    errors.extend(drawing_errors)
+    warnings.extend(drawing_warnings)
     if require_runtime_plan:
         verification = inventory.get("verification_states")
         if not isinstance(verification, list) or not verification:
@@ -518,6 +583,7 @@ def validate(project_root: str | Path, inventory: dict[str, Any], *, require_run
                     errors.append({"code": code, "rows": rows})
     seen_ids: set[str] = set()
     seen_outputs: set[str] = set()
+    native_hashes: dict[Path, str | None] = {}
     # State ids are scoped to the page/component that owns them.  A source
     # inventory legitimately contains ``default/content`` for every page and
     # shared component.  Keep the fallback scope for hand-authored units that
@@ -573,13 +639,18 @@ def validate(project_root: str | Path, inventory: dict[str, Any], *, require_run
                     kind = str(row.get("kind", ""))
                     if kind not in {"sheet", "full_screen_cover", "alert", "confirmation_dialog", "popover", "context_menu"}:
                         errors.append({"code": "PRESENTATION_KIND_INVALID", "unit_id": unit_id, "kind": kind})
-        for ref in unit.get("source_refs", []):
-            if not isinstance(ref, dict) or not ref.get("file"):
+        refs = unit.get("source_refs", [])
+        if not isinstance(refs, list):
+            errors.append({"code": "SOURCE_REF_INVALID", "unit_id": unit_id})
+            refs = []
+        for ref in refs:
+            if not isinstance(ref, dict) or not isinstance(ref.get("file"), str) or not ref["file"]:
                 errors.append({"code": "SOURCE_REF_INVALID", "unit_id": unit_id})
                 continue
             if not (source_root / ref["file"]).is_file() and not (root / ref["file"]).is_file() and not (root / "spec" / ref["file"]).is_file():
                 warnings.append({"code": "SOURCE_REF_MISSING", "unit_id": unit_id, "file": ref["file"]})
-        # Integration host validation: fail-closed on placeholder/invalid host fields
+        if require_runtime_plan:
+            errors.extend(_validate_native_refs(source_root, refs, unit_id, native_hashes))
         _validate_integration_host(unit, errors)
         states = unit.get("required_states")
         if not isinstance(states, list) or not states:
@@ -590,6 +661,9 @@ def validate(project_root: str | Path, inventory: dict[str, Any], *, require_run
             if not isinstance(state, dict) or not state.get("state_id"):
                 errors.append({"code": "STATE_INVALID", "unit_id": unit_id})
                 continue
+            if require_runtime_plan:
+                errors.extend(_validate_native_refs(source_root, state.get("source_refs", []), unit_id,
+                                                    native_hashes, state_id=state["state_id"]))
             responsibility = state.get("responsibility", "content")
             if responsibility not in {"shell", "content", "overlay", "behavior"}:
                 errors.append({"code": "RESPONSIBILITY_INVALID", "unit_id": unit_id, "state_id": state.get("state_id")})
@@ -602,9 +676,55 @@ def validate(project_root: str | Path, inventory: dict[str, Any], *, require_run
             else:
                 seen_roles[key] = str(unit_id)
     result = dict(inventory)
+    validation = {"errors": errors, "warnings": warnings}
+    try:
+        retained = _configured_formal_scope(root, inventory)
+    except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
+        errors.append({"code": "PRIOR_UI_APPROVAL_INVALID", "message": str(exc)})
+    else:
+        if retained is not None:
+            validation["retained_formal_scope"] = retained
+            if retained["status"] != "PASS":
+                errors.append({"code": "APPROVED_FORMAL_SCOPE_REDUCED", "rows": retained["missing"]})
     result["status"] = "validated" if not errors else "invalid"
-    result["validation"] = {"errors": errors, "warnings": warnings}
+    result["validation"] = validation
     return result
+
+
+def _validate_native_refs(source_root: Path, refs: Any, unit_id: Any, cache: dict[Path, str | None],
+                          *, state_id: Any = None) -> list[dict[str, Any]]:
+    location = {"unit_id": unit_id}
+    if state_id is not None:
+        location["state_id"] = state_id
+    if not isinstance(refs, list):
+        return [{"code": "SOURCE_REF_INVALID", **location}]
+    errors = []
+    for ref in refs:
+        if not isinstance(ref, dict) or not isinstance(ref.get("file"), str):
+            continue
+        file = Path(ref["file"])
+        if file.suffix.lower() not in {".swift", ".m", ".mm", ".h", ".hpp"}:
+            continue
+        path = (source_root / file).resolve()
+        expected = str(ref.get("sha256", "")).removeprefix("sha256:")
+        if file.is_absolute() or not path.is_relative_to(source_root):
+            code = "NATIVE_SOURCE_REF_OUTSIDE_ROOT"
+        elif not re.fullmatch(r"[a-f0-9]{64}", expected):
+            code = "NATIVE_SOURCE_REF_DIGEST_MISSING"
+        else:
+            if path not in cache:
+                try:
+                    cache[path] = digest(path.read_bytes())
+                except OSError:
+                    cache[path] = None
+            if cache[path] is None:
+                code = "NATIVE_SOURCE_REF_UNREADABLE"
+            elif cache[path] != expected:
+                code = "NATIVE_SOURCE_REF_DIGEST_MISMATCH"
+            else:
+                continue
+        errors.append({"code": code, "file": file.as_posix(), **location})
+    return errors
 
 
 def validate_tab_integrations(root: Path, inventory: dict[str, Any]) -> list[dict[str, Any]]:
@@ -664,6 +784,77 @@ def diff(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
     left = {u.get("unit_id"): u for u in before.get("units", []) if isinstance(u, dict)}
     right = {u.get("unit_id"): u for u in after.get("units", []) if isinstance(u, dict)}
     return {"schema_version": 1, "added": sorted(set(right) - set(left)), "removed": sorted(set(left) - set(right)), "changed": sorted(k for k in set(left) & set(right) if left[k] != right[k])}
+
+
+def _formal_scope(inventory: dict[str, Any]) -> dict[tuple[str, str], str]:
+    """Read formal bindings using the source component identity across plans."""
+    if inventory.get("schema_version") != 2:
+        raise ValueError("formal scope comparison requires schema-2 inventories")
+    owners = {}
+    for unit in inventory["units"]:
+        if not unit.get("required", True):
+            continue
+        for state in unit["required_states"]:
+            if state.get("arrival_mode") != "formal":
+                continue
+            owners[(unit["unit_id"], unit["page_id"], state["state_id"])] = unit.get("component")
+    scope = {}
+    seen_ids = set()
+    for row in inventory["verification_states"]:
+        binding = (row.get("owner"), row.get("page_id"), row.get("state_id"))
+        if binding not in owners or row.get("arrival_mode", "formal") != "formal":
+            continue
+        component = owners[binding]
+        pair_id = row.get("verification_id")
+        if not isinstance(pair_id, str) or not pair_id or pair_id in seen_ids:
+            raise ValueError(f"missing or ambiguous formal verification ID: {pair_id}")
+        seen_ids.add(pair_id)
+        if not isinstance(component, str) or not component:
+            raise ValueError(f"formal state lacks a source component: {binding[1:]}")
+        state = (component, binding[2])
+        if state in scope:
+            raise ValueError(f"ambiguous formal scope binding: {component}/{state[1]}")
+        scope[state] = binding[1]
+    return scope
+
+
+def compare_formal_scope(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
+    if before.get("status") != "approved" or not before.get("approval"):
+        raise ValueError("formal scope comparison requires the previous approved inventory")
+    previous = _formal_scope(before)
+    if not previous:
+        raise ValueError("previous approval does not contain formal verification states")
+    current = _formal_scope(after)
+    missing = sorted(previous.keys() - current.keys())
+    return {
+        "schema_version": 1, "status": "INCOMPLETE" if missing else "PASS",
+        "approved_count": len(previous), "retained_count": len(previous.keys() & current.keys()),
+        "missing": [{"component": component, "state_id": state, "previous_page_id": previous[(component, state)]}
+                    for component, state in missing],
+        "additional": [{"component": component, "state_id": state, "page_id": current[(component, state)]}
+                       for component, state in sorted(current.keys() - previous.keys())],
+    }
+
+
+def _configured_formal_scope(root: Path, inventory: dict[str, Any]) -> dict[str, Any] | None:
+    config = root / ".migbot/config.json"
+    if not config.is_file():
+        return None
+    approval = read(config).get("prior_ui_approval")
+    if approval is None:
+        return None
+    if not isinstance(approval, dict) or not isinstance(approval.get("path"), str):
+        raise ValueError("prior_ui_approval requires a project-relative path and SHA-256")
+    relative = Path(approval["path"])
+    source = (root / relative).resolve()
+    if relative.is_absolute() or not source.is_relative_to(root):
+        raise ValueError("prior_ui_approval must stay inside the project")
+    raw = source.read_bytes()
+    fingerprint = digest(raw)
+    if fingerprint != approval.get("sha256"):
+        raise ValueError("prior_ui_approval SHA-256 changed")
+    return {**compare_formal_scope(json.loads(raw), inventory),
+            "before_path": relative.as_posix(), "before_sha256": fingerprint}
 
 
 def add_visual_pairs(inventory: dict) -> dict:
@@ -734,7 +925,8 @@ def add_visual_pairs(inventory: dict) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("draft", "pair-states", "validate", "approve", "diff"))
+    parser.add_argument("command", choices=("draft", "pair-states", "validate", "approve", "diff",
+                                            "compare-formal-scope"))
     parser.add_argument("--project-root", required=True)
     parser.add_argument("--out", required=True)
     parser.add_argument("--inventory")
@@ -805,9 +997,17 @@ def main(argv: list[str] | None = None) -> int:
         else:
             if not args.before or not args.after:
                 raise ValueError("--before and --after are required")
-            result = diff(read(Path(args.before)), read(Path(args.after)))
+            before, after = (Path(value) for value in (args.before, args.after))
+            if args.command == "compare-formal-scope":
+                if Path(args.out).resolve() in {before.resolve(), after.resolve()}:
+                    raise ValueError("formal scope comparison output must be separate from the inventories")
+                before_raw, after_raw = before.read_bytes(), after.read_bytes()
+                result = compare_formal_scope(json.loads(before_raw), json.loads(after_raw))
+                result.update(before_sha256=digest(before_raw), after_sha256=digest(after_raw))
+            else:
+                result = diff(read(before), read(after))
             write(Path(args.out), result)
-    except (OSError, ValueError, ImportError) as exc:
+    except (OSError, ValueError, ImportError, KeyError, TypeError, AttributeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
     if args.command == "draft":
@@ -815,6 +1015,8 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print(json.dumps({"output": args.out, "status": result.get("status")}, ensure_ascii=False))
     if args.command == "validate" and (args.receipt_only or args.require_runtime_plan) and result["status"] != "validated":
+        return 2
+    if args.command == "compare-formal-scope" and result["status"] != "PASS":
         return 2
     return 0
 

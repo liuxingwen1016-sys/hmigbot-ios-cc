@@ -8,12 +8,15 @@ that are cheap to verify without a device.
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import hashlib
 import json
 import math
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
+
+from lib.ios_ui_delivery_gate import _code, _component_bodies, _imports, _method, _project_file, _reachable, _renders
 
 
 _SYMBOL_SUBSTITUTES = frozenset("★☆✓→+−☼◔↗")
@@ -205,16 +208,17 @@ def _check_foreground_safearea(
     source: str,
     unit: dict[str, Any],
     relative: str,
-    generated_sources=None,
+    root_expands: bool,
 ) -> list[dict[str, str]]:
     """Require page-level insets when the root deliberately expands edge-to-edge."""
-    combined = "\n".join([source, *(generated_sources or [])])
-    if not re.search(r"\.expandSafeArea\s*\(", combined):
+    if not root_expands:
         return []
     top_bar_labels = ("偏好设置", "添加咖啡豆", "豆档案", "风味手记", "冲煮台")
-    if not any(label in source for label in top_bar_labels):
+    visible_source = _code(source, keep_strings=True)
+    if not any(label in visible_source for label in top_bar_labels):
         return []
-    if re.search(r"safeAreaPadding|windowTopPadding|WindowModel|ImmersiveScaffold", source):
+    code = _code(source)
+    if re.search(r"\.\s*safeAreaPadding\s*\(|\.\s*windowTopPadding\b|\bImmersiveScaffold\s*\(", code):
         return []
     return [{
         "code": "foreground_safearea_missing",
@@ -377,6 +381,70 @@ def _check_packaged_image_input(generated_sources: list[str]) -> list[dict[str, 
     return []
 
 
+def _check_source_rawfiles(root: Path, sources: dict[Path, str]) -> list[dict[str, str]]:
+    """Detect statically named source assets absent from the migrated package inputs."""
+    inventory = root / "spec/.i2h/resources-inventory.json"
+    if not inventory.is_file():
+        return []
+    data = _read(inventory)
+    assets: dict[str, set[str]] = {}
+    for asset in data.get("resources", {}).get("standalone_assets", []):
+        if not isinstance(asset, dict) or asset.get("exists") is not True:
+            continue
+        source = asset.get("path")
+        if isinstance(source, str) and re.fullmatch(r"[0-9a-f]{64}", str(asset.get("sha256", ""))):
+            assets.setdefault(PurePosixPath(source).name, set()).add(source)
+    if not assets:
+        return []
+    raw_roots = {}
+    for path in sources:
+        if not path.is_relative_to(root):
+            continue
+        parts = path.relative_to(root).parts
+        for index in range(len(parts) - 2):
+            if parts[index:index + 3] == ("src", "main", "ets"):
+                raw_roots[path] = root.joinpath(*parts[:index], "src", "main", "resources", "rawfile")
+                break
+    known_raw_roots = set(raw_roots.values())
+    literal = r"""(['"])([^'"\\\r\n]+)\1"""
+    constant = re.compile(r"^[ \t]*(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*(?::\s*string)?\s*=", re.M)
+    call = re.compile(r"\.\s*getRaw(?:FileContent|Fd)(?:Sync)?\s*\(")
+    variable_arg = re.compile(r"\s*([A-Za-z_$][\w$]*)\s*[,)]")
+    issues = []
+    for path, source in sources.items():
+        if path not in raw_roots or "getRaw" not in source:
+            continue
+        code = _mask_arkts_trivia(source, keep_literals=False)
+        reads = [(source[match.end():], variable_arg.match(code, match.end())) for match in call.finditer(code)]
+        name_counts = Counter(match[1] for _, match in reads if match)
+        values = {}
+        for declaration in constant.finditer(code):
+            name = declaration[1]
+            match = re.match(rf"\s*{literal}\s*(?=[;\r\n]|$)", source[declaration.end():])
+            if match and name_counts[name] and len(re.findall(rf"\b{re.escape(name)}\b", code)) == name_counts[name] + 1:
+                values[name] = match[2]
+        for snippet, variable in reads:
+            direct = re.match(rf"\s*{literal}\s*[,)]", snippet)
+            name = direct[2] if direct else values.get(variable[1]) if variable else None
+            if not name:
+                continue
+            key = PurePosixPath(name)
+            if key.is_absolute() or ".." in key.parts or ":" in name or not key.name:
+                continue
+            matches = assets.get(key.name, set())
+            if len(matches) != 1 or any((raw / name).is_file() for raw in known_raw_roots):
+                continue
+            expected = raw_roots[path] / name
+            source_asset = next(iter(matches))
+            issues.append({
+                "code": "source_rawfile_missing",
+                "unit_id": "runtime.resources",
+                "detail": (f"{path.relative_to(root).as_posix()}: {source_asset} is read as {name!r}, "
+                           f"but {expected.relative_to(root).as_posix()} is absent"),
+            })
+    return issues
+
+
 def _fresh_database_duplicate_columns(source: str, code: str) -> set[str]:
     """Recognize two adjacent, unconditional steps on a fresh database."""
     issues: set[str] = set()
@@ -529,7 +597,415 @@ def _check_symbol_fidelity(source: str, unit: dict[str, Any], relative: str) -> 
     return errors
 
 
-def _check_unit(root: Path, unit: dict[str, Any], generated_sources=None) -> list[dict[str, str]]:
+
+def _modifiers_after(code: str, start: int) -> dict[str, str]:
+    values = {}
+    while match := _MODIFIER.match(code, start):
+        end = _closing_delimiter(code, match.end(), "(", ")")
+        if end is None:
+            break
+        values[match[1]] = code[match.end():end].strip()
+        start = end + 1
+    return values
+
+
+def _sheet_close_enabled(options: str) -> bool:
+    # Inspect only literal, top-level properties. A spread or computed key
+    # can override showClose at runtime.
+    properties = options[1:-1] + ","
+    start = index = 0
+    values = []
+    delimiters = {"(": ")", "{": "}", "[": "]"}
+    while index < len(properties):
+        char = properties[index]
+        if char in delimiters:
+            end = _closing_delimiter(properties, index + 1, char, delimiters[char])
+            if end is None:
+                return False
+            index = end
+        elif char == ",":
+            property_text = properties[start:index].strip()
+            start = index + 1
+            if property_text:
+                match = re.fullmatch(r"(\w+)\s*:\s*(.*)", property_text, re.S)
+                if not match:
+                    return False
+                if match[1] == "showClose":
+                    values.append(match[2])
+        index += 1
+    return values in ([], ["true"])
+
+
+def _native_close_sheet_contents(source: str) -> list[tuple[str, set[str]]]:
+    code = _mask_arkts_trivia(source, keep_literals=False)
+    sheets = []
+    for owner, component in _component_bodies(code).items():
+        for method in _reachable(component, "build").values():
+            for binding in _BIND_SHEET.finditer(method):
+                end = _closing_delimiter(method, binding.end(), "(", ")")
+                if end is None:
+                    continue
+                arguments = re.fullmatch(
+                    r"\s*this\.\w+\s*,\s*this\.(\w+)\s*\(\s*\)\s*(?:,\s*(\{.*\}))?\s*",
+                    method[binding.end():end], re.S,
+                )
+                if not arguments:
+                    continue
+                builder, options = arguments.groups()
+                if options and not _sheet_close_enabled(options):
+                    continue
+                contents = "\n".join(_reachable(component, builder).values())
+                calls = set(re.findall(r"(?<![\w.$])([A-Z_$][\w$]*)\s*\(", contents))
+                if calls and (f"{owner}.{builder}", calls) not in sheets:
+                    sheets.append((f"{owner}.{builder}", calls))
+    return sheets
+
+
+def _has_page_close_action(source: str, symbol: str, builder: str) -> bool:
+    component = _component_bodies(_mask_arkts_trivia(source, keep_literals=True)).get(symbol, "")
+    for method in _reachable(component, builder).values():
+        code = _mask_arkts_trivia(method, keep_literals=False)
+        controls = re.finditer(
+            r"(?<![\w.$])(?:Text|Button)\s*\(\s*(['\"])(?:关闭|取消|Close|Cancel)\1\s*\)",
+            method,
+        )
+        for control in controls:
+            if code[control.start()].isspace():
+                continue
+            action = _modifiers_after(code, control.end()).get("onClick", "")
+            if re.fullmatch(
+                r"\(\s*\)\s*=>\s*(?:\{\s*)?this\.(?:onClose|onDismiss|closeAll|dismiss)\s*\(\s*\)\s*;?\s*\}?",
+                action,
+            ):
+                return True
+    return False
+
+
+def _check_sheet_close_actions(root: Path, units: list[dict], sources: dict[Path, str]) -> list[dict[str, str]]:
+    sheets = [(path, slot, calls) for path, source in sources.items() if "bindSheet" in source
+              for slot, calls in _native_close_sheet_contents(source)]
+    if not sheets:
+        return []
+    errors = []
+    for unit in units:
+        output = unit.get("output") or {}
+        symbol, relative = output.get("symbol"), output.get("file")
+        if not isinstance(symbol, str) or not isinstance(relative, str):
+            continue
+        path = root / relative
+        source = sources.get(path, "")
+        if not _has_page_close_action(source, symbol, output.get("builder") or "build"):
+            continue
+        for host, slot, calls in sheets:
+            names = {symbol} if host == path else _imports(root, sources[host], host, path.resolve(), symbol)
+            if calls & names:
+                errors.append({
+                    "code": "duplicate_sheet_close_action",
+                    "unit_id": unit.get("unit_id", ""),
+                    "detail": f"{host.relative_to(root)}:{slot} enables the native close button while {symbol} renders its own close action",
+                })
+    return errors
+
+
+def _literal_number(value: str, code: str) -> float | None:
+    if re.fullmatch(r"\d+(?:\.\d+)?", value):
+        return float(value)
+    if not re.fullmatch(r"[A-Za-z_]\w*", value):
+        return None
+    matches = re.findall(
+        rf"\bconst\s+{re.escape(value)}(?:\s*:\s*number)?\s*=\s*(\d+(?:\.\d+)?)\s*;",
+        code,
+    )
+    return float(matches[0]) if len(matches) == 1 else None
+
+
+def _has_rating_symbol_contract(source: str, row: dict) -> bool:
+    code = _mask_arkts_trivia(source, keep_literals=False)
+    filled, empty = map(re.escape, row["target_symbols"])
+    branches = re.compile(
+        rf"""\s*[\w.]+\s*>=\s*[\w.]+\s*\?\s*\$r\(\s*(['"])sys\.symbol\.{filled}\1\s*\)
+             \s*:\s*\$r\(\s*(['"])sys\.symbol\.{empty}\2\s*\)\s*""",
+        re.VERBOSE,
+    )
+    width, height = row["minimum_button_pt"]
+    for button in re.finditer(r"\bButton\s*\(", code):
+        options = _closing_delimiter(code, button.end(), "(", ")")
+        if options is None or not (block := re.match(r"\s*\{", code[options + 1:])):
+            continue
+        start = options + 1 + block.end()
+        end = _closing_delimiter(code, start, "{", "}")
+        if end is None:
+            continue
+        glyph = re.match(r"\s*SymbolGlyph\s*\(", code[start:end])
+        if glyph is None:
+            continue
+        glyph_args = start + glyph.end()
+        glyph_end = _closing_delimiter(code, glyph_args, "(", ")")
+        if glyph_end is None or glyph_end >= end or not branches.fullmatch(source[glyph_args:glyph_end]):
+            continue
+        size = _literal_number(_modifiers_after(code, glyph_end + 1).get("fontSize", ""), code)
+        button_modifiers = _modifiers_after(code, end + 1)
+        w = _literal_number(button_modifiers.get("width", ""), code)
+        h = _literal_number(button_modifiers.get("height", ""), code)
+        if size == row["symbol_font_pt"] and w is not None and h is not None and w >= width and h >= height:
+            return True
+    return False
+
+
+def _symbol_resolves(row: dict, generated_sources: list[str]) -> bool:
+    target = re.escape(row["target_symbol"])
+    direct = rf"""\$r\(\s*['"]sys\.symbol\.{target}['"]\s*\)"""
+    sf_name = re.escape(row["source_symbol"])
+    for candidate in generated_sources:
+        candidate_code = _mask_arkts_trivia(candidate, keep_literals=False)
+        resolver = re.search(r"\bfunction\s+symbolOf\s*\([^)]*\)[^{]*\{", candidate_code)
+        if resolver is None:
+            continue
+        end = _closing_delimiter(candidate_code, resolver.end(), "{", "}")
+        if end is None:
+            continue
+        body = _mask_arkts_trivia(candidate[resolver.end():end], keep_literals=True)
+        if re.search(rf"""\bcase\s+['"]{sf_name}['"]\s*:\s*return\s+{direct}""", body):
+            return True
+    return False
+
+
+def _has_tab_symbol_contract(source: str, row: dict, generated_sources: list[str]) -> bool:
+    code = _mask_arkts_trivia(source, keep_literals=False)
+    label = re.escape(row["label"])
+    literal = rf"""(?:'{label}'|"{label}")"""
+    target = re.escape(row["target_symbol"])
+    direct = rf"""\$r\(\s*['"]sys\.symbol\.{target}['"]\s*\)"""
+    sf_name = re.escape(row["source_symbol"])
+    mapped = _symbol_resolves(row, generated_sources)
+    symbol = rf"(?:{direct}|['\"]{sf_name}['\"])" if mapped else direct
+    pair = rf"(?:{literal}\s*,\s*{symbol}|\btext\s*:\s*{literal}\s*,\s*icon\s*:\s*{symbol})"
+    visible = _mask_arkts_trivia(source, keep_literals=True)
+    for call in re.finditer(r"\b(floatingTabItem|tabBar)\s*\(", code):
+        end = _closing_delimiter(code, call.end(), "(", ")")
+        leading_index = r"(?:[A-Za-z0-9_]+\s*,\s*)?" if call[1] == "floatingTabItem" else ""
+        if end is not None and re.match(rf"\s*\{{?\s*{leading_index}{pair}\s*(?:,|\}}|$)", visible[call.end():end]):
+            return True
+    return False
+
+
+def _has_primary_button_symbol_contract(source: str, row: dict, sources: list[str]) -> bool:
+    if not _symbol_resolves(row, sources):
+        return False
+    defaults = []
+    for candidate in sources:
+        code = _mask_arkts_trivia(candidate, keep_literals=False)
+        declaration = re.search(r"\bstruct\s+PrimaryButton\s*\{", code)
+        if declaration is None:
+            continue
+        end = _closing_delimiter(code, declaration.end(), "{", "}")
+        if end is None:
+            continue
+        body_code = code[declaration.end():end]
+        if not re.search(r"\bSymbolGlyph\s*\(\s*symbolOf\s*\(\s*this\.trailingSymbol\s*\)\s*\)", body_code):
+            continue
+        body = _mask_arkts_trivia(candidate[declaration.end():end], keep_literals=True)
+        match = re.search(r"""@Param\s+trailingSymbol\s*:\s*string\s*=\s*(['"])([\w.-]+)\1""", body)
+        defaults.append(match[2] if match else None)
+    if len(defaults) != 1:
+        return False
+
+    label = re.escape(row["label"])
+    expected = row["source_symbol"]
+    code = _mask_arkts_trivia(source, keep_literals=False)
+    visible = _mask_arkts_trivia(source, keep_literals=True)
+    found = []
+    for call in re.finditer(r"\bPrimaryButton\s*\(\s*\{", code):
+        end = _closing_delimiter(code, call.end(), "{", "}")
+        if end is None:
+            continue
+        props = visible[call.end():end]
+        if not re.match(rf"""\s*title\s*:\s*(?:'{label}'|"{label}")\s*(?=,|$)""", props):
+            continue
+        override = re.match(r"""\s*title\s*:\s*(['"]).*?\1\s*,\s*trailingSymbol\s*:\s*(['"])([\w.-]+)\2\s*(?=,|$)""", props)
+        if override:
+            found.append(override[3])
+        elif re.search(r"\btrailingSymbol\s*:", props):
+            return False
+        else:
+            found.append(defaults[0])
+    return bool(found) and all(symbol == expected for symbol in found)
+
+
+def _symbol_rows(obligations: Any) -> list[dict]:
+    if not isinstance(obligations, dict):
+        return []
+    return obligations.get("system_symbol_fidelity") or []
+
+
+def _has_label_symbol_pair(source: str, row: dict) -> bool:
+    code = _mask_arkts_trivia(source, keep_literals=False)
+    label = re.escape(row["label"])
+    target = re.escape(row["target_symbol"])
+    expected = {
+        "Text": re.compile(rf"""\s*(['"]){label}\1\s*"""),
+        "SymbolGlyph": re.compile(rf"""\s*\$r\(\s*(['"])sys\.symbol\.{target}\1\s*\)\s*"""),
+    }
+    for layout in re.finditer(r"(?<![\w.])(?:Row|Column|Flex|Stack|Button)\s*\(", code):
+        end = _closing_delimiter(code, layout.end(), "(", ")")
+        if end is None or not (block := re.match(r"\s*\{", code[end + 1:])):
+            continue
+        start = end + 1 + block.end()
+        end = _closing_delimiter(code, start, "{", "}")
+        if end is None:
+            continue
+        found = set()
+        depth = 0
+        for token in re.compile(r"(?<![\w.])(Text|SymbolGlyph)\s*(?=\()|[(){}\[\]]").finditer(code, start, end):
+            if name := token[1]:
+                if depth == 0:
+                    args_start = token.end() + 1
+                    args_end = _closing_delimiter(code, args_start, "(", ")")
+                    if args_end is not None and args_end < end and expected[name].fullmatch(source[args_start:args_end]):
+                        found.add(name)
+            else:
+                depth += 1 if token[0] in "({[" else -1
+        if found == expected.keys():
+            return True
+    return False
+
+
+def check_label_symbols(source: str, unit: dict) -> list[dict[str, str]]:
+    rows = [row for row in _symbol_rows(unit.get("source_obligations"))
+            if row["role"] == "label" and row.get("target_symbol")]
+    if not rows:
+        return []
+    output = unit.get("output", {})
+    components = _component_bodies(_code(source, keep_strings=True))
+    if symbol := output.get("symbol"):
+        components = {symbol: components.get(symbol, "")}
+    builders = [body for component in components.values()
+                for body in _reachable(component, output.get("builder", "build")).values()]
+    return [
+        {"code": "mapped_system_symbol_mismatch", "unit_id": unit["unit_id"],
+         "detail": f'Swift line {row["line"]}: {row["label"]} must share a rendered layout with SDK symbol {row["target_symbol"]}'}
+        for row in rows if not any(_has_label_symbol_pair(body, row) for body in builders)
+    ]
+
+
+def check_date_formats(source: str, unit: dict) -> list[dict[str, str]]:
+    obligations = unit.get("source_obligations")
+    rows = obligations.get("date_format_calls") if isinstance(obligations, dict) else None
+    if not rows:
+        return []
+    output = unit.get("output") or {}
+    code = _mask_arkts_trivia(source, keep_literals=False)
+    component = _component_bodies(code).get(output.get("symbol"), "")
+    builders = _reachable(component, output.get("builder") or "build")
+    errors = []
+    for row in rows:
+        # Match the same value in the rendered slot. Renamed fields, wrapper
+        # formatters and explicit locale options still require runtime review.
+        value = r"\s*\.\s*".join(re.escape(part) for part in row["value_path"].split("."))
+        unqualified = rf"new\s+Date\s*\(\s*{value}\s*\)\s*\.\s*toLocaleString\s*\(\s*\)"
+        if row["slot"] == "text":
+            pattern = rf"(?<![\w.])Text\s*\(\s*{unqualified}\s*\)"
+        else:
+            pattern = rf"(?<![\w.])SectionHeading\s*\(\s*\{{[^{{}}]*\bsubtitle\s*:\s*{unqualified}\s*(?=[,}}])"
+        if any(re.search(pattern, body) for body in builders.values()):
+            errors.append({
+                "code": "date_format_unqualified_locale",
+                "unit_id": unit["unit_id"],
+                "detail": (f'Swift line {row["line"]}: {row["value_path"]} specifies date .{row["date_style"]} '
+                           f'and time .{row["time_style"]}; the rendered slot uses toLocaleString() defaults'),
+            })
+    return errors
+
+
+def _local_clipboard_only(action: str, component: str) -> bool:
+    """Recognize closed local handlers. Leave unknown helpers for runtime review."""
+    handlers = [action]
+    resolved = set()
+    allowed_calls = {"catch", "if", "pasteboard.createData", "promptAction.showToast",
+                     "hilog.info", "hilog.warn", "hilog.error"}
+    clipboard_write = re.compile(
+        r"(?<![\w.$])pasteboard\s*\.\s*getSystemPasteboard\s*\(\s*\)\s*\.\s*setData\s*\("
+    )
+    found_write = False
+    while handlers:
+        body = handlers.pop()
+        body, writes = clipboard_write.subn("=", body)
+        found_write |= bool(writes)
+        for match in re.finditer(r"(?<![\w$])([A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*)\s*\(", body):
+            name = re.sub(r"\s+", "", match[1])
+            if name in allowed_calls or name.endswith(".join"):
+                continue
+            if not name.startswith("this.") or name.count(".") != 1:
+                return False
+            method = name.removeprefix("this.")
+            if method not in resolved:
+                target = _method(component, method)
+                if target is None:
+                    return False
+                handlers.append(target)
+                resolved.add(method)
+    return found_write
+
+
+def check_share_links(source: str, unit: dict) -> list[dict[str, str]]:
+    obligations = unit.get("source_obligations")
+    rows = obligations.get("share_link_calls") if isinstance(obligations, dict) else None
+    if not rows:
+        return []
+    output = unit.get("output") or {}
+    symbol = output.get("symbol")
+    component = _component_bodies(_mask_arkts_trivia(source, keep_literals=True)).get(symbol, "")
+    code = _mask_arkts_trivia(component, keep_literals=False)
+    errors = []
+    for row in rows:
+        if not (label := row.get("label")):
+            continue
+        quoted = rf"(['\"]){re.escape(label)}\1"
+        for builder in _reachable(component, output.get("builder") or "build").values():
+            masked = _mask_arkts_trivia(builder, keep_literals=False)
+            for button in re.finditer(r"(?<![\w.])Button\s*\(", masked):
+                end = _closing_delimiter(masked, button.end(), "(", ")")
+                if end is None:
+                    continue
+                has_label = re.match(rf"\s*{quoted}\s*(?=,|$)", builder[button.end():end])
+                if content := re.match(r"\s*\{", masked[end + 1:]):
+                    start = end + 1 + content.end()
+                    end = _closing_delimiter(masked, start, "{", "}")
+                    if end is None:
+                        continue
+                    labels = re.finditer(rf"(?<![\w.])Text\s*\(\s*{quoted}\s*\)", builder[start:end])
+                    has_label = any(not masked[start + match.start()].isspace() for match in labels)
+                action = _modifiers_after(masked, end + 1).get("onClick", "")
+                if has_label and _local_clipboard_only(action, code):
+                    errors.append({
+                        "code": "share_link_clipboard_only", "unit_id": unit["unit_id"],
+                        "detail": f'Swift line {row["line"]}: {label} is wired only to a local clipboard handler',
+                    })
+    return errors
+
+
+def _check_mapped_symbols(source: str, obligations: dict, unit_id: str, sources: list[str]) -> list[dict[str, str]]:
+    errors = []
+    for row in _symbol_rows(obligations):
+        if row["role"] == "tab":
+            matched = _has_tab_symbol_contract(source, row, sources)
+            detail = f'{row["label"]}: expected SDK symbol {row["target_symbol"]} at the tab call'
+        elif row["role"] == "rating":
+            matched = _has_rating_symbol_contract(source, row)
+            detail = (f'expected filled/empty branches {row["target_symbols"]}, glyph size {row["symbol_font_pt"]}, '
+                      f'and an independent button minimum {row["minimum_button_pt"]}')
+        elif row["role"] == "primary_button" and row.get("target_symbol"):
+            matched = _has_primary_button_symbol_contract(source, row, sources)
+            detail = (f'{row["label"]}: expected PrimaryButton trailing symbol '
+                      f'{row["source_symbol"]} resolved to {row["target_symbol"]}')
+        else:
+            continue
+        if not matched:
+            errors.append({"code": "mapped_system_symbol_mismatch", "unit_id": unit_id,
+                           "detail": f'Swift line {row["line"]}: {detail}'})
+    return errors
+
+def _check_unit(root: Path, unit: dict[str, Any], generated_sources=None, *, root_expands=False) -> list[dict[str, str]]:
     output = unit.get("output") or {}
     relative = output.get("file")
     obligations = unit.get("source_obligations") or {}
@@ -615,8 +1091,12 @@ def _check_unit(root: Path, unit: dict[str, Any], generated_sources=None) -> lis
             errors.append({"code": "chart_height_missing", "unit_id": unit_id, "detail": str(chart["height"])})
     errors.extend(_check_presentation_fidelity(source, unit, relative, generated_sources))
     errors.extend(_check_presentation_lifecycle(source, unit, relative, generated_sources))
-    errors.extend(_check_foreground_safearea(source, unit, relative, generated_sources))
+    errors.extend(_check_foreground_safearea(source, unit, relative, root_expands))
     errors.extend(_check_symbol_fidelity(source, unit, relative))
+    errors.extend(_check_mapped_symbols(source, obligations, unit_id, generated_sources or [source]))
+    errors.extend(check_label_symbols(source, unit))
+    errors.extend(check_date_formats(source, unit))
+    errors.extend(check_share_links(source, unit))
     return errors
 
 
@@ -653,6 +1133,64 @@ def _check_sdk_symbols(sources: list[str], catalog: Path | None) -> dict[str, An
     return {"status": "FAIL" if missing else "PASS", "catalog": str(catalog), "unresolved": missing}
 
 
+def _check_drawing_bindings(root: Path, units: list[dict], bindings: Any) -> list[dict[str, str]]:
+    """Verify approved, explicitly mapped drawing components from each page build path."""
+    errors = []
+    if not isinstance(bindings, list):
+        return [{"code": "drawing_binding_invalid", "unit_id": "",
+                 "detail": "drawing_component_bindings must be an array"}]
+    seen = set()
+    for binding in bindings:
+        try:
+            definition = binding["definition"]
+            key = (definition["file"], definition["line"])
+            output = binding["output"]
+            target = _project_file(root, output["file"])
+            symbol = output["symbol"]
+            if (not isinstance(key[0], str) or not key[0] or type(key[1]) is not int or key[1] < 1
+                    or key in seen or target.suffix != ".ets" or not re.fullmatch(r"[A-Za-z_$][\w$]*", symbol)):
+                raise ValueError("expected one target ArkUI symbol and file per source definition")
+            seen.add(key)
+        except (KeyError, TypeError, ValueError) as exc:
+            errors.append({"code": "drawing_binding_invalid", "unit_id": "", "detail": str(exc)})
+            continue
+        consumers = []
+        for unit in units:
+            obligations = unit.get("source_obligations")
+            if not unit.get("required", True) or not isinstance(obligations, dict):
+                continue
+            if any(isinstance(row, dict) and row.get("definition") == definition
+                   for row in obligations.get("drawing_component_calls") or []):
+                consumers.append(unit)
+        if not consumers:
+            errors.append({"code": "drawing_binding_unused", "unit_id": "", "detail": f"{key[0]}:{key[1]}"})
+            continue
+        try:
+            target_text = _code(target.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError):
+            target_text = ""
+        target_body = _component_bodies(target_text).get(symbol, "")
+        if not re.search(rf"\bexport\s+struct\s+{re.escape(symbol)}\b", target_text) or not _renders(target_body, "build"):
+            errors.append({"code": "drawing_implementation_missing", "unit_id": "",
+                           "detail": f"{output['file']} must export a rendering {symbol}"})
+            continue
+        for unit in consumers:
+            try:
+                host = _project_file(root, unit["output"]["file"])
+                source = host.read_text(encoding="utf-8")
+                names = {symbol} if host == target else _imports(root, source, host, target, symbol)
+                body = _component_bodies(_code(source)).get(unit["output"]["symbol"], "")
+                methods = _reachable(body, unit["output"].get("builder", "build"))
+                if any(re.search(rf"(?<![\w.$]){re.escape(name)}\s*\(", method)
+                       for name in names for method in methods.values()):
+                    continue
+            except (KeyError, OSError, TypeError, ValueError):
+                pass
+            errors.append({"code": "shared_drawing_not_rendered", "unit_id": unit.get("unit_id", ""),
+                           "detail": f"{key[0]}:{key[1]} requires a reachable call to {output['file']}:{symbol}"})
+    return errors
+
+
 def evaluate(root: Path | str, inventory: Path | str, *, sdk_symbol_catalog: Path | None = None) -> dict[str, Any]:
     root = Path(root).resolve()
     inventory_path = Path(inventory)
@@ -661,38 +1199,37 @@ def evaluate(root: Path | str, inventory: Path | str, *, sdk_symbol_catalog: Pat
     data = _read(inventory_path)
     errors: list[dict[str, str]] = []
     units = [unit for unit in data.get("units", []) if isinstance(unit, dict)]
-    generated_sources: list[str] = []
+    source_files: dict[Path, str] = {}
     for unit in units:
         relative = (unit.get("output") or {}).get("file")
         if isinstance(relative, str):
             path = root / relative
             if path.is_file():
-                generated_sources.append(path.read_text(encoding="utf-8"))
+                source_files[path] = path.read_text(encoding="utf-8")
     # The delivery inventory normally lists page outputs, while modal
     # ownership may live in an unlisted entry/root host.  Include generated
     # ArkTS files under the app source tree so centralized bindings are still
     # verified without requiring an inventory rewrite.
-    known_paths = {
-        (unit.get("output") or {}).get("file")
-        for unit in units
-        if isinstance((unit.get("output") or {}).get("file"), str)
-    }
     for path in sorted((root / "entry/src/main/ets").rglob("*.ets")):
-        relative = path.relative_to(root).as_posix()
-        if relative in known_paths:
+        if path in source_files:
             continue
         try:
-            generated_sources.append(path.read_text(encoding="utf-8"))
+            source_files[path] = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
+    generated_sources = list(source_files.values())
+    root_expands = any(re.search(r"\.\s*expandSafeArea\s*\(", _code(source)) for source in generated_sources)
     for unit in units:
         if isinstance(unit, dict):
-            errors.extend(_check_unit(root, unit, generated_sources))
+            errors.extend(_check_unit(root, unit, generated_sources, root_expands=root_expands))
+    errors.extend(_check_drawing_bindings(root, units, data.get("drawing_component_bindings", [])))
+    errors.extend(_check_sheet_close_actions(root, units, source_files))
     errors.extend(_check_style_fidelity(root, generated_sources))
     errors.extend(_check_state_and_persistence_contract(generated_sources))
     errors.extend(_check_nav_destination_hosts(generated_sources))
     errors.extend(_check_editor_mutation(generated_sources))
     errors.extend(_check_packaged_image_input(generated_sources))
+    errors.extend(_check_source_rawfiles(root, source_files))
     sdk_symbols = _check_sdk_symbols(generated_sources, sdk_symbol_catalog or _configured_sdk_catalog(root))
     if sdk_symbols["status"] == "FAIL":
         errors.append({
@@ -706,6 +1243,13 @@ def evaluate(root: Path | str, inventory: Path | str, *, sdk_symbol_catalog: Pat
         "inventory": str(inventory_path),
         "checked_units": len(data.get("units", [])),
         "sdk_symbols": sdk_symbols,
+        "symbol_review_required": [
+            {"unit_id": unit.get("unit_id"), "line": row["line"],
+             "label": row["label"], "source_symbol": row["source_symbol"]}
+            for unit in units
+            for row in _symbol_rows(unit.get("source_obligations"))
+            if row["role"] in {"primary_button", "label"} and not row.get("target_symbol")
+        ],
         "errors": errors,
     }
 

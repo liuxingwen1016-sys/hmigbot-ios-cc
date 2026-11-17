@@ -14,6 +14,8 @@ import sys
 import tempfile
 import time
 
+from ios_evidence_protocol import source_identity
+
 
 CAPTURE = Path(__file__).resolve().with_name('ios_runtime_capture_plan.py')
 JOB_NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9_-]{0,63}')
@@ -55,6 +57,30 @@ def job_path(project, name):
     return result
 
 
+def reuse_job(job, inputs):
+    """Recover the original handle or terminal receipt without spawning another worker."""
+    stored = (job / 'inputs.json').read_bytes()
+    frozen_plan = (job / 'capture-plan.json').read_bytes()
+    if json.loads(stored) != inputs or sha256(frozen_plan).hexdigest() != inputs['plan_sha256']:
+        raise ValueError('existing capture job has different frozen inputs')
+    result = job / 'result.json'
+    if result.is_file():
+        receipt = read(result)
+        if receipt.get('inputs_sha256') != sha256(stored).hexdigest():
+            raise ValueError('existing capture result does not match frozen inputs')
+        return {'job': str(job), 'reused': True, 'status': 'RESULT_AVAILABLE'}
+    launch = job / 'launch.json'
+    if not launch.is_file():
+        raise ValueError('existing capture job has no durable launch or result receipt')
+    return {**read(launch), 'reused': True, 'status': 'EXISTING_LAUNCH'}
+
+
+def check_source(inputs):
+    expected = inputs.get('source_sha256')
+    if expected is not None and source_identity(inputs['source_root']) != expected:
+        raise ValueError('iOS capture source bytes changed from the frozen job')
+
+
 def start(args):
     project = args.project_root.resolve(strict=True)
     job = job_path(project, args.job)
@@ -69,18 +95,25 @@ def start(args):
     if args.batch_size < 1 or args.capture_timeout < 1 or not args.device_id.strip():
         raise ValueError('invalid device, batch size or capture timeout')
     raw = plan.read_bytes()
-    job.mkdir(parents=True)
-    frozen_plan = job / 'capture-plan.json'
-    write(frozen_plan, raw)
     inputs = {
         'plan': str(plan), 'plan_sha256': sha256(raw).hexdigest(), 'device_id': args.device_id, 'bundle_id': args.bundle_id,
-        'source_root': str(source_root), 'xcode_project': str(xcode_project), 'scheme': args.scheme,
+        'source_root': str(source_root), 'source_sha256': source_identity(source_root),
+        'xcode_project': str(xcode_project), 'scheme': args.scheme,
         'configuration': args.configuration, 'configuration_id': args.configuration_id,
         'scenario_id': args.scenario_id, 'batch_size': args.batch_size, 'capture_timeout': args.capture_timeout,
         'xctest_target': args.xctest_target, 'xctest_test_source': str(test_source.relative_to(source_root)),
         'capture_script_sha256': sha256(CAPTURE.read_bytes()).hexdigest(),
     }
     encoded = encode(inputs)
+    try:
+        job.mkdir(parents=True)
+    except FileExistsError:
+        if not args.reuse_existing:
+            raise
+        print(json.dumps(reuse_job(job, inputs), ensure_ascii=False))
+        return 0
+    frozen_plan = job / 'capture-plan.json'
+    write(frozen_plan, raw)
     write(job / 'inputs.json', encoded)
     with (job / 'worker.log').open('wb') as log:
         process = subprocess.Popen(
@@ -111,6 +144,7 @@ def worker(job, expected_digest):
     started = time.monotonic()
     receipt = {'status': 'ERROR', 'exit_code': 2}
     try:
+        check_source(inputs)
         with lock.open('a') as stream, tempfile.TemporaryDirectory(prefix='i2h-capture-derived-') as derived:
             fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
             work_project = job / 'capture-project'
@@ -126,7 +160,10 @@ def worker(job, expected_digest):
                 '--derived-data', derived, '--xctest-target', inputs['xctest_target'],
                 '--xctest-test-source', inputs['xctest_test_source'],
             ]
+            if inputs.get('source_sha256'):
+                command.extend(['--expected-source-sha256', inputs['source_sha256']])
             completed = subprocess.run(command, cwd=job, check=False)
+            check_source(inputs)
             manifest = job / 'states/capture-plan-manifest.json'
             if manifest.is_file():
                 status = read(manifest).get('status')
@@ -148,13 +185,18 @@ def worker(job, expected_digest):
 def join(args):
     project = args.project_root.resolve(strict=True)
     job = job_path(project, args.job)
-    launch = read(job / 'launch.json')
     result = job / 'result.json'
     if args.timeout < 0:
         raise ValueError('join timeout must be nonnegative')
     deadline = time.monotonic() + args.timeout
     liveness = 'observed'
     while not result.is_file():
+        try:
+            launch = read(job / 'launch.json')
+        except FileNotFoundError:
+            if result.is_file():
+                break
+            raise
         try:
             os.kill(launch['pid'], 0)
         except PermissionError:
@@ -170,7 +212,7 @@ def join(args):
             return 124
         time.sleep(0.25)
     receipt = read(result)
-    if args.publish and receipt['status'] == 'captured':
+    if args.publish and receipt['status'] in {'captured', 'partial'}:
         import fcntl
 
         raw_inputs = (job / 'inputs.json').read_bytes()
@@ -178,9 +220,12 @@ def join(args):
         if (sha256(raw_inputs).hexdigest() != receipt['inputs_sha256']
                 or sha256(Path(inputs['plan']).read_bytes()).hexdigest() != inputs['plan_sha256']):
             raise ValueError('capture plan changed before handoff')
+        check_source(inputs)
         raw_manifest = (job / 'states/capture-plan-manifest.json').read_bytes()
         if sha256(raw_manifest).hexdigest() != receipt['manifest_sha256']:
             raise ValueError('capture manifest changed before handoff')
+        if json.loads(raw_manifest).get('status') != receipt['status']:
+            raise ValueError('capture manifest status differs from terminal receipt')
         target = (project / HANDOFF).resolve()
         if project not in target.parents:
             raise ValueError('capture handoff must remain inside the project')
@@ -215,6 +260,8 @@ def main():
     launch.add_argument('--capture-timeout', type=int, default=600)
     launch.add_argument('--xctest-target', required=True)
     launch.add_argument('--xctest-test-source', required=True)
+    launch.add_argument('--reuse-existing', action='store_true',
+                        help='reuse the existing job only when all frozen inputs match')
     wait.add_argument('--timeout', type=int, default=600)
     wait.add_argument('--publish', action='store_true')
     child = modes.add_parser('_worker', help=argparse.SUPPRESS)

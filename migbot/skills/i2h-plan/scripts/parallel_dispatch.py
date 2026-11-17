@@ -10,9 +10,10 @@ import sys
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
-_shared = Path(__file__).resolve().parents[3] / "bin/scripts/pipeline"
-if str(_shared) not in sys.path:
-    sys.path.insert(0, str(_shared))
+_root = Path(__file__).resolve().parents[3]
+for _shared in (_root.parent / ".migbot/bin/scripts/pipeline", _root / "bin/scripts/pipeline"):
+    if _shared.is_dir() and str(_shared) not in sys.path:
+        sys.path.insert(0, str(_shared))
 
 from bounded_workers import batch_items, run_bounded  # type: ignore
 

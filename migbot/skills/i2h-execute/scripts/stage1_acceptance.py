@@ -13,12 +13,15 @@ def main(argv=None):
     parser.add_argument('--build-receipt', help='current build receipt under spec')
     parser.add_argument('--wiring-contract')
     parser.add_argument('--out', '--output-json', dest='out')
+    parser.add_argument('--report-only', action='store_true', help='Assess visual evidence without publishing or consuming repair rounds')
     args = parser.parse_args(argv)
+    if args.report_only and args.kind != 'visual':
+        parser.error('--report-only requires --kind visual')
     try:
         from lib.ios_stage1_acceptance import archive_g1
         from lib.ios_stage1_progress import record_compile, record_smoke
         from lib.ios_stage1_summary import DEFAULT_SCOPE, next_step, summarize
-        from lib.ios_stage1_visual_gate import archive_visual
+        from lib.ios_stage1_visual_gate import archive_visual, assess_visual
         from lib.ios_ui_delivery_gate import _project_file
         from lib.ios_ui_dispatch import aggregate_g0, atomic_write, dispatch_root, json_bytes
     except ImportError as exc:
@@ -34,7 +37,14 @@ def main(argv=None):
         elif args.kind == 'g1':
             result = archive_g1(root, args.wiring_contract)
         elif args.kind == 'visual':
-            result = archive_visual(root, _project_file(root, args.scope), _project_file(root, args.report))
+            scope = _project_file(root, args.scope)
+            report = _project_file(root, args.report)
+            if path in {scope, report}:
+                raise ValueError('--out must not overwrite an input receipt or scope')
+            if args.report_only:
+                result = {**assess_visual(root, scope.read_bytes(), report.read_bytes()), 'report_only': True}
+            else:
+                result = archive_visual(root, scope, report)
         else:
             scope = _project_file(root, args.scope or DEFAULT_SCOPE)
             report = _project_file(root, args.report) if args.report else None

@@ -1,29 +1,51 @@
-# AUTO-GENERATED launcher — the real implementation is compiled in ./bin/<platform>/.
-import os
-import platform
-import subprocess
+"""Read the stable source acceptance criteria for one feature."""
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+import re
 import sys
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-_OS = {"Darwin": "macos", "Linux": "linux", "Windows": "windows"}.get(platform.system())
-_ARCH = "arm64" if platform.machine().lower() in ("arm64", "aarch64") else "x64"
-if _OS is None:
-    sys.stderr.write("unsupported platform: %s\n" % platform.system())
-    sys.exit(2)
-_DIST = os.path.join(_HERE, "bin", "%s-%s" % (_OS, _ARCH), "_entry.dist")
-# Nuitka names the standalone binary <name>.exe on Windows, <name>.bin elsewhere.
-_EXE = os.path.join(_DIST, "_entry" + (".exe" if _OS == "windows" else ".bin"))
-if not os.path.exists(_EXE):
-    sys.stderr.write("no bundled binary for %s-%s at %s\n" % (_OS, _ARCH, _EXE))
-    sys.exit(2)
-if _OS == "macos":  # idempotent; failure must not block execution
+
+_PLAN_SCRIPTS = Path(__file__).resolve().parents[2] / "i2h-plan/scripts"
+if str(_PLAN_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_PLAN_SCRIPTS))
+from generate_execute_coverage import AC_RE, acceptance_checkboxes
+
+
+def extract_acs(feature_file: Path, feature_id: str) -> list[dict]:
+    if not re.fullmatch(r"F\d{3}", feature_id):
+        raise ValueError("feature_id must be an exact Feature ID")
+    path = Path(feature_file)
+    rows = []
+    seen = set()
+    for line, checked, body in acceptance_checkboxes(path.read_text(encoding="utf-8-sig")):
+        match = AC_RE.fullmatch(body)
+        if not match or not match[1].startswith(feature_id + "-"):
+            raise ValueError(f"{path}:{line}: expected a stable {feature_id} acceptance ID")
+        source_id, text = match.groups()
+        if source_id in seen:
+            raise ValueError(f"{path}:{line}: duplicate acceptance ID {source_id}")
+        seen.add(source_id)
+        rows.append({"source_ac_id": source_id, "case_prefix": source_id.replace("-", "_"),
+                     "checked": checked, "text": text, "line": line})
+    if not rows:
+        raise ValueError(f"no acceptance criteria in {path}")
+    return rows
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--feature-file", type=Path, required=True)
+    parser.add_argument("--feature-id", required=True)
+    args = parser.parse_args()
     try:
-        subprocess.run(["xattr", "-dr", "com.apple.quarantine", _DIST],
-                       check=False, capture_output=True)
-    except OSError:
-        pass
-os.environ.setdefault("ARKTS_SKILL_DIR", _HERE)  # let bundled lib modules locate the real scripts/ dir
-_argv = [_EXE, "ac_inputs", *sys.argv[1:]]
-if _OS == "windows":
-    sys.exit(subprocess.run(_argv).returncode)
-os.execv(_EXE, _argv)
+        rows = extract_acs(args.feature_file, args.feature_id)
+    except (OSError, ValueError) as exc:
+        parser.exit(2, f"ac_inputs: {exc}\n")
+    print(json.dumps(rows, ensure_ascii=False, indent=2))
+
+
+if __name__ == "__main__":
+    main()

@@ -6,8 +6,8 @@ import json
 from .ios_stage1_scope import load_inventory
 from .ios_ui_delivery_gate import _project_file, _read_object, host_slots, inspect_delivery
 from .ios_ui_dispatch import (
-    checked_artifact, digest, dispatch_root, events, json_bytes, locked, project_relative,
-    read_completed, save_directory, sha256,
+    attempts_for_inventory, checked_artifact, current_g0, digest, dispatch_root, events, first_archived_g0, json_bytes,
+    locked, project_relative, read_completed, save_directory, sha256,
 )
 from .stage1_contract import source_digest
 
@@ -20,41 +20,25 @@ def _finding(code, unit_id, detail):
 
 
 def _conversion_receipts(root, inventory, inventory_hash, records):
-    attempts = {}
-    for event in records:
-        if event['event'] == 'prepare':
-            row = event['result']
-            attempts.setdefault(row['unit_id'], []).append(row)
+    attempts, stale_units = attempts_for_inventory(root, records, inventory_hash)
     receipts = []
     errors = []
     for unit in inventory['units']:
         if unit.get('required') is False:
             continue
         name = unit['unit_id']
-        all_rows = attempts.get(name, [])
-        if not all_rows:
-            errors.append(_finding('g0_dispatch_missing', name, 'required unit was not dispatched'))
-            continue
-        current_rows = []
-        prior_rows = []
-        for row in all_rows:
-            packet_path = _project_file(root, row['packet_path'])
-            checked_artifact(packet_path, row['packet_sha256'])
-            packet = _read_object(packet_path)
-            row_inv_hash = digest(packet['inventory_source']['sha256'])
-            if row_inv_hash == inventory_hash:
-                current_rows.append(row)
+        rows = attempts.get(name, [])
+        if not rows:
+            if name in stale_units:
+                errors.append(_finding('g0_inventory_stale', name, 'G0 belongs to a different approved inventory'))
             else:
-                prior_rows.append((row, row_inv_hash))
-        if not current_rows:
-            errors.append(_finding('g0_inventory_stale', name, 'no G0 attempts for current approved inventory'))
+                errors.append(_finding('g0_dispatch_missing', name, 'required unit was not dispatched'))
             continue
-        rows = sorted(current_rows, key=lambda row: row['attempt'])
-        original = read_completed(root, records, rows[0]['dispatch_id'])
-        latest = read_completed(root, records, rows[-1]['dispatch_id']) if len(rows) > 1 else original
+        original = first_archived_g0(root, records, rows)
+        latest = current_g0(root, records, rows) if len(rows) > 1 else original
         if original is None:
             errors.append(_finding('g0_original_archive_missing', name, 'first attempt has no original archive'))
-        if latest is None or latest['status'] not in ('PASS', 'SOURCE_ONLY'):
+        if latest is None or latest['status'] not in {'PASS', 'SOURCE_ONLY'}:
             errors.append(_finding('g0_current_not_passed', name, 'latest attempt has no passing or SOURCE_ONLY G0 archive'))
             continue
         path = _project_file(root, latest['archive_path'])
@@ -70,20 +54,27 @@ def _conversion_receipts(root, inventory, inventory_hash, records):
         if original is not None:
             receipt = {
                 'unit_id': name, 'first_dispatch_id': original['dispatch_id'], 'first_status': original['status'],
+                'latest_prepared_dispatch_id': rows[-1]['dispatch_id'],
                 'current_dispatch_id': latest['dispatch_id'], 'archive_path': latest['archive_path'],
                 'preflight_sha256': latest['preflight_sha256'], 'report_sha256': sha256(archived_report.read_bytes()),
             }
-            prior_history = []
-            for prior_row, prior_inv_hash in prior_rows:
-                prior_completed = read_completed(root, records, prior_row['dispatch_id'])
-                prior_history.append({
-                    'unit_id': name, 'dispatch_id': prior_row['dispatch_id'],
-                    'inventory_sha256': prior_inv_hash,
-                    'status': prior_completed['status'] if prior_completed else 'NOT_RUN',
-                    'archive_path': prior_completed['archive_path'] if prior_completed else None,
-                })
-            if prior_history:
-                receipt['prior_authority_history'] = prior_history
+            if rows[0]['dispatch_id'] != original['dispatch_id']:
+                receipt['earliest_prepared_dispatch_id'] = rows[0]['dispatch_id']
+            history = []
+            for event in records:
+                if event['event'] != 'prepare' or event['result']['unit_id'] != name:
+                    continue
+                row = event['result']
+                raw = checked_artifact(_project_file(root, row['packet_path']), row['packet_sha256'])
+                prior_hash = digest(json.loads(raw)['inventory_source']['sha256'])
+                if prior_hash != inventory_hash:
+                    completed = read_completed(root, records, row['dispatch_id'])
+                    history.append({'unit_id': name, 'dispatch_id': row['dispatch_id'],
+                                    'inventory_sha256': prior_hash,
+                                    'status': completed['status'] if completed else 'NOT_RUN',
+                                    'archive_path': completed['archive_path'] if completed else None})
+            if history:
+                receipt['prior_authority_history'] = history
             receipts.append(receipt)
     return receipts, errors
 

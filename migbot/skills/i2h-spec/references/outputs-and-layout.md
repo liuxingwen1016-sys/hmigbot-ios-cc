@@ -205,6 +205,11 @@ done
 
 ### 内容完整性检查
 
+冻结 Spec 前运行 `python3 .migbot/bin/scripts/linters/gate_spec_complete.py .`。
+其中 `SPEC.SWIFT_GRAPHEME_MAPPING` 检查同一 Feature 对 Swift `String.count` 的字素语义，
+并定位明确把 `Array.from(string)` 的码点计数或截断写成等价方案的行。
+修正目标示例后重跑原门禁。核对历史工程时可追加 `--report-only` 读取 JSON，避免写入既有台账。
+
 关键字段必须非空：
 
 ```python

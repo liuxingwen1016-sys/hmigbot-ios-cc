@@ -10,15 +10,18 @@ from pathlib import Path
 from typing import Any
 
 from lib.ios_stage1_scope import inventory_path, load_inventory
-from lib.ios_ui_delivery_gate import _code, _component_bodies, _reachable
+from lib.ios_ui_delivery_gate import _block, _calls, _code, _component_bodies, _imports, _reachable
 from lib.stage1_reachability import _IMPORT_RE, _resolve
 
 
 ETS_ROOT = Path("entry/src/main/ets")
 SCAN_PAGE = ETS_ROOT / "pages/ScanView.ets"
 LIVE_VIEW = ETS_ROOT / "pages/LiveScannerView.ets"
-OCR_SERVICE = ETS_ROOT / "services/OCRService.ets"
 LIVE_SOURCE_API = re.compile(r"\bDataScannerViewController\b")
+DISABLED_LIVE_SCAN = re.compile(
+    r"\bconst\s+(?:LIVE|REALTIME)_(?:SCAN|SCANNER|CAMERA)_(?:SUPPORTED|ENABLED)"
+    r"\s*(?::\s*boolean)?\s*=\s*false\s*(?:;|$)", re.M
+)
 
 
 def _json5(path: Path) -> dict[str, Any]:
@@ -88,7 +91,10 @@ def _source_camera_mode(root: Path) -> tuple[str, list[dict], list[tuple[Path, s
                 verified[source] = (hashlib.sha256(raw).hexdigest(),
                                     bool(LIVE_SOURCE_API.search(_code(raw.decode("utf-8")))))
             digest, live = verified[source]
-            if str(ref.get("sha256", "")).removeprefix("sha256:") != digest:
+            expected = str(ref.get("sha256", "")).removeprefix("sha256:")
+            if not re.fullmatch(r"[a-f0-9]{64}", expected):
+                raise ValueError(f"source anchor lacks a frozen SHA-256: {relative}")
+            if expected != digest:
                 raise ValueError(f"source anchor changed since approval: {relative}")
             if live:
                 output = unit.get("output")
@@ -124,32 +130,94 @@ def _vision_sources(root: Path, entry: Path) -> dict[Path, str]:
     return sources
 
 
+def _mounted_components(root: Path, sources: dict[Path, str], entry: Path,
+                        symbol: str) -> list[tuple[Path, str, str]]:
+    components = {path: _component_bodies(_code(source)) for path, source in sources.items()}
+    pending = [(entry, symbol)]
+    visited = set()
+    mounted = []
+    while pending:
+        path, name = pending.pop()
+        if (path, name) in visited:
+            continue
+        visited.add((path, name))
+        body = components.get(path, {}).get(name)
+        if body is None:
+            continue
+        rendered = "\n".join(_reachable(body, "build").values())
+        mounted.append((path, rendered, body))
+        calls = _calls(rendered)
+        for imported_path, declarations in components.items():
+            for child in declarations:
+                bindings = {child} if imported_path == path else _imports(
+                    root / ETS_ROOT, sources[path], path, imported_path, child
+                )
+                if calls & bindings:
+                    pending.append((imported_path, child))
+    return mounted
+
+
 def _live_camera_checks(root: Path, sources: dict[Path, str], entry: Path, symbol: str) -> dict[str, bool]:
-    scanner = sources.get(root / LIVE_VIEW, "")
-    component = _component_bodies(_code(sources.get(entry, ""))).get(symbol, "")
-    body = "\n".join(_reachable(component, "build").values())
-    scanner_code = _code(scanner)
-    frame_sources = []
-    for source in sources.values():
-        code = _code(source)
-        if re.search(r"\.\s*(?:readLatestImage|readNextImage)\s*\(", code):
-            frame_sources.append(code)
+    scanners = [
+        (path, body) for path, rendered, body in _mounted_components(root, sources, entry, symbol)
+        if re.search(r"\bXComponent\s*\(", rendered)
+        and re.search(r"\b(?:getXComponentSurfaceId|onSurfaceCreated)\s*\(", body)
+    ]
+    scanner_sources = {path: source for scanner, _ in scanners
+                       for path, source in _vision_sources(root, scanner).items()}
+    frame_sources = [code for source in scanner_sources.values()
+                     if re.search(r"\.\s*(?:readLatestImage|readNextImage)\s*\(", code := _code(source))]
     receiver_releases = []
     for code in frame_sources:
         receivers = re.findall(r"\b([A-Za-z_$][\w$]*)\s*(?::\s*[\w.]+)?\s*=\s*[\w.]*createImageReceiver\s*\(", code)
         receiver_releases.extend(re.search(rf"\b{re.escape(name)}\s*\??\.\s*release\s*\(", code) is not None
                                  for name in receivers if re.search(r"\.\s*stop\s*\(", code))
     return {
-        "live_scanner_mounted": bool(scanner and re.search(r"\bLiveScannerView\s*\(", body)),
-        "preview_surface": bool(re.search(r"\bXComponent\s*\(", scanner_code)
-                                and re.search(r"\b(?:getXComponentSurfaceId|onSurfaceCreated)\s*\(", scanner_code)),
+        "live_scanner_mounted": bool(scanners),
+        "preview_surface": bool(scanners),
         "preview_frame_stream": any(all(re.search(rf"\.\s*{name}\s*\(", code) for name in (
             "createCameraInput", "createPreviewOutput", "createImageReceiver", "getReceivingSurfaceId", "start"
         )) for code in frame_sources),
         "frame_ocr": any(re.search(r"\.\s*(?:recognizeFrame|recognizePixelMap|recognizeText)\s*\(", code)
                          for code in frame_sources),
-        "preview_cleanup": bool(re.search(r"\baboutToDisappear\s*\(", scanner_code) and any(receiver_releases)),
+        "preview_cleanup": any(re.search(r"\baboutToDisappear\s*\(", body) for _, body in scanners)
+                           and any(receiver_releases),
+        "live_scan_enabled": not any(DISABLED_LIVE_SCAN.search(_code(source)) for source in sources.values()),
     }
+
+
+def _runtime_permission_reachable(root: Path, sources: dict[Path, str], entry: Path, symbol: str) -> bool:
+    permission = re.compile(r"\.\s*requestPermissionsFromUser\s*\(")
+    classes = re.compile(r"\bclass\s+([\w$]+)\b[^{};]*\{")
+    constructors = re.compile(r"\b([\w$]+)\s*(?::\s*[\w.]+)?\s*=\s*new\s+([\w$]+)\s*\(")
+    calls = re.compile(r"(?<![\w.])(?:this\s*\.\s*)?([\w$]+)\s*\.\s*([\w$]+)\s*\(")
+    declarations = {}
+    for path, source in sources.items():
+        code = _code(source)
+        declarations[path] = {match[1]: body for match in classes.finditer(code)
+                              if (body := _block(code, match.end())) is not None}
+    for path, _, component in _mounted_components(root, sources, entry, symbol):
+        pending = [(path, component, "build")]
+        visited = set()
+        while pending:
+            owner, body, method = pending.pop()
+            if (owner, body, method) in visited:
+                continue
+            visited.add((owner, body, method))
+            reachable = "\n".join(_reachable(body, method).values())
+            if permission.search(reachable):
+                return True
+            instances = dict(constructors.findall(body))
+            for receiver, called in calls.findall(reachable):
+                binding = instances.get(receiver, receiver)
+                for other, types in declarations.items():
+                    for name, target in types.items():
+                        names = {name} if owner == other else _imports(
+                            root / ETS_ROOT, sources[owner], owner, other, name
+                        )
+                        if binding in names:
+                            pending.append((other, target, called))
+    return False
 
 
 def _camera_finding(root: Path, permissions: list) -> dict:
@@ -171,9 +239,9 @@ def _camera_finding(root: Path, permissions: list) -> dict:
         checks = {
             "camera_permission": any(isinstance(item, dict) and item.get("name") == "ohos.permission.CAMERA"
                                      for item in permissions),
-            "live_scanner_source": root / LIVE_VIEW in sources,
-            "ocr_source": root / OCR_SERVICE in sources,
-            "runtime_camera_permission": bool(re.search(r"\brequestPermissionsFromUser\s*\(", code)),
+            "live_scanner_source": bool(re.search(r"\b(?:createCameraInput|cameraPicker\s*\.\s*pick)\s*\(", code)),
+            "ocr_source": bool(re.search(r"\.\s*recognizeText\s*\(", code)),
+            "runtime_camera_permission": _runtime_permission_reachable(root, sources, entry, symbol),
             "photo_view_picker_api": bool(re.search(r"\bPhotoViewPicker\s*\(", code)),
             "recognize_text_api": bool(re.search(r"\brecognizeText\s*\(", code)),
             "fixture_free": not bool(re.search(r"\bsampleText\s*\(\s*\)|\bsample_text\b", code)),

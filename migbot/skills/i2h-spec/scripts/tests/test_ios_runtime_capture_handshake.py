@@ -4,14 +4,22 @@ import unittest
 from pathlib import Path
 
 import sys
+from types import SimpleNamespace
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from ios_runtime_capture import write_foreground_ack  # noqa: E402
+from ios_runtime_capture import capture, write_foreground_ack  # noqa: E402
 
 
 class ForegroundHandshakeTests(unittest.TestCase):
+    def test_navigation_file_is_validated_before_device_access(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'navigation.json'
+            path.write_text('{"steps": false}', encoding='utf-8')
+            with self.assertRaisesRegex(RuntimeError, 'steps array'):
+                capture(SimpleNamespace(navigation_json=str(path)))
+
     def test_ack_binds_screenshot_and_page_identity(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

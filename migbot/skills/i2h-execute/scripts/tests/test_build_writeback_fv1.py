@@ -31,6 +31,14 @@ class FinalWritebackAfterReleasedFv1(unittest.TestCase):
             {"packet_id": "slice-15-F016", "requirement_ids": ["F016-AC01"],
              "requirement_digests": {"F016-AC01": "sha256:c"}}]}
         self._write("spec/.i2h/plan-coverage.json", cov)
+        self._write("spec/.i2h/requirements-index.json", {"requirements": [
+            {"requirement_id": ac, "digest": digest}
+            for packet in cov["packets"] for ac, digest in packet["requirement_digests"].items()
+        ]})
+        for name in ("GuidePage", "F016Page"):
+            folder = self.root / "entry/src/main/ets/pages"
+            folder.mkdir(parents=True, exist_ok=True)
+            (folder / f"{name}.ets").write_text("// fixture\n", encoding="utf-8")
         self._write(LOOP, {"verdict": "STALLED", "detector_json_paths": {"orphans": ORPHANS}})
         self._write(ORPHANS, {"orphans": [
             {"file": "entry/src/main/ets/components/common/WorksItem.ets", "class_name": "WorksItem",
@@ -64,10 +72,16 @@ class FinalWritebackAfterReleasedFv1(unittest.TestCase):
                          {"slice-15-F016": ["entry/src/main/ets/pages/F016Page.ets"]})
         self.assertTrue(any("F016" in w for w in warns))
 
+    def test_final_orphan_matching_resolves_relative_aliases(self):
+        intent = self._intent(fv1_unconverged={"loop_result": LOOP, "decision": "D-024"})
+        intent["packets"]["slice-15-F016"]["files"] = ["./entry/src/main/ets/pages/F016Page.ets"]
+        manifest, _ = bw.build(intent, self.root)
+        self.assertEqual(manifest["impl_claims"]["executed_packets"], ["slice-14-F015"])
+
     def test_release_needs_a_decision_and_final_mode(self):
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(ValueError):
             bw.build(self._intent(fv1_unconverged={"loop_result": LOOP, "decision": ""}), self.root)
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(ValueError):
             bw.build(self._intent(fv1_unconverged={"loop_result": LOOP, "decision": "D-024"}, mode="group", id="07"),
                      self.root)
 
@@ -75,6 +89,24 @@ class FinalWritebackAfterReleasedFv1(unittest.TestCase):
         m, _ = bw.build(self._intent(), self.root)
         self.assertEqual(len(m["impl_claims"]["claims"]), 3)
         self.assertEqual(m["feature_index"]["implemented"], ["F015", "F016"])
+
+    def test_partial_intent_only_claims_selected_requirements(self):
+        file = "entry/src/main/ets/pages/GuidePage.ets"
+        packet = {"files": [file], "requirement_ids": ["F015-AC02"],
+                  "code_anchors": [{"file": file, "line": 1}]}
+        intent = {"mode": "group", "packets": {"slice-14-F015": packet}}
+        manifest, _ = bw.build(intent, self.root)
+        self.assertEqual(manifest["impl_claims"]["executed_packets"], ["slice-14-F015"])
+        claims = manifest["impl_claims"]["claims"]
+        self.assertEqual([claim["requirement_id"] for claim in claims], ["F015-AC02"])
+        self.assertEqual(claims[0]["code_anchors"], packet["code_anchors"])
+        self.assertEqual(manifest["feature_index"]["implemented"], [])
+        for override in ({"files": []}, {"files": ["missing.ets"]}, {"requirement_ids": ["F016-AC01"]},
+                         {"requirement_ids": ["F015-AC02", "F015-AC02"]}, {"requirement_ids": None}):
+            with self.subTest(override=override), self.assertRaises(ValueError):
+                bw.build({"packets": {"slice-14-F015": {**packet, **override}}}, self.root)
+        with self.assertRaisesRegex(ValueError, "unknown packet"):
+            bw.build({"packets": {"unknown": packet}}, self.root)
 
 
 if __name__ == "__main__":

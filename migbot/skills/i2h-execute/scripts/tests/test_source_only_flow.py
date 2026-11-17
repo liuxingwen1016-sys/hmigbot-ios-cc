@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from lib.ui_delivery_inputs_ios import freeze
-from lib.ios_ui_dispatch import prepare, complete, aggregate_g0, json_bytes, sha256
+from lib.ios_ui_dispatch import prepare, complete, aggregate_g0, check_required_inputs, json_bytes, sha256
 from lib.ios_stage1_acceptance import archive_g1
 
 
@@ -74,6 +74,17 @@ class SourceOnlyFlowTests(unittest.TestCase):
         self.assertEqual(len(packet['source_alternatives']), 1)
         self.assertEqual(packet['source_alternatives'][0]['state_id'], 'default')
         self.assertEqual(packet['source_alternatives'][0]['declaration'], 'TestView')
+
+        # New read-only checks retain typed source-only approval without creating dispatch state.
+        checked = prepare(self.root, unit['unit_id'], 1, check_only=True)
+        self.assertEqual(checked['status'], 'SOURCE_ONLY')
+        self.assertTrue(any(row['kind'] == 'ios_source_proof' for row in checked['checked_inputs']))
+        batch = check_required_inputs(self.root)
+        self.assertEqual(batch['status'], 'SOURCE_ONLY')
+        self.assertEqual(batch['source_only_units'], 1)
+        self.assertEqual(batch['blocked_units'], 0)
+        self.assertEqual(batch['visual_status'], 'BLOCKED')
+        self.assertFalse((self.root / 'spec/execution/dispatch').exists())
 
         # Prepare adds source proof
         prepared = prepare(self.root, 'ios.0001.Test', 1)

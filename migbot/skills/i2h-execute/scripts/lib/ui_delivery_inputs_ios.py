@@ -5,24 +5,19 @@ inventories use the same approved delivery contract, but their runtime
 evidence is PNG plus an Accessibility JSON tree.  Keep this adapter
 deterministic and fail closed when the inventory is malformed.  Missing
 runtime evidence is recorded as a gap and never synthesized.
-
-Source-backed alternatives: Require EXPLICIT typed input_alternatives declaration
-in approved inventory with actual frozen-primary-covered fileSHA and real
-declaration/branch proof (line+symbol) for that required state. source_refs alone
-or arbitrary text reasons are INSUFFICIENT.
 """
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
-import sys
 from pathlib import Path
 from typing import Any
 
-# Import from ios_inventory_resolution which now uses SwiftSource
 from .ios_inventory_resolution import validate_swift_declaration
-from .stage1_visual_scope import RUNTIME_META, _capture_manifest_candidates, read_snapshot_meta, sync_runtime_capture
+from .stage1_visual_scope import (
+    RUNTIME_META, _capture_manifest_candidates, approved_fixture_bindings, _check_fixture_capture, capture_context, read_snapshot_meta, sync_runtime_capture,
+)
 
 
 def _sha256(path: Path) -> str:
@@ -37,7 +32,8 @@ def _relative(root: Path, path: Path) -> str:
     return path.resolve().relative_to(root.resolve()).as_posix()
 
 
-def _evidence(root: Path, page_id: str, state_id: str) -> dict[str, Any]:
+def _evidence(root: Path, page_id: str, state_id: str, fixture_sha256: str | None = None,
+              reference_context: dict[str, str] | None = None) -> dict[str, Any]:
     folder = root / "spec" / "baseline" / "ui-snapshots" / page_id
     result: dict[str, Any] = {"page_id": page_id, "state_id": state_id, "status": "missing"}
     if not ((folder / "meta.json").is_file() or (folder / RUNTIME_META).is_file()):
@@ -46,7 +42,7 @@ def _evidence(root: Path, page_id: str, state_id: str) -> dict[str, Any]:
     try:
         meta = read_snapshot_meta(folder)
     except (OSError, ValueError) as exc:
-        result.update({"status": "invalid", "reason": f"invalid meta.json: {exc}"})
+        result.update(status="invalid", reason=f"invalid meta.json: {exc}")
         return result
     by_state = meta.get("runtime_evidence_by_state")
     if "runtime_evidence_by_state" in meta and not isinstance(by_state, dict):
@@ -65,12 +61,26 @@ def _evidence(root: Path, page_id: str, state_id: str) -> dict[str, Any]:
     if not isinstance(evidence, dict):
         result["reason"] = "runtime evidence missing"
         return result
+    if evidence.get("status") == "blocked":
+        result.update(status="blocked", reason=evidence.get("reason", "runtime capture blocked"))
+        return result
     if evidence.get("status") not in {"audited", "captured", "verified"} or evidence.get("source_platform") != "ios":
         result.update({"status": "invalid", "reason": "evidence is not an iOS capture"})
         return result
     if (evidence.get("state_id") or evidence.get("state")) not in {None, state_id} or evidence.get("page_id") not in {None, page_id}:
         result.update({"status": "invalid", "reason": "iOS capture identity does not match the requested state"})
         return result
+    if evidence.get("fixture_capture_sha256") != fixture_sha256 or (fixture_sha256 and reference_context is None):
+        result.update(status="invalid", reason="fixture capture does not match the approved state binding")
+        return result
+    if fixture_sha256:
+        output = folder / "states" / state_id
+        try:
+            _check_fixture_capture(output, evidence, fixture_sha256, page_id=page_id, state_id=state_id,
+                                   reference_context=reference_context)
+        except (OSError, ValueError) as exc:
+            result.update(status="invalid", reason=str(exc))
+            return result
     result.update({"status": "audited", "source_platform": "ios"})
     for key, digest_key in (("png_path", "png_sha256"), ("ui_json_path", "ui_json_sha256")):
         value = evidence.get(key)
@@ -167,27 +177,36 @@ def freeze(argv: list[str] | None = None) -> int:
     parser.add_argument("--project-root", required=True)
     parser.add_argument("--inventory", required=True)
     parser.add_argument("--no-working-copies", action="store_true")
+    parser.add_argument("--supplemental-capture-manifest", type=Path, action="append", default=[],
+                        help="import captured states from a supplemental batch and retain its blocked states")
     args = parser.parse_args(argv)
     root = Path(args.project_root).expanduser().resolve()
-
-    # DEFECT 3 FIX: Use shared load_inventory API instead of raw _read
-    # This enforces strict validation BEFORE creating/changing index
-    # Import at function level to have proper validation before any index creation
     from .ios_stage1_scope import load_inventory
-
     inventory_path, inventory = load_inventory(root, args.inventory)
-
     if inventory.get("schema_version") != 2 or not isinstance(inventory.get("units"), list) or not inventory["units"]:
         raise ValueError("approved schema-2 inventory with non-empty units is required")
-
     source_project_root = Path(inventory.get("source_project_root", "")).expanduser().resolve()
     if not source_project_root.is_dir():
         raise ValueError(f"source_project_root not found: {inventory.get('source_project_root')}")
-
+    fixture_bindings = approved_fixture_bindings(root, inventory_path.resolve(), inventory)
     capture_manifest = next((path for path in _capture_manifest_candidates(root) if path.is_file()), None)
     capture_sync = sync_runtime_capture(root, capture_manifest) if capture_manifest else None
+    supplemental = []
+    context = None
+    if args.supplemental_capture_manifest or fixture_bindings:
+        if not capture_manifest:
+            raise ValueError("a primary runtime capture manifest is required for supplemental imports")
+        primary = _read(capture_manifest)
+        context = capture_sync.get("capture_context")
+        if context is None:
+            first = primary["states"][0]
+            context = capture_context(Path(primary["output_root"]) / first["page_id"] / "states" /
+                                      first.get("state_id", "normal"))
+        for manifest in args.supplemental_capture_manifest:
+            path = manifest if manifest.is_absolute() else root / manifest
+            supplemental.append(sync_runtime_capture(root, path, supplement_context=context,
+                                                   fixture_bindings=fixture_bindings))
     packets = []
-
     for unit in inventory["units"]:
         if not isinstance(unit, dict):
             raise ValueError("inventory unit must be an object")
@@ -198,7 +217,6 @@ def freeze(argv: list[str] | None = None) -> int:
         states = unit.get("required_states") or []
         if not isinstance(states, list) or not states:
             raise ValueError(f"{unit_id} has no required_states")
-
         # Collect primary source refs for this unit - COPY and deduplicate to avoid mutation
         primary_refs_list = []
         seen_refs = set()
@@ -218,20 +236,17 @@ def freeze(argv: list[str] | None = None) -> int:
                         seen_refs.add(key)
 
         state_inputs = []
-
         for state in states:
             if not isinstance(state, dict) or not isinstance(state.get("state_id"), str):
                 raise ValueError(f"{unit_id} has an invalid required state")
             state_id = state["state_id"]
-            evidence = _evidence(root, state.get("evidence_page_id") or page_id,
-                                state.get("evidence_state_id") or state_id)
-
             state_inputs.append({
                 "state_id": state_id,
                 "responsibility": state.get("responsibility", "content"),
-                "evidence": evidence,
+                "evidence": _evidence(root, state.get("evidence_page_id") or page_id,
+                                      state.get("evidence_state_id") or state_id,
+                                      fixture_bindings.get((page_id, state_id)), context),
             })
-
         # Build source alternatives ONLY from explicit input_alternatives
         # OBLIGATION 2: Only for genuinely missing runtime, not corrupt/incomplete existing bindings
         source_alternatives = []
@@ -296,6 +311,8 @@ def freeze(argv: list[str] | None = None) -> int:
         "working_copies": not args.no_working_copies,
         "runtime_capture": capture_sync,
     }
+    if supplemental:
+        result["supplemental_runtime_captures"] = supplemental
     output_path.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({"output": _relative(root, output_path), "packets": len(packets), "status": "PASS"}, ensure_ascii=False))
     return 0

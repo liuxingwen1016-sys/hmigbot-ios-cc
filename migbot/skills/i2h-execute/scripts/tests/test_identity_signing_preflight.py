@@ -62,6 +62,25 @@ class Tests(unittest.TestCase):
         with (source/'Info.plist').open('wb') as f: plistlib.dump({'CFBundleIdentifier':'com.example.source'},f)
         self.assertEqual(gate.source_bundle_id(source),'com.example.source')
 
+    def test_unresolved_or_ambiguous_source_is_not_a_literal_identity(self):
+        td, root, profile = self.make_project('com.cuike.brew')
+        self.addCleanup(td.cleanup)
+        source = root / 'ios'
+        source.mkdir()
+        (source / 'Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier': '$(PRODUCT_BUNDLE_IDENTIFIER)'}))
+        (source / 'Debug.xcconfig').write_text('PRODUCT_BUNDLE_IDENTIFIER = "$(PREFIX)"\n')
+        with patch.object(gate, 'profile_bundle_name', return_value=('com.cuike.brew', None)):
+            report = gate.evaluate(root, source_root=source)
+            self.assertIsNone(report['source_bundle_id'])
+            self.assertEqual(report['identity_status'], 'identity_signing_pending')
+            self.assertTrue(report['signed_install_allowed'])
+            (source / 'App.xcconfig').write_text('PRODUCT_BUNDLE_IDENTIFIER = "com.cuike.brew"\n')
+            self.assertEqual(gate.source_bundle_id(source), 'com.cuike.brew')
+            (source / 'Widget.xcconfig').write_text('PRODUCT_BUNDLE_IDENTIFIER = com.cuike.brew.widget\n')
+            self.assertIsNone(gate.source_bundle_id(source))
+            selected = gate.evaluate(root, source_root=source, source_id='com.cuike.brew')
+            self.assertEqual(selected['identity_status'], 'PASS')
+
     def test_openssl_recovers_diagnostic_profile_without_approving_wrong_source_identity(self):
         td, root, profile = self.make_project('www.TestDemo.myapplication')
         self.addCleanup(td.cleanup)

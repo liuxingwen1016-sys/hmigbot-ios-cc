@@ -50,7 +50,7 @@ Gate C（可选确认）
 
 ```
 1. 调用 i2h-spec 随附的 ui_evidence.py
-   ├─ 成功 → 读取 project-skeleton.json 与 resources-inventory.json
+   ├─ 成功 → 使用 stdout 资源统计与 project-skeleton.json；通过 --inventory-view 按需查询清单
    └─ 失败 → 按失败原因记账，再由 LLM 执行等价扫描，不伪造脚本事实
 
 2. LLM 扫描（降级或主流程）

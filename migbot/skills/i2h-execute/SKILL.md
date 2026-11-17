@@ -510,9 +510,11 @@ console.log(`✅ 已加载 ${componentPatterns.length} 个组件模式`)
 
 ### Step 3.2: 按 Feature 生成代码
 
-完整 iOS 运行时迁移使用 [UI 交付契约](references/ui-delivery-contract.md) 管理已批准 schema-2 清单里的页面。主线程先运行 `ui_delivery_inputs.py` 同步并冻结输入，然后为每个必交单元执行 `ui_dispatch.py prepare`。传给页面转换器完整的 `prompt_path` 内容、`dispatch_id`、`packet_sha256` 和该单元的独占输出范围。准备返回 `BLOCKED` 时保留缺项，补齐真实采集或冻结输入后再派发。
+完整 iOS 运行时迁移使用 [UI 交付契约](references/ui-delivery-contract.md) 管理已批准 schema-2 清单里的页面。主线程先运行 `ui_delivery_inputs.py` 同步并冻结输入，然后为每个必交单元执行 `ui_dispatch.py prepare`。传给页面转换器完整的 `prompt_path` 内容、`dispatch_id`、`packet_sha256` 和该单元的独占输出范围。准备返回 `BLOCKED` 时保留缺项，补齐真实采集或冻结输入后再派发。 如果准备结果同时给出 `conversion_scope=SOURCE_ONLY_BEHAVIOR_GAPS`，且项目已按 Stage 1 根因策略批准带缺口推进，可只在该单元的独占输出范围内先转换。仍按完整状态写报告并归档原 G0，原门禁和验收范围保持严格。
 
 页面转换器在共享接线开始前写出原始组件和 `conversion-reports/<unit_id>.json`，然后执行 `ui_dispatch.py complete`。主线程执行 `stage1_acceptance.py --kind g0` 汇总首次归档，按原契约处理失败。完成装配后执行 `stage1_acceptance.py --kind g1`，归档当前源码和正式宿主接线。下面的 Feature 示例负责其他设计产物。冻结清单内的页面只能由其转换器生成，禁止用示例里的通用 `generateUI` 覆盖独占输出或跳过归档。
+
+第一个可构建批次接通真实 Ability 和导航根后，立即运行一次 [宿主编译检查点](references/build-loop.md#宿主编译检查点)。共享组件签名或路由注册发生变化的批次在接线完成后复跑。用结构化错误聚合修复本批涉及的共享接口，再继续依赖这些接口的批次。若 Claude 子进程无法编译，向宿主交接同一构建命令和输入摘要。此诊断不替代 G1 最终构建、签名、安装或设备验收。
 
 **对每个 feature 按优先级顺序生成**:
 
@@ -1177,7 +1179,9 @@ ${componentFiles.map(f => `- ${f}`).join('\n')}
 
 ### Stage 5 完成标记
 
-在生成 Stage 5 marker 前，必须先完成执行覆盖率账本收口。Closer 应将本轮实际执行的
+在生成 Stage 5 marker 前，必须先完成执行覆盖率账本收口。同一包分步实现时，
+按 [收尾契约](references/brief-schemas.md) 生成各步纯 claim 清单并集中合并，再做终检。
+常规收尾继续走下列入口。Closer 应将本轮实际执行的
 packet intent 写入 `spec/execution/writeback/`，然后用确定性脚本展开
 `spec/.i2h/plan-coverage.json` 中对应 packet 的 `requirement_ids` 和 digest，最后运行
 `apply_writeback.py` 生成 `spec/.i2h/impl-claims.json`：
@@ -1190,10 +1194,10 @@ if [ -z "$INTENT" ]; then
 fi
 python3 .claude/skills/i2h-execute/scripts/build_writeback.py "$INTENT" \
   --project-root . \
-  --out spec/execution/writeback/writeback-final.json
+  --out spec/execution/writeback/writeback-final.json &&
 python3 .claude/skills/i2h-execute/scripts/apply_writeback.py \
-  spec/execution/writeback/writeback-final.json --project-root .
-python3 .claude/skills/i2h-execute/scripts/lint_execute_coverage.py .
+  spec/execution/writeback/writeback-final.json --project-root . &&
+python3 .claude/skills/i2h-execute/scripts/lint_execute_coverage.py --project-root . --final
 ```
 
 `impl-claims.json` 缺失、claim 数量不足或 packet digest 不一致时，Stage 5 必须保持
@@ -1231,8 +1235,10 @@ search 没有退化成首屏内联输入框、Chart 仍保留折线和数据点�
 `.sheet`/`.fullScreenCover` 已绑定到 `bindSheet`/`bindContentCover` 或完整的
 `presentation_fallback` 宿主标记。它也会拒绝以 `★`、`✓`、`→`、`+`、`−` 等
 Unicode/emoji 字符串替代源资源图标，除非文件带有 `symbol_fidelity: approved asset=...`
-映射证据。失败时必须修复产物或保留具体 finding，不能把 prompt 中已声明的 source
+映射证据。批准清单的 `system_symbol_fidelity` 同时检查带源标签的堆叠 Tab、空实星条件分支，独立的图标字号和按钮最小宽高，以及共享主按钮的默认值、调用覆盖与实际资源映射。未选型的主按钮以 `symbol_review_required` 列出。诊断引用对应的 Swift 行。形状、位置和真实点击仍从对应运行态核验。失败时必须修复产物或保留具体 finding，不能把 prompt 中已声明的 source
 obligation 当成已实现。
+
+生成读取随包示例图等源资产的代码时，从冻结的 `resources-inventory.json` 核对源路径和摘要，把资产放进资源读取方的 `src/main/resources/rawfile`。UI 事实门禁检查已经确定的 rawfile 读取名称是否有对应源资产却缺少目标文件。移动或转换资产后，仍需以最终签名包核对资源与实际读取结果。
 
 同一 UI 事实门禁还会扫描全局路由所有权与关系型数据库契约。`RootView` 不能把
 `@ObservedV2` 路由单例降级成未装饰的 `private router`，模态绑定不能直接使用
@@ -1640,5 +1646,7 @@ fi
 ### Stage 0.4 identity/signing preflight
 
 Before changing `AppScope/app.json5`, run `scripts/identity_signing_preflight.py`. It reads the source CFBundleIdentifier when `--source-root` is supplied, the target `bundleName`, and the signing profile's `bundle-info.bundle-name`. It uses `security cms -D` and falls back to OpenSSL CMS verification when the native decoder cannot read the profile. Profile decoding checks the bundle binding. Build and device receipts establish actual package signing and installation. Write the result to `spec/execution/stage0-environment.json`.
+
+For variable-based or multi-target identities, pass `--source-bundle-id` with the resolved `PRODUCT_BUNDLE_IDENTIFIER` of the selected application target from Xcode build settings. Unresolved or ambiguous source identities keep the identity gate pending.
 
 `identity_status=PASS` requires all available identities to match and the target bundle name to be non-template. When the local profile is still bound to a template bundle, keep the deployable template identity and report `identity_signing_pending`. If the target and local profile names match exactly, a signed diagnostic install is allowed for runtime UI/function evidence, while the identity gate remains pending. Signed install stays blocked when target/profile names differ. Never change the target bundle name to the iOS identifier without updating the signing profile as one atomic operation.

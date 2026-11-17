@@ -278,10 +278,15 @@ def validate_marker(
                     except ValueError:
                         result["errors"].append("artifact_outside_root")
                         continue
-                    if not artifact.is_file():
-                        result["errors"].append("artifact_missing")
-                    elif file_sha256(artifact) != normalize_hash(item["sha256"]):
-                        result["errors"].append("artifact_hash_mismatch")
+                    observed = file_sha256(artifact) if artifact.is_file() else None
+                    expected_artifact = normalize_hash(item["sha256"])
+                    if observed != expected_artifact or observed is None:
+                        code = "artifact_missing" if observed is None else "artifact_hash_mismatch"
+                        result["errors"].append(code)
+                        result.setdefault("artifact_findings", []).append({
+                            "code": code, "path": item["path"],
+                            "expected_sha256": expected_artifact, "actual_sha256": observed,
+                        })
     else:
         result["legacy"] = True
         result["warnings"].append("legacy_marker_schema")
@@ -327,6 +332,8 @@ def stage_status(
         "warnings": warnings,
         "errors": errors,
     })
+    if checked.get("artifact_findings"):
+        result["artifact_findings"] = checked["artifact_findings"]
     return result
 
 

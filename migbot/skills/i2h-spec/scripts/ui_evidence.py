@@ -24,15 +24,16 @@ from typing import Any, Iterable
 
 try:
     from ios_style_triggers import detect as detect_style_triggers
-    from source_index import build_index, classify_view_surface
+    from source_index import build_index, classify_view_surface, swift_system_symbol_facts, view_ui_obligations
 except ImportError:  # pragma: no cover - package/installed-tree fallback
     from .ios_style_triggers import detect as detect_style_triggers  # type: ignore
-    from .source_index import build_index, classify_view_surface  # type: ignore
+    from .source_index import build_index, classify_view_surface, swift_system_symbol_facts, view_ui_obligations  # type: ignore
 
 try:
     from ui_obligations import declaration_slice, parse_ui_obligations
 except ImportError:  # pragma: no cover - package/installed-tree fallback
     from .ui_obligations import declaration_slice, parse_ui_obligations  # type: ignore
+
 
 try:
     from ios_declaration_scope import SwiftSource, view_kind
@@ -40,7 +41,7 @@ except ImportError:  # pragma: no cover - package/installed-tree fallback
     from .ios_declaration_scope import SwiftSource, view_kind  # type: ignore
 
 
-TOOL_VERSION = "i2h-ui-evidence/1.3"
+TOOL_VERSION = "i2h-ui-evidence/1.6"
 SCHEMA_VERSION = 1
 
 
@@ -170,7 +171,7 @@ def detect_views(path: Path, root: Path) -> list[dict[str, Any]]:
 
         # Declaration text for ui_obligations
         declaration_text = declaration_slice(text, declaration["start_offset"])
-        ui_obligations = parse_ui_obligations(
+        ui_obligations = view_ui_obligations(
             declaration_text,
             line_offset=declaration["line"] - 1,
         )
@@ -351,7 +352,6 @@ def scan_resources(root: Path) -> tuple[dict[str, Any], list[Path]]:
         patterns = {
             "image": r"\bImage\s*\(\s*\"([^\"]+)\"|UIImage\s*\(named:\s*\"([^\"]+)\"",
             "color": r"\bColor\s*\(\s*\"([^\"]+)\"",
-            "system_symbol": r"\bImage\s*\(\s*systemName:\s*\"([^\"]+)\"|\bUIImage\s*\(\s*systemName:\s*\"([^\"]+)\"",
             "localization": r"\bNSLocalizedString\s*\(\s*\"([^\"]+)\"",
         }
         for kind, pattern in patterns.items():
@@ -361,6 +361,9 @@ def scan_resources(root: Path) -> tuple[dict[str, Any], list[Path]]:
                     continue
                 input_files.append(path)
                 references.append({"kind": kind, "name": name, "file": relative(path, root), "line": line_number(text, match.start())})
+        for symbol in swift_system_symbol_facts(text):
+            input_files.append(path)
+            references.append({**symbol, "file": relative(path, root)})
     all_assets = [p for p in root.rglob("*") if eligible(p) and p.is_file() and (p.suffix.lower() in {".png", ".jpg", ".jpeg", ".pdf", ".svg", ".gif", ".webp"})]
     input_files += all_assets
     inventory = {
@@ -457,6 +460,14 @@ def run(
         skill_root=Path(__file__).resolve().parents[1],
         force=source_index_force,
     )
+    indexed_obligations = {
+        (row["file_path"], row["view_name"], row["declaration_line"]): row["ui_obligations"]
+        for row in (*source_index["pages"], *source_index["components"])
+    }
+    for view in views:
+        key = (view["file_path"], view["view_name"], view["declaration_line"])
+        if key in indexed_obligations:
+            view["ui_obligations"] = indexed_obligations[key]
     inventory["target_input_sha256"] = target_hash
     inventory["source_index"] = {
         "path": str(index_path),
@@ -559,10 +570,43 @@ def build_skeleton(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+RESOURCE_SECTIONS = ("catalogs", "source_files", "localizations", "code_references", "standalone_assets")
+
+
+def inventory_view(path: Path, view_name: str | None, section: str | None) -> dict[str, Any]:
+    raw = path.read_bytes()
+    payload = json.loads(raw)
+    if not isinstance(payload, dict) or payload.get("schema_version") != SCHEMA_VERSION:
+        raise ValueError("unsupported UI evidence schema")
+    resources = payload["resources"]
+    views = payload["views"]
+    result = {
+        "inventory_sha256": sha256_bytes(raw),
+        "target_input_sha256": payload["target_input_sha256"],
+    }
+    if section:
+        result[section] = resources[section]
+    elif view_name:
+        matches = [view for view in views if view["view_name"] == view_name]
+        if not matches:
+            raise ValueError(f"view not found: {view_name}")
+        result["views"] = matches
+    else:
+        result["summary"] = resources["summary"]
+        result["resource_counts"] = {key: len(resources[key]) for key in RESOURCE_SECTIONS}
+        fields = ("view_name", "file_path", "declaration_line", "surface")
+        result["views"] = [{key: view[key] for key in fields if key in view} for view in views]
+    return result
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("project_root", help="iOS project root")
-    parser.add_argument("--output", default="spec/.i2h/ui-evidence.json", help="evidence JSON output")
+    parser.add_argument("project_root", nargs="?", help="iOS project root to scan")
+    parser.add_argument("--inventory-view", type=Path, help="print a read-only summary of an existing evidence JSON")
+    selectors = parser.add_mutually_exclusive_group()
+    selectors.add_argument("--view-name", help="expand exact view name matches from --inventory-view")
+    selectors.add_argument("--resource-section", choices=RESOURCE_SECTIONS, help="expand a section from --inventory-view")
+    parser.add_argument("--output", help="evidence JSON output (default: spec/.i2h/ui-evidence.json)")
     parser.add_argument("--resources-output", help="alias for --output, retained for pipeline compatibility")
     parser.add_argument("--res-index", help="optional spec/baseline/res-index directory")
     parser.add_argument("--skeleton-output", help="optional Phase-A project skeleton JSON")
@@ -570,10 +614,24 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--source-index-output", help="content-addressed Swift source index output")
     parser.add_argument("--source-index-force", action="store_true", help="rebuild source index even when cache key matches")
     args = parser.parse_args(argv)
+    if args.inventory_view is not None:
+        if any((args.project_root, args.output, args.resources_output, args.res_index, args.skeleton_output,
+                args.runtime_required, args.source_index_output, args.source_index_force)):
+            parser.error("--inventory-view cannot be combined with scan arguments")
+        try:
+            result = inventory_view(args.inventory_view, args.view_name, args.resource_section)
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            print(f"ERROR: {args.inventory_view}: {exc}", file=sys.stderr)
+            return 2
+        print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
+        return 0
+    if args.project_root is None or args.view_name or args.resource_section:
+        parser.error("supply an iOS project root to scan, or --inventory-view to query")
+    output = args.resources_output or args.output or "spec/.i2h/ui-evidence.json"
     try:
         payload = run(
             args.project_root,
-            args.resources_output or args.output,
+            output,
             args.res_index,
             args.runtime_required,
             args.source_index_output,
@@ -585,7 +643,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
     summary = payload["resources"]["summary"]
-    print(json.dumps({"output": args.resources_output or args.output, "target_input_sha256": payload["target_input_sha256"], "summary": summary}, ensure_ascii=False))
+    print(json.dumps({"output": output, "target_input_sha256": payload["target_input_sha256"], "summary": summary}, ensure_ascii=False))
     return 0
 
 
