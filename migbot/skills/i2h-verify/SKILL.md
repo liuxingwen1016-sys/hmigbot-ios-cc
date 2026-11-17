@@ -8,6 +8,12 @@ domain: migration
 
 # i2h-verify
 
+## 执行策略
+
+确定性静态提取、包/截图/哈希和原生测试运行交给现有脚本；语义复核与常规修复默认 `implementation`，仅疑难语义或跨模块 closure 使用 `complex`。按已选 CHECK 与当前源码/包运行原验收；原生编译通过只证明可构建。
+
+模型、effort、turn/时间/估算费用上限与累计 resume 规则以[统一执行策略](../../references/execution-policy.md)和共享配置为准（项目安装后读 `.migbot/runtime/references/execution-policy.md`）。沿用同一 feature / 根因会话；连续两轮无新证据或无进展时换策略，不能循环重开审计或重置预算。预算不足时交接未完成项，保留真实证据、编译、功能与 UI 验收门。
+
 Pipeline 第四步，负责基础检查与可选检查的编排和结果汇总。静态分析与 App 身份校验在主对话执行；用户选中的视觉、UT、行为验证委托对应 verifier。行为验证只报告，具体测试、源码修复、构建和设备执行按各 skill 契约完成。
 
 ## 开始前：选择可选检查项

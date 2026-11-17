@@ -9,6 +9,12 @@ version: 2.0
 
 # i2h-execute
 
+## 执行策略
+
+Worker、view-converter、fixer 与 hmos-builder 默认 `implementation`；纯源码定位用 `search`，复杂语义诊断和跨文件 closure 用 `complex`。固定编译、采集、截图、哈希与结构门运行已随包的确定性脚本，不为这些操作另起高档模型。
+
+模型、effort、turn/时间/估算费用上限与累计 resume 规则以[统一执行策略](../../references/execution-policy.md)和共享配置为准（项目安装后读 `.migbot/runtime/references/execution-policy.md`）。沿用同一 feature / 根因会话；连续两轮无新证据或无进展时换策略，不能循环重开审计或重置预算。预算不足时交接未完成项，保留真实证据、编译、功能与 UI 验收门。
+
 **Pipeline 第三步**：执行实际的代码转换，生成可编译的 HarmonyOS 应用。
 
 ## 🎯 定位
@@ -95,25 +101,7 @@ EOF
 
 **目标**: 预热编译环境，避免首次编译冷启动
 
-启动后台预热任务：
-
-```bash
-# 派发后台 agent 进行环境预热
-Agent({
-  description: "Environment prewarm",
-  prompt: """
-  执行环境预热任务（后台并行，不阻塞主流程）：
-  
-  1. 检查 local.properties 中的 hwsdk.dir
-  2. 运行 ohpm install 安装依赖
-  3. 预热 hvigor daemon（assembleHap）
-  
-  预热构建结果丢弃，不记录，不 gate。
-  """
-})
-```
-
-**不等待完成** — 后台并行进行
+项目已有固定环境预热脚本时，复用同一构建配置在后台运行一次，保留日志；无需为固定命令派发模型。没有现成脚本时可省略预热，正常编译门照常执行。预热结果不能作为正式编译或功能证据，也不能与正式构建争用同一输出目录。
 
 ### Step 0.4: 读取执行计划
 
@@ -150,7 +138,7 @@ python3 .claude/skills/i2h-execute/scripts/layout_scale.py \
 ✅ Stage 0 完成:
   - 工作环境已验证
   - 执行目录已创建
-  - 环境预热已启动（后台）
+  - 环境预热状态已记录（如启用则后台运行）
   - 执行计划已加载
 ```
 
@@ -841,49 +829,9 @@ after:  .fontColor([$r('app.color.primary')])
 
 ### Step 4.3: 修复循环执行
 
-```typescript
-let iteration = 1
-let maxIterations = 20
-let remainingErrors = []
+派发 `hmos-builder`，按其契约提供工程、DevEco 路径、签名模式、CALLER、STAGE_HINT、ROUND、稳定 TASK_ID 与 MAX_ITER。模型默认 `implementation`。使用 [编译修复流程](references/build-loop.md) 与统一执行策略，不在主线程另写一套 build-fix 循环。
 
-while (iteration <= maxIterations) {
-  console.log(`\n🔄 修复轮次 ${iteration}/${maxIterations}`)
-  
-  // 1. 编译项目
-  const buildResult = await runBuild()
-  
-  if (buildResult.success) {
-    console.log(`✅ 编译成功！`)
-    break
-  }
-  
-  // 2. 解析错误
-  const errors = parseBuildErrors(buildResult.output)
-  console.log(`发现 ${errors.length} 个错误`)
-  
-  // 3. 分类错误
-  const categorizedErrors = categorizeErrors(errors)
-  
-  // 4. 应用修复
-  let fixedCount = 0
-  for (const error of categorizedErrors) {
-    if (await applyFix(error)) {
-      fixedCount++
-    }
-  }
-  
-  console.log(`修复了 ${fixedCount} 个错误`)
-  
-  // 5. 检查是否还有可修复的错误
-  if (fixedCount === 0) {
-    console.log(`⚠️ 无法继续自动修复`)
-    remainingErrors = errors
-    break
-  }
-  
-  iteration++
-}
-```
+每轮复用固定构建脚本，保留真实退出码、日志与 HAP 哈希。同一根因沿用会话；实际修复轮次受阶段上限、MAX_ITER 和任务剩余预算共同约束。连续两轮无新证据或无进展时换诊断策略，达到限制仍未通过则返回 FAIL 和未完成项。Stage 1 `stage-1-ui-delivery` 仍使用 build-only 的单次真实构建与原有固定修复账本。
 
 ### Step 4.4: 生成编译报告
 
@@ -943,13 +891,13 @@ ${remainingErrors.map(e => `- ${e.file}:${e.line} — ${e.message}`).join('\n')}
 
 ### Step 4.5: 编译失败处理
 
-**如果 20 轮后仍有错误**:
+**如果达到阶段上限或累计预算后仍有错误**:
 
 ```bash
 if [ ${finalErrors} -gt 0 ]; then
   echo "❌ 编译失败：${finalErrors} 个错误未修复"
   echo "详细错误信息："
-  cat spec/execution/autofix-log/round-20/remaining-errors.txt
+  cat "spec/execution/autofix-log/round-${iterations}/remaining-errors.txt"
   
   echo ""
   echo "📝 建议："
@@ -966,7 +914,7 @@ fi
 
 ### Stage 4 完成标记
 
-创建 `spec/execution/stage4-complete.txt`
+仅真实编译门 PASS 才创建 `spec/execution/stage4-complete.txt`；FAIL / 未完成保留诊断，不能写完成标记。
 
 ---
 

@@ -8,6 +8,12 @@ domain: migration
 
 # i2h-plan
 
+## 执行策略
+
+P0/P2 的复杂归属与依赖裁决用 `complex`；P1 A/B/C writer 默认 `implementation`，只接收 kernel 与角色规格视图。此 skill 产出迁移计划，与 Claude 原生 plan-mode / `opusplan` 不是同一概念。
+
+模型、effort、turn/时间/估算费用上限与累计 resume 规则以[统一执行策略](../../references/execution-policy.md)和共享配置为准（项目安装后读 `.migbot/runtime/references/execution-policy.md`）。沿用同一 feature / 根因会话；连续两轮无新证据或无进展时换策略，不能循环重开审计或重置预算。预算不足时交接未完成项，保留真实证据、编译、功能与 UI 验收门。
+
 ## 启动检查 — 待办 findings
 
 读 `spec/.i2h/open-findings.json`（不存在 = 首轮，直接开工）：

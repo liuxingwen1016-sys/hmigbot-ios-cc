@@ -35,7 +35,7 @@ INSTALL_SKILLS = {
     # 通用工具 skills
     'app-relationship-tree', 'commit', 'dfr-fmea-general',
     'grill-with-docs', 'hmos_fix_build_errors', 'hmos-env-doctor',
-    'harmonyos-ui-test', 'claude-session-stats', 'skill-checker',
+    'harmonyos-ui-test', 'claude-session-stats', 'skill-checker', 'tool-optimization',
     'toolkit-fact-indexer', 'mod-design', 'prd-generator',
     'rq-parse', 'rq-clarify', 'rq-codebase', 'tdd-enforcer',
 }
@@ -91,6 +91,28 @@ UI_GATE_FILES = {
     'lib/ui_delivery_inputs_ios.py',
     'lib/visual_review_reuse.py',
 }
+
+EXECUTION_RUNTIME_FILES = (
+    "config/execution-policy.json",
+    "scripts/execution_policy.py",
+    "scripts/claude_task_guard.py",
+    "scripts/run_claude_task.py",
+    "references/execution-policy.md",
+)
+
+
+def validate_execution_runtime(repo_root: Path) -> None:
+    """Reject incomplete routing packages before changing an installed project."""
+    for relative in EXECUTION_RUNTIME_FILES:
+        if not (repo_root / "migbot" / relative).is_file():
+            raise ValueError(f"missing execution runtime: {relative}")
+    launcher = repo_root / "migbot/scripts/run_claude_task.py"
+    result = subprocess.run(
+        [sys.executable, "-B", str(launcher), "--help"],
+        capture_output=True, text=True, timeout=20,
+    )
+    if result.returncode or "--profile" not in result.stdout:
+        raise ValueError("invalid execution runtime package")
 
 
 def stage_execute_skill(source: Path, target: Path) -> None:
@@ -186,6 +208,7 @@ def install_migbot(project_path: str, ios_path: str = None, repo_root: str = Non
         checked_skill = Path(stage) / EXECUTE_SKILL
         try:
             stage_execute_skill(repo_root / 'migbot' / 'skills' / EXECUTE_SKILL, checked_skill)
+            validate_execution_runtime(repo_root)
         except (OSError, ValueError, subprocess.SubprocessError) as exc:
             print(f'package_error: {exc}', file=sys.stderr)
             sys.exit(3)
@@ -298,6 +321,20 @@ def _install_project(project_root, ios_path, repo_root, language, checked_skill)
     # 创建 bin 目录
     bin_dir = migbot_dir / "bin"
     bin_dir.mkdir(exist_ok=True)
+
+    # Keep the project-local scheduler and the plugin on the same policy.
+    # This copies configuration/code only; it never starts Claude or a migration.
+    runtime_dir = migbot_dir / "runtime"
+    for relative in EXECUTION_RUNTIME_FILES:
+        source = repo_root / "migbot" / relative
+        target = runtime_dir / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+    agents_src = repo_root / "migbot" / "agents"
+    agents_dst = claude_dir / "agents"
+    agents_dst.mkdir(exist_ok=True)
+    for source in agents_src.glob("*.md"):
+        shutil.copy2(source, agents_dst / source.name)
 
     # 复制脚本
     scripts_src = repo_root / "migbot" / "bin" / "scripts"

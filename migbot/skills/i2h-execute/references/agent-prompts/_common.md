@@ -6,6 +6,11 @@
 
 ## §0 执行纪律
 
+派发与恢复遵循[统一执行策略](../../../../references/execution-policy.md)（项目安装后读 `.migbot/runtime/references/execution-policy.md`）。常规 worker/converter/fixer/builder 用 `implementation`，纯索引用 `search`，复杂语义与 closure 用 `complex`；`expert` 必须显式指定。
+
+任务包只带目标/写域/验收、对应索引切片、必要源码与证据路径和上一轮摘要。同一 feature / 根因的小修沿用会话、TASK_ID 与累计预算，不每次重开全量审计。连续两轮无新证据或无进展时换策略，预算耗尽返回未完成清单。固定构建/截图/哈希用现有脚本；正则/includes/镜像测试不证明业务通过，编译通过不能代替功能与 UI 验收。
+
+
 ### 0.1 单写者原则
 
 **规则**: 每个文件在同一时刻只能有一个 agent 写入。

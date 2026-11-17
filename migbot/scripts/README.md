@@ -5,6 +5,14 @@
 
 ---
 
+## 模型路由与任务预算入口
+
+迁移调度与工具优化共用 [`config/execution-policy.json`](../config/execution-policy.json)；
+任务 profile、恢复累计、能力边界和命令示例见[统一执行策略](../references/execution-policy.md)。
+统一入口是 `run_claude_task.py`，`execution_policy.py` 是供 runner 导入的共享模块。
+项目安装后的入口位于 `.migbot/runtime/scripts/`；先用 `--help` / `--dry-run` 核对路由，
+dry-run 不执行 Claude、迁移、构建或设备操作。
+
 ## 先做一次性设置
 
 克隆仓库后执行两条命令，之后所有脚本都能直接跑：

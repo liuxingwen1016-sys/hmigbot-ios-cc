@@ -58,7 +58,7 @@ generated_key: <spec hash + 安卓源 hash，缓存键>
 
 ## 强制约束（每行必带，step2 与回校脚本据此审计）
 
-- 不设时间预算。首次取得有溯源的事实即保存，后续直接更新正文；`collection_complete: false` 表示仍在采集，不供下游消费。无事实时可返回有依据的 `spec_only/SKIPPED`，不能伪造空表为成功。
+- 受同一任务累计预算约束，预算耗尽交接未完成项且不降低证据要求。首次取得有溯源的事实即保存，后续直接更新正文；`collection_complete: false` 表示仍在采集，不供下游消费。无事实时可返回有依据的 `spec_only/SKIPPED`，不能伪造空表为成功。
 - 每节每行强制带 `来源 path:line` + `category`（`enum-value|wire-tag|algo-IO|completeness|golden`）。**无来源行不许存在。**
 - 完整性项记 `size + spec_claim + diff`。Kotlin/Java enum 仅使用脚本退出 0 的完整结果；sealed/其它集合须附模块范围和继承闭合证据。无法证明完整时 size 留空并列缺口，不把 UNSUPPORTED 或局部成员计数写成全集。
 - 未核验 golden 项**绝不写硬字面量**；wire 不一致先核查 Android 实际调用链，仍不确定的字段保持未验证，不能以 round-trip 代替外部字段/tag 契约。

@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "default_profile": "implementation",
+  "default_subagent_model": "sonnet",
+  "context": {"auto_compact_window": 100000, "soft_context_target": 60000},
+  "models": {
+    "haiku": "claude-haiku-5-5",
+    "sonnet": "claude-sonnet-5-5",
+    "opus": "claude-opus-5-5",
+    "fable": "claude-fable-5-1"
+  },
+  "profiles": {
+    "search": {"model": "haiku", "effort": "low", "max_turns": 10, "max_budget_usd": 0.5, "timeout_seconds": 300},
+    "deterministic": {"model": "haiku", "effort": "low", "max_turns": 10, "max_budget_usd": 0.5, "timeout_seconds": 300},
+    "implementation": {"model": "sonnet", "effort": "medium", "max_turns": 25, "max_budget_usd": 3.0, "timeout_seconds": 900},
+    "complex": {"model": "opus", "effort": "high", "max_turns": 30, "max_budget_usd": 8.0, "timeout_seconds": 1200},
+    "expert": {"model": "fable", "effort": "max", "max_turns": 30, "max_budget_usd": 12.0, "timeout_seconds": 1200}
+  },
+  "accounting": {
+    "max_attempts": 3,
+    "cost_source": "CLI estimates only; not provider billing",
+    "unknown_cost": "block a subsequent attempt when CLI usage is unpriced or no terminal result was observed",
+    "limits": "cumulative per task_id and stable run_dir; later attempts cannot increase the original limits"
+  }
+}

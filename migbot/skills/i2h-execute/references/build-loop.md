@@ -27,13 +27,14 @@ python3 .claude/skills/i2h-execute/scripts/host_build_checkpoint.py \
 ```
 
 `spec/verify/host-installation.json` 索引正式 Stage 1 可消费的 build/install 证据，绑定当前生产源码、范围、签名 HAP、设备和已确认的应用版本。原始日志与阶段正式输入均受摘要保护。设备测试执行者继续使用相应的原生到态、视觉、单测及行为契约。宿主回执本身不代表上述测试通过，生产 App 身份仍由 CHECK-2 校验。可在无设备权限的会话执行 `--project-root . --check-installation` 复算。
+每次派发先读[统一执行策略](../../../references/execution-policy.md)（项目安装后读 `.migbot/runtime/references/execution-policy.md`）。阶段上限与任务剩余预算共同约束实际循环，同一根因沿用会话；连续两轮无新证据或无进展时换策略，不能用重派重置。
 
 body 只留四句：派发 Agent `hmos-builder`（最多 20 轮）→ agent 返回结构化报告（PASS/FAIL）→ PASS 后主线程按 trigger 白名单回填 placeholder → FAIL 时调 arkts-knowledge-verifier 升级诊断。完整流程图与 trigger 6 类判定在此。
 
 ```
 派发 Agent hmos-builder（CALLER=<上游>, STAGE_HINT=<阶段>, ROUND=<轮次>）
   │
-  ├─ agent 内部：build-fix 循环（最多 20 轮，构建日志全部留在 agent context）
+  ├─ agent 内部：build-fix 循环（最多 20 轮，原始日志留在磁盘，context 只加载当前根因诊断切片）
   │
   ├─ agent 返回结构化报告（BUILD_STATUS / ITERATIONS / FILES_CHANGED / [PASS]HAP_OUTPUT / [FAIL]REMAINING_ERRORS+DIAGNOSIS）
   │
@@ -62,10 +63,10 @@ body 只留四句：派发 Agent `hmos-builder`（最多 20 轮）→ agent 返�
   │
   ├─ BUILD_STATUS=PASS + 回填完成 → SUCCESS
   │
-  └─ BUILD_STATUS=FAIL（20 轮仍失败） → 升级处理:
+  └─ BUILD_STATUS=FAIL（阶段上限/累计预算内仍失败） → 升级处理:
       ├─ 主线程读 agent 返回的 REMAINING_ERRORS + DIAGNOSIS → 调 arkts-knowledge-verifier 诊断
       ├─ verifier 给出 patch 建议 → 主线程派 worker（按 fixer_layer 分轨）应用 patch
-      ├─ 再次派发 hmos-builder（ROUND+=1） → 编译通过 → SUCCESS
+      ├─ 有剩余预算时沿用原根因会话与 TASK_ID 派发 hmos-builder（ROUND+=1） → 编译通过 → SUCCESS
       └─ 仍失败 → 标记 FAILED（按调用方阶段规则处理）
 ```
 
@@ -78,10 +79,10 @@ body 只留四句：派发 Agent `hmos-builder`（最多 20 轮）→ agent 返�
 - `hvigorw clean` 最多执行 **1 次**。禁止 `rm -rf entry/build`（会破坏 hvigor daemon 增量状态）。
 - `ohpm install` 只在构建循环开始前执行一次，不在循环内部重复执行。
 
-### Checkpoint 提交
+### Checkpoint 与提交
 
-- 每次 `BUILD SUCCESSFUL` 之后必须立刻 `git commit`，提交消息格式：`checkpoint(base-N): build pass after K fixes`。
-- 若 linter 回改导致文件变更，用 `git checkout -- <file>` 恢复而非重新编辑。
+- 每次真实 `BUILD SUCCESSFUL` 后记录日志路径、退出码、源码/HAP 摘要和修复轮次。按当前任务已有授权，在相应验收完成后批量提交；不要求每次成功都单独提交。
+- linter 回改时先检查当前 diff 和真实诊断，定位根因；保留用户已有修改，不用 `git checkout -- <file>` 覆盖文件。
 
 ### CLI 构建降级策略
 

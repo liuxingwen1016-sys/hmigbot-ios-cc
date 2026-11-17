@@ -7,6 +7,8 @@
 
 ## 公共纪律（三派发通用）
 
+- **模型与恢复**：遵循[统一执行策略](../../../references/execution-policy.md)（项目安装后读 `.migbot/runtime/references/execution-policy.md`）。P1 writer 默认 `implementation`（Sonnet/medium），复杂 P0/P2 裁决才用 `complex`；宿主支持时显式传 model，effort 由支持它的运行器落实。不能从昂贵父会话隐式继承。失败 worker 沿用 TASK_ID / 累计预算与可恢复会话，连续两轮无新证据或无进展时换策略。
+
 - **MUST-Read**：各派发列出的模板 / references 必须整文件 Read（SKILL Critical 强制加载条款适用于 subagent，跳过 = PROCESS_VIOLATION）。
 - **单写者分配**：A→ui-plan.md；B→plans/base-plan.md；C→plans/slices/* + spec/placeholder-registry.md（P1 窗口唯一 registry 写者——B 的 P-B 行信封带回，无并发）；索引 / coverage-matrix 主线程写，agent 禁碰。
 - **kernel 只抄不判**：归属消歧 / hub / 横切 / 定号已由主线程 P0 裁决并随 prompt 内联下发；agent 发现 kernel 与 spec 冲突 → 信封报告，禁自行改判。
@@ -31,6 +33,7 @@ Agent(
   分批输入: 运行随包 plan_input_view.py --role ui（优先级 / confidence / 依赖三源见模板生成规则）并读取对应逐页规格。
   batch_max: {BATCH_MAX}                              # 主线程按宿主取表（SKILL Step 2 规则 2）
   写权: 仅 ui-plan.md。",
+  model="sonnet",
   subagent_type="general-purpose")
 ```
 
@@ -80,6 +83,7 @@ Agent(
   prompt="生成 spec/baseline/plans/base-plan.md。MUST 先 Read: i2h-plan/templates/feature-plan-template.md（整文件，「文件二」段为生成规范）+ i2h-plan/references/skill-binding-rules.md。
   输入: spec/baseline/feature-base.md + plan_input_view.py --role base（P0 公共能力 F-ID: {shared_feature_ids}）；chain-auth 存在时按 SKILL Step 4.3 表注入 Base 侧 data_chain_refs（L0 / L2-L3 行）；每任务写 `parallel_group:`（模板默认分组为待确认项：逐任务核对 feature-base.md 确认不 import 同组产出，否则拆组，判据见模板）
   写权: 仅 base-plan.md；如产生 P-B 占位 → 行全文写入信封带回，禁直写 registry。",
+  model="sonnet",
   subagent_type="general-purpose")
 ```
 
@@ -129,6 +133,7 @@ Agent(
   对接点归属映射: {wiring_owner_map}                  # cross_slice_edits 的 owner 与 resolve_by 依据
   读取清单指定的功能与页面规格；若需核对全局页面关系，运行 plan_input_view.py --role slice。功能号、依赖、页归属使用已裁决的 kernel。
   写权: plans/slices/slice-NN-<fid>.md（每文件恰写一次）+ placeholder-registry.md 直写（Step 4.1 原文执行）。",
+  model="sonnet",
   subagent_type="general-purpose")
 ```
 
@@ -289,7 +294,7 @@ Agent(
 1. 记录冲突详情
 2. 主线程复核
 3. 修正 kernel 或 spec
-4. 重新派发相关 agent
+4. 在原 TASK_ID / 剩余预算内恢复相关 agent，只补充变更的 kernel 与对应输入；不因一次小修重跑所有 writer
 
 **示例冲突**：
 ```json

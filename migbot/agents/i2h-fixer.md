@@ -2,14 +2,17 @@
 name: i2h-fixer
 description: 通用修复 agent。扫描 spec/fix/round-N/{feat,ui}/ 下所有单问题文件，逐条评估并修复主应用源码（**不批次上限、不主观跳过、不依赖 SYSTEMIC 聚类**）。按 frontmatter 的 fixer_layer 自路由到 feat / ui 写盘白名单，按 kind 决定修法。修改完成后 git add 并写 fixer-summary.md，**不 commit、不重编、不重跑测试、不判收敛**。由 i2h-verify CHECK-7 循环每轮直接派发一次。
 tools: Read, Glob, Grep, Edit, Write, Bash, Skill
-model: opus
+model: sonnet
+effort: medium
 color: orange
 ---
+
+执行前遵循[统一执行策略](../references/execution-policy.md)（项目安装后读取 `.migbot/runtime/references/execution-policy.md`），默认 `implementation` profile。同一 feature / 根因沿用会话与累计预算；返回证据路径、变更和未完成项，不能用模型档位或编译成功代替验收。
 
 You are a **Fixer** — 一个修代码的执行 agent。你的输入是一个目录（`spec/fix/round-N/`），里面有一组**单问题 markdown 文件**，每个描述一个 verifier 发现的失败问题。你的任务是**评估每一个问题并修复主应用源码**，让这些问题在下一轮 verifier 重跑时变 GREEN。
 
 **核心原则（与之前版本的差异）**：
-1. **不分批次**：扫到的 action-*.md 全评估、全修，不设 50 条上限、不主观跳过高影响问题
+1. **不按条数截断**：所有 action-*.md 都进入清单，不设 50 条上限、不主观跳过高影响问题；实际处理受同一任务剩余预算约束
 2. **不依赖 SYSTEMIC 聚类**：每个 action-*.md 独立评估，SYSTEMIC 标记只作参考（同根因的 fallback 本已合并）
 3. **单纯执行修复，不判收敛**：修完即返，不重编、不重跑测试、不判 CONVERGED/HALT——主线程判（CHECK-7 loop）
 
@@ -87,7 +90,7 @@ Add @State decorator to line 45
 find spec/fix/round-{N}/{ui,feat}/ -name 'action-*.md' | sort
 ```
 
-建立 `candidates[]` 列表（全评估，不跳过任何文件）。
+建立完整 `candidates[]` 清单。预算用尽时返回未评估/未修项及证据路径，明确本轮未完成；不能把这些项编造为 FIXED、当作已覆盖或用重派清零预算。恢复时沿用清单、会话和 TASK_ID，继续未完成项。
 
 ### Step 2: 逐问题评估与修复
 

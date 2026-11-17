@@ -44,9 +44,9 @@ tags: [verification, testing, tdd, coverage, hypium, arkxtest, 验证, 测试, �
 
 ## 执行模型
 
-**入口**：必须用 `Skill(arkts-ut-verifier)` 在主对话中调用。各阶段使用本 skill 的 `agents/` 内嵌 CC prompt：主线程原文读取对应 Markdown 文件，将全文与本轮输入一起传给 `Agent(subagent_type="general-purpose")`，按文件「输入」区的工具边界执行；fixer 沿用 `model="opus"`。下表角色名用于摘要、诊断与职责标识，不作为全局 `subagent_type`。
+**入口**：必须用 `Skill(arkts-ut-verifier)` 在主对话中调用。各阶段使用本 skill 的 `agents/` 内嵌 CC prompt：主线程原文读取对应 Markdown 文件，将全文与本轮输入一起传给 `Agent(subagent_type="general-purpose", model="sonnet", effort="medium")`，按文件「输入」区的工具边界执行；常规 fixer 使用 `implementation`，复杂缺口有具体证据后才升 `complex`。下表角色名用于摘要、诊断与职责标识，不作为全局 `subagent_type`。
 
-主线程将当前 skill 目录解析为绝对路径 `SKILL_DIR`，每次派发均传入；prompt 中 `references/`、`scripts/` 相对该目录解析。下文伪代码的 `format_inputs(...)` 表示将参数格式化为文本并追加到 prompt，不能只传文件路径或摘要代替正文。**oracle、设计、生成的每个实例只处理一个 Feature，各最多 8 路并发**，有空位即补下一个 Feature，除首批预检窗口外不按固定小批等齐。设计与生成使用独立队列，可以同时运行；修复阶段按文件所有权及完整依赖批次划分工作项。
+主线程将当前 skill 目录解析为绝对路径 `SKILL_DIR`，每次派发均传入；prompt 中 `references/`、`scripts/` 相对该目录解析。下文伪代码的 `format_inputs(...)` 表示将参数格式化为文本并追加到 prompt，不能只传文件路径或摘要代替正文。**oracle、设计、生成的每个实例只处理一个 Feature，全部阶段共享默认总并发 2 的工作池**，有空位即补下一个 Feature，除首批预检窗口外不按固定小批等齐。设计与生成使用独立队列，可以同时运行；修复阶段按文件所有权及完整依赖批次划分工作项。
 
 **准确输入**：主线程先运行本 skill 的 `scripts/feature_inputs.py --project-root <项目绝对路径> [--scope F001,F003]`，读取返回的 Feature 清单。脚本兼容 `F001-xxx.md` 和 `F001_xxx.md`，仅在选中范围校验主文件 ID 唯一性；`F001-xxx.state-machine.md` 等同名补充文档进入 `addendum_files`，不占用另一个 Feature ID。清单给出各阶段独占产物的绝对路径。主线程再逐 Feature 运行 `scripts/ac_inputs.py --feature-file <feature_file> --feature-id <feature_id>`，将返回数组写入该清单项的 `ac_inputs`，保存完整清单供各阶段使用。脚本提取已勾选与未勾选 AC，保留源稳定 ID；输入错误先核对源文件或既有映射，禁止按行号重新发号、修改基线或静默漏掉 AC。每次派发都从同一清单取值：
 
@@ -59,17 +59,19 @@ tags: [verification, testing, tdd, coverage, hypium, arkxtest, 验证, 测试, �
 
 agent 不再自行拼接 `F001_*.md`、英文别名或项目根下的脚本路径；路径缺失或 Feature 不匹配时反馈具体输入错误。主线程在派发前修正清单，不能用另一个文件兜底。实例完成并回读产物后，按宿主机制释放其占用槽位，再补就绪任务；保存的文件承担交接，不保留空闲实例挤占并发容量。
 
-**并发容量**：派发前核对宿主可用槽位；设计和生成各 8 路重叠时，工作池须容纳最多 16 个子任务（主线程另按宿主计数）。宿主实际限制较低时如实报告有效并发并保留就绪队列，不能声称已按 8 路执行。仅状态轮询可以分段等待，**不设置 oracle/设计/生成的时间预算，不因静默、等待次数或运行时长终止重派**；按真实完成、明确错误或用户取消处理。恢复同一 Feature 时复用已保存的进度，避免重复探索。
+**并发容量与任务预算**：oracle、设计、生成、fixer 与 executor 共同计入默认总并发 2，不能让独立队列各开 2 个；派发数取总池剩余槽位、宿主可用槽位和就绪任务数的最小值。构建/注册/设备执行仍遵守原单写者与 barrier。所有阶段受[统一执行策略](../../references/execution-policy.md)和共享配置约束（项目安装后读 `.migbot/runtime/references/execution-policy.md`），同一 Feature / 根因沿用会话、TASK_ID 和累计预算；两轮无新证据或无进展时换策略。静默或等待次数本身不触发重派，达到任务预算则停止并交接未完成项，不能重新命名任务清零或降低验收。
+
+**调用兼容性**：per-invocation `effort` 需要 Claude Code 2.1.292+；当前宿主支持时显式传 model/effort。更旧宿主使用真实统一运行入口 `run_claude_task.py --profile implementation --effort medium`（其余参数按 `--help`），不能只把 effort 写入 prompt 就声称已生效。嵌入正文的 agent frontmatter 不会自动设置 general-purpose 调用的模型。
 
 **第零步开关**：`UT_ANDROID_ORACLE=on`（缺省）且安卓根可达时执行；barrier⓪ 等本轮采集任务全部返回，允许各 Feature 以 `full/partial/spec_only/SKIPPED` 收口，不要求每项都有 oracle 文件。无锚点先走发现阶梯；off 或根不可达时仍可设计盘点和运行已有测试，新增功能/预期按证据门处理，`spec_only` 不构成已验证行为依据。
 
 | 步骤 | 做什么 | 并发？ | 角色 | CC Agent prompt |
 |------|--------|------|------|------|
-| 第零步：安卓 oracle 采集（可选·默认开） | 解析锚点、保存已确认事实，完成后回读 oracle 表 | ✅ 8 路，每实例一个 Feature | `arkts-ut-oracle-collector` | [agents/step0-oracle-agent.md](agents/step0-oracle-agent.md) |
-| 第一步：测试用例设计 | 记录真实入口、隔离方式、可执行类型和实现状态；输出设计及未实现诊断 | ✅ 8 路，单 Feature 完成即进入生成队列 | `arkts-ut-test-designer` | [agents/step1-design-agent.md](agents/step1-design-agent.md) |
-| 第二步：测试用例生成 | 可执行行生成强断言；其余逐条记录原因；最后统一注册 | ✅ 8 路，与设计重叠；注册单发 | `arkts-ut-test-generator` | [agents/step2-generate-agent.md](agents/step2-generate-agent.md) |
+| 第零步：安卓 oracle 采集（可选·默认开） | 解析锚点、保存已确认事实，完成后回读 oracle 表 | ✅ 共享总池 ≤2，每实例一个 Feature | `arkts-ut-oracle-collector` | [agents/step0-oracle-agent.md](agents/step0-oracle-agent.md) |
+| 第一步：测试用例设计 | 记录真实入口、隔离方式、可执行类型和实现状态；输出设计及未实现诊断 | ✅ 共享总池 ≤2，单 Feature 完成即进入生成队列 | `arkts-ut-test-designer` | [agents/step1-design-agent.md](agents/step1-design-agent.md) |
+| 第二步：测试用例生成 | 可执行行生成强断言；其余逐条记录原因；最后统一注册 | ✅ 共享总池 ≤2，与设计重叠；注册单发 | `arkts-ut-test-generator` | [agents/step2-generate-agent.md](agents/step2-generate-agent.md) |
 | 第三步：注册与执行 | 单点注册，补基础设施 → 编译双 HAP → 跑设备 → 出报告（含 oracle 来源分布 + 溯源行号回校） | ❌ 全局单步 | `arkts-ut-test-executor` | [agents/step3-execute-agent.md](agents/step3-execute-agent.md) |
-| Fix-loop：功能与测试修复 | 按 Android 行为修复实现及必要生产接线，按需更新、新增强断言测试和记录 | ✅ 最多 8 路，按文件所有权划分 | `arkts-ut-fixer` | [agents/arkts-ut-fixer.md](agents/arkts-ut-fixer.md) |
+| Fix-loop：功能与测试修复 | 按 Android 行为修复实现及必要生产接线，按需更新、新增强断言测试和记录 | ✅ 共享总池 ≤2，按文件所有权划分 | `arkts-ut-fixer` | [agents/arkts-ut-fixer.md](agents/arkts-ut-fixer.md) |
 
 > **第零步是 step1 的可选前置**。只有 `collection_complete: true` 的本轮 oracle 产物才供设计使用；增量保存的草稿不是完成信号。
 
@@ -78,13 +80,13 @@ agent 不再自行拼接 `F001_*.md`、英文别名或项目根下的脚本路�
   [executor · MODE=preflight] 核对版本/设备，补齐并验证公共测试设施
   （oracle/设计分析可继续；工程构建期间无其它工程输入写者）
   ↓
-Step 0  ┌ [oracle F001] … [oracle F008] ┐  最多 8 路，完成一个补一个
+Step 0  ┌ [oracle F001] [oracle F002] ┐  共享总池最多 2 路，完成一个补一个
 （可选）  └──── barrier⓪ 容忍部分 SKIPPED ──┘  → spec/verify/ut/android-oracle/F*.md
   ↓
-Step 1  [设计 F001] … [设计 F008]         最多 8 路
+Step 1  [设计 F001] [设计 F002]          共享总池最多 2 路
           ↓ 每个 Feature 完成并校验后立即入队
 Step 2  [首批完整 Feature 生成 → executor 编译/代表性试跑 → 其余生成滚动并行]
-        最多 8 路，与其余设计同时运行；缺设备时保留缺口并继续离线生成
+        与其余设计共享总池 2 路；缺设备时保留缺口并继续离线生成
         └── barrier②：全部设计和生成任务完成，逐 ID 对账 ──┘
         [执行 agent · MODE=register]           单发一次，重建 List.test.ets
   ↓
@@ -92,7 +94,7 @@ Step 3  执行（编译 + 跑设备 + spec/verify/ut/ut-report.md + 双写 spec/
   ↓
 [MODE=verify_fix 且 round-0/ut/ 有失败]
   ↓
-fix-loop  循环：完整依赖批次内 fixer 最多 8 路 → 批次编译/本轮返工
+fix-loop  循环：完整依赖批次内 fixer 共享总池最多 2 路 → 批次编译/本轮返工
           → 最终质量/影响对账 → 单点注册/完整编译 → commit → 全量设备复测 → reconcile
 ```
 
@@ -114,8 +116,8 @@ on FeatureDesignCompleted(feature):
     回读并核对 feature.design_file 的契约、分类和 ID
     校验并汇总该 Feature 诊断（格式问题修正或记警告）
     将 feature 放入生成就绪队列；先按 execution-checkpoints.md 完成首批试生成
-    首批窗口结束或明确离线降级后，生成运行数 < 8 时立即派发
-    设计运行数 < 8 时补下一个尚未设计的 Feature
+    首批窗口结束或明确离线降级后，共享总池运行数 < 2 且预算未耗尽时立即派发生成
+    共享总池运行数 < 2 且预算未耗尽时补下一个尚未设计的 Feature
 # 所有设计与生成完成后：核对设计总量 = 已生成 + no_entry + needs_review
 # ui_only 另列；注册实际测试文件，继续编译和执行
 ```
@@ -124,7 +126,7 @@ on FeatureDesignCompleted(feature):
 
 第三步 execute 跑完写完 `spec/verify/ut/round-0/ut/`（baseline）后，主线程依据下列伪代码循环修复直到收敛。详细字段定义见 `references/fix-file-schema.md` + `references/reconcile-rules.md`；fixer 行为见内嵌 prompt [agents/arkts-ut-fixer.md](agents/arkts-ut-fixer.md)。
 
-**修复固定使用最多 8 路工作池**：按 `references/fixer-dispatch.md` 先分配准确问题文件和源码文件所有权，本批独立任务足够就派满 8 个实例，有空位即补本批下一个；批次交回后统一编译再开下一批。每个实例只处理自己的工作项；涉及同一源码文件的问题交同一所有者，不能单靠 Feature 切分。任务不足或存在文件/前置依赖时如实报告有效并发，不派空任务。修复也不设时间预算，不因运行时长终止重派。
+**修复默认共享总池最多 2 路**：按 `references/fixer-dispatch.md` 先分配准确问题文件和源码文件所有权，在共享总池和剩余预算内滚动派发；批次交回后统一编译再开下一批。每个实例只处理自己的工作项；涉及同一源码文件的问题交同一所有者，不能单靠 Feature 切分。任务不足或存在文件/前置依赖时如实报告有效并发，不派空任务。常规修复 Sonnet/medium；仅有具体复杂语义缺口证据时升 `complex`，仍继承原任务剩余预算。
 
 每个 fixer 独占 `round-{N+1}/fixers/<WORK_ITEM_ID>.md`，不操作共享暂存区。所有权请求在本轮内协调续跑，不转成业务 `skipped/manual_review`；每批交回后由唯一 executor 编译，本轮处理可修编译问题；全部工作项完成、最终独立质量检查和完整双 HAP 编译通过后，主线程才写全局 `fixer-summary-ut.md`、统一提交，再由一个执行 agent 全量复测。不同修复轮次不重叠。
 
@@ -140,14 +142,17 @@ if round-0 实际测试全 GREEN and 无未验证设计点/TEST_REWORK/DISPOSITI
 N = 0; no_progress = 0
 MAX_ROUNDS = 10; NO_PROGRESS_ROUNDS = 2
 
-while N < MAX_ROUNDS:
-  # Step 1: 先合并共同根因/共享写文件，按完整依赖安排批次，批内最多 8 路滚动派发
+while N < MAX_ROUNDS and 共享任务预算未耗尽:
+  # Step 1: 先合并共同根因/共享写文件，按完整依赖安排批次，全部阶段共享总池最多 2 路
   work_items = plan_owned_work_items(round-{N}/ut/)  # 见 fixer-dispatch.md
   for batch in plan_dependency_batches(work_items):
     while 有本批就绪工作项 or 有运行实例 or 有待协调所有权请求:
-        while 有本批就绪工作项 and running_fixers < 8 and 宿主有可用槽位:
+        if 共享任务预算耗尽:
+            停止新派发，按 guardian/宿主机制收停并交接活跃写者
+            write final-summary.md (FAIL, 未完成 ID/文件/证据路径与累计预算); exit
+        while 有本批就绪工作项 and 共享总池运行数 < 2 and 共享任务预算未耗尽 and 宿主有可用槽位:
             item = pop_ready(batch)
-            Agent(subagent_type="general-purpose", model="opus",
+            Agent(subagent_type="general-purpose", model="sonnet", effort="medium",
                   prompt=Read(SKILL_DIR + "/agents/arkts-ut-fixer.md") + format_inputs(
                     SKILL_DIR=SKILL_DIR, PROJECT_ROOT=..., ROUND=N+1, INPUT_DIR=...,
                     ANDROID_SOURCE_ROOT=..., FEATURE_INPUTS=item.feature_inputs,
@@ -157,7 +162,7 @@ while N < MAX_ROUNDS:
         等待完成返回或所有权请求；回读摘要、核对实际改动
         协调所需文件，续跑未完成问题；完成实例释放槽位并补本批任务
     停止派发写者；核实所有工程输入写者已交回且无依赖半成品
-    Agent(subagent_type="general-purpose",
+    Agent(subagent_type="general-purpose", model="sonnet", effort="medium",
           prompt=Read(SKILL_DIR + "/agents/step3-execute-agent.md") + format_inputs(
             SKILL_DIR=SKILL_DIR, PROJECT_ROOT=..., ROUND=N+1, MODE=compile_check,
             FEATURE_INPUTS=完整清单, CHECK_FEATURE_INPUTS=累计完成及受影响清单, CHECKPOINT_ID=round_N+1_batch_ID,
@@ -170,14 +175,14 @@ while N < MAX_ROUNDS:
   汇总 EDITED / RETEST / SKIPPED / BLOCKED / FILES_MODIFIED / DISPOSITION_HINTS / ANDROID_EVIDENCE / WIRING_EVIDENCE / TEST_UPDATES
   反查变更入口关联的旧 no_entry/UNREACHABLE、依赖测试与生产调用方
   未完成的必要接线/补测/分类同步本轮协调原 fixer 续跑，再回到 barrier；真实外部/证据阻塞准确保留
-  Agent(subagent_type="general-purpose",
+  Agent(subagent_type="general-purpose", model="sonnet", effort="medium",
         prompt=Read(SKILL_DIR + "/agents/step3-execute-agent.md") + format_inputs(
           SKILL_DIR=SKILL_DIR, PROJECT_ROOT=..., MODE=register,
           FEATURE_INPUTS=完整清单, ANDROID_SOURCE_ROOT=..., ANDROID_EVIDENCE=本轮函数等价证据, TEST_UPDATES=本轮更新摘要,
           WIRING_EVIDENCE=本轮接线证据))
   回读独立质量检查和注册结果；TEST_REWORK 退回对应所有者并在本轮修正后重验
   若有未完成内部接线/补测/质量退回/陈旧分类：保持开放，本轮协调续跑后重验，禁止进入收敛判断
-  Agent(subagent_type="general-purpose",
+  Agent(subagent_type="general-purpose", model="sonnet", effort="medium",
         prompt=Read(SKILL_DIR + "/agents/step3-execute-agent.md") + format_inputs(
           SKILL_DIR=SKILL_DIR, PROJECT_ROOT=..., ROUND=N+1, MODE=compile_check,
           FEATURE_INPUTS=完整清单, CHECK_FEATURE_INPUTS=完整清单, CHECKPOINT_ID=round_N+1_final,
@@ -201,7 +206,7 @@ while N < MAX_ROUNDS:
   # 仅需复测时保留依据，不制造源码/测试改动或空提交
 
   # Step 4–5: executor 核验最终构建指纹，失效则重编；安装并全量实跑，写问题与 delta
-  Agent(subagent_type="general-purpose",
+  Agent(subagent_type="general-purpose", model="sonnet", effort="medium",
         prompt=Read(SKILL_DIR + "/agents/step3-execute-agent.md") + format_inputs(
           SKILL_DIR=SKILL_DIR, PROJECT_ROOT=..., ROUND=N+1, MODE=verify_only,
           ANDROID_SOURCE_ROOT=..., FEATURE_INPUTS=完整清单, TEST_UPDATES=本轮更新摘要,
@@ -223,12 +228,13 @@ while N < MAX_ROUNDS:
   if delta.RESOLVED == 0 and delta.TRULY_NEW == 0:   # TRULY_NEW = _ut_delta「Newly opened」(不含 regressed)；regressed 是净负功，不算进展
       no_progress += 1
       if no_progress >= NO_PROGRESS_ROUNDS:
-          write stalled.md (FAIL); break
+          write stalled.md (FAIL, 已尝试策略与有证据的下一策略); break
   else:
       no_progress = 0
 
   N += 1
 
+if 共享任务预算耗尽:  write final-summary.md (FAIL, 未完成范围与恢复条件)
 if N >= MAX_ROUNDS:  write final-summary.md (FAIL, "达 MAX_ROUNDS")
 ```
 
@@ -239,6 +245,7 @@ if N >= MAX_ROUNDS:  write final-summary.md (FAIL, "达 MAX_ROUNDS")
 | baseline 实际测试全 GREEN，且无未验证设计点、待补测/复核或陈旧分类 | PASS | `spec/verify/ut/round-0/_ut_summary.md` |
 | 循环全范围验证通过，且无未验证设计点、待补测/复核或陈旧分类 | PASS | `spec/verify/ut/round-{N}/final-summary.md` |
 | 内部可处理项清空，仅真实缺证据/外部前置/不可达等残留 | CONVERGED | `final-summary.md` 明示未验证范围，状态文件不得写 passed |
+| 达共享任务预算且尚未完成 | FAIL | `final-summary.md` 记录未完成范围、真实证据与恢复条件，沿用原 TASK_ID / 账本 |
 | 达 MAX_ROUNDS | FAIL | 同上 |
 | 连续 NO_PROGRESS_ROUNDS 轮无进展 | FAIL | `spec/verify/ut/round-{N}/stalled.md` |
 | Step 1 无 EDITED/RETEST/BLOCKED | CONVERGED / FAIL | `final-summary.md` 按准确残留与退出原因判定，不等于 PASS |
@@ -250,7 +257,7 @@ if N >= MAX_ROUNDS:  write final-summary.md (FAIL, "达 MAX_ROUNDS")
 2. **fixer EDITED ≠ PASS**：fixer 报"修了 N 个"是机械计数；真假由本轮修复后的独立 execute 实测（reconcile）
 3. **REGRESSED 独立诊断**：保留其它已验证修复，不 git reset；按 Android 依据区分生产回归与测试质量问题，可修项继续派发，只有实际缺证据/需裁决才转人工
 4. **Android 源码决定范围内功能行为**：完善与补实现必须追溯 Android 分支、数据流和副作用；已批准的平台差异引用决策，不盲搬 Android API。Android 来源的 RED 经依据与适配核对后正常修复，不一律转人工；缺 golden 不以宽松断言凑通过。预期变更必须有独立 Android/决策证据，由 executor 复核。
-5. **并发只改独占文件，构建独占工程输入**：8 路 fixer 不共享生产/测试/设计记录写权限、摘要或暂存区；每批交回后编译，构建期间无其它工程输入写者。全部完成并通过最终质量/完整编译后才提交和全量复测，检查点不推进轮次。
+5. **并发只改独占文件，构建独占工程输入**：默认 2 路 fixer 不共享生产/测试/设计记录写权限、摘要或暂存区；每批交回后编译，构建期间无其它工程输入写者。全部完成并通过最终质量/完整编译后才提交和全量复测，检查点不推进轮次。
 6. **补能力必须补验证**：新增入口和必要测试更新在本轮内闭环；禁止弱断言、简单存在性测试及为凑绿修改预期，不能通过删用例、旧 `no_entry` 或转人工代替验证。
 
 ## 前置准备
@@ -329,7 +336,7 @@ Spec 为空 → 告知用户先运行 Spec 生成 skill，**终止**，不要让
 
 ## 快速检查清单
 
-- [ ] 已解析准确 Feature 清单，输入路径唯一且存在；三个阶段各 8 路并发，无时间预算
+- [ ] 已解析准确 Feature 清单，输入路径唯一且存在；全部阶段共享默认总并发 2，实际执行受同一任务累计预算约束
 - [ ] **（可选·step0 后）**：`UT_ANDROID_ORACLE=on` 且 `ANDROID_SOURCE_ROOT` 可达时，有锚点的 Feature 已产 `spec/verify/ut/android-oracle/F*.md` 且 `oracle_status=full/partial`（带 `oracle:path:line` 溯源、golden 项未写硬字面量、完整集用脚本点清）；off 或无可用事实时继续已有验证，受影响新行为/预期须有直接源码或已核验证据，否则明确 `needs_review`；已保存 oracle 须为 `collection_complete: true`
 - [ ] 第一步后：`spec/verify/ut/ut-design/` 每个 Feature 一份设计，每条逻辑层 AC 有用例行；`## 服务层 / ## 数据流`（英文同义 `## Service layer / ## Data flow`）列出的输出模式 / 基数布局分支也各有一行；有 oracle 表时「预期结果」为字段级具体值 + 来源标 `样本(安卓)`；**读源码高置信看出没实现的功能点已记进 `spec/verify/ut/unimplemented/F*.json`**（注明 Feature + 功能点 + 源码片段；无明显未实现则无文件，且设计本身一字未减）
 - [ ] 设计行已记录真实入口、隔离方式、可执行类型及实现状态；UI AC 单列；每个 Feature 完成即入生成队列，不等待全量设计或诊断汇总
@@ -337,5 +344,5 @@ Spec 为空 → 告知用户先运行 Spec 生成 skill，**终止**，不要让
 - [ ] 依赖方案：每个替换点有必要原因，被测真实链路保留；Hypium/SDK 版本已核对；共享 mock 配置由 executor 单点合并，运行组冲突已处理
 - [ ] 第二步后：每 Feature 的 `it()` ID 集合等于生成记录中 `generated` 的 ID 集合；设计行数 = 已生成 + no_entry + needs_review，UI 另列；无占位断言；统一注册全部实际测试文件
 - [ ] 第三步后：双 HAP 编译通过，设备已连接，报告基于真实运行日志；`spec/verify/ut/round-0/ut/` 已就位 + `_state.yaml.current_round=0`
-- [ ] 修复阶段最多 8 路 `arkts-ut-fixer`：Android 行为证据明确；生产/测试/设计文件所有权互斥；必要生产接线、测试和记录同步已完成并通过独立复核，失效 `no_entry/UNREACHABLE` 已更新；按依赖批次编译，本轮处理编译返工，最终质量/完整编译通过后提交并全量复测
+- [ ] 修复阶段共享总池最多 2 路 `arkts-ut-fixer`：Android 行为证据明确；生产/测试/设计文件所有权互斥；必要生产接线、测试和记录同步已完成并通过独立复核，失效 `no_entry/UNREACHABLE` 已更新；按依赖批次编译，本轮处理编译返工，最终质量/完整编译通过后提交并全量复测
 - [ ] **Fix-loop 退出后**：`spec/verify/ut/round-{final}/final-summary.md` 含 PASS / FAIL 结论 + 每轮实现率演进表 + 端到端对比（round-0 → round-final）

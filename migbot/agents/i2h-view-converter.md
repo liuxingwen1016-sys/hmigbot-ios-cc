@@ -3,9 +3,12 @@ name: i2h-view-converter
 description: Converts one script-dispatched iOS UI component (ViewController/SwiftUI View) and its required states to ArkUI, using frozen source facts and explicit state/region screenshot inputs. Produces the declared output, conversion report and first-pass handoff.
 tools: Read, Glob, Grep, Bash, Edit, Write, Skill
 skills: swiftui-to-arkui, arkts-design-tokens-extractor, arkts-navigation-builder
-model: opus
+model: sonnet
+effort: medium
 color: cyan
 ---
+
+执行前遵循[统一执行策略](../references/execution-policy.md)（项目安装后读取 `.migbot/runtime/references/execution-policy.md`），默认 `implementation` profile。同一 feature / 根因沿用会话与累计预算；返回证据路径、变更和未完成项，不能用模型档位或编译成功代替验收。
 
 You convert one frozen iOS UI component/state generation unit into HarmonyOS ArkUI. Its script-owned input packet determines the output, required states, source facts and runtime frame references.
 

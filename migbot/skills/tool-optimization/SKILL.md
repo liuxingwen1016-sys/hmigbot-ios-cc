@@ -8,6 +8,12 @@ domain: tool-development
 
 # hmigbot-ios 工具优化方法论
 
+## 执行策略
+
+优化按可观察问题选模型：索引和窄范围查找用 `search`，脚本与 prompt 实现用 `implementation`，复杂策略/语义评审用 `complex`。Fable 的 `expert` 仅用于显式指定的疑难专用任务；不把所有步骤升级到最高档。
+
+模型、effort、turn/时间/估算费用上限与累计 resume 规则以[统一执行策略](../../references/execution-policy.md)和共享配置为准（项目安装后读 `.migbot/runtime/references/execution-policy.md`）。沿用同一 feature / 根因会话；连续两轮无新证据或无进展时换策略，不能循环重开审计或重置预算。预算不足时交接未完成项，保留真实证据、编译、功能与 UI 验收门。
+
 **基于**: i2h-spec 改造经验（v2.0 → v2.2）  
 **适用于**: i2h-plan, i2h-execute, i2h-verify 等其他命令的优化改造  
 **版本**: v1.1

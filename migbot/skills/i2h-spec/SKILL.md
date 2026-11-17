@@ -8,6 +8,12 @@ domain: migration
 
 # i2h-spec
 
+## 执行策略
+
+Spec 分析按任务选择模型：确定性扫描/哈希用随包脚本；轻量源码索引用 `search`，页面和功能语义用 `implementation`，复杂跨模块语义复核用 `complex`。只读当前任务的索引切片、源码锚点与对应 reference，不把整个项目交给每个 worker。
+
+模型、effort、turn/时间/估算费用上限与累计 resume 规则以[统一执行策略](../../references/execution-policy.md)和共享配置为准（项目安装后读 `.migbot/runtime/references/execution-policy.md`）。沿用同一 feature / 根因会话；连续两轮无新证据或无进展时换策略，不能循环重开审计或重置预算。预算不足时交接未完成项，保留真实证据、编译、功能与 UI 验收门。
+
 Pipeline 第一步：分析 iOS 项目，生成完整的迁移规格。
 
 **核心原则**：

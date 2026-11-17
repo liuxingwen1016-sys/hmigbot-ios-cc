@@ -25,12 +25,18 @@ Read('references/agent-prompts/_common.md')
 // 2. 读取对应派发模板
 Read('references/agent-prompts/1-converter.md')
 
-// 3. 派发 agent
+// 3. 按统一策略选 profile，由运行器解析 model/effort；常规 converter 为 implementation
+// 同一 feature 的续修 resume 已有会话与累计 TASK_ID
+// 4. 派发 agent
 Agent({
+  subagent_type: "i2h-view-converter",
+  model: "sonnet",
   description: "转换 HomePage",
   prompt: `${commonRules}\n${converterTemplate}\n${context}`
 })
 ```
+
+`model` 仅在宿主 Agent 工具支持时传入；effort 与 guardian 限制通过支持它们的运行器落实，不能把 prompt 字段当作已生效的 CLI 参数。共享配置变化时同步 agent 的显式默认值。
 
 ## 核心原则
 
