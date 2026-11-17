@@ -16,9 +16,11 @@ class IOSDeliveryInputsTests(unittest.TestCase):
             source = root / "ios"
             source.mkdir()
             (source / "Main.swift").write_text("struct Main {}", encoding="utf-8")
-            inventory = root / "inventory.json"
+            inventory = root / "spec/baseline/ui-delivery-approved.json"
+            inventory.parent.mkdir(parents=True, exist_ok=True)
             inventory.write_text(json.dumps({
                 "schema_version": 2,
+                "status": "approved",
                 "source_project_root": str(source),
                 "scope": "full_ui",
                 "units": [{
@@ -33,6 +35,18 @@ class IOSDeliveryInputsTests(unittest.TestCase):
             result = json.loads((root / "spec/execution/ui-inputs/index.json").read_text())
             self.assertEqual(len(result["packets"]), 1)
             self.assertEqual(result["packets"][0]["required_states"][0]["evidence"]["status"], "missing")
+            index_bytes = (root / "spec/execution/ui-inputs/index.json").read_bytes()
+            unapproved = root / "unapproved.json"
+            payload = json.loads(inventory.read_text())
+            del payload["status"]
+            unapproved.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaises(ValueError):
+                freeze(["--project-root", str(root), "--inventory", str(unapproved)])
+            payload["status"] = "draft"
+            unapproved.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaises(ValueError):
+                freeze(["--project-root", str(root), "--inventory", str(unapproved)])
+            self.assertEqual((root / "spec/execution/ui-inputs/index.json").read_bytes(), index_bytes)
 
 
 if __name__ == "__main__":

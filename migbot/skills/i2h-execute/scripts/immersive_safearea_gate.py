@@ -58,8 +58,17 @@ def _layers(stdout: str) -> dict[str, Any]:
 
 def evaluate(root: Path | str, inventory: dict[str, Any] | None = None, checker: Path | str | None = None) -> dict[str, Any]:
     project = Path(root).expanduser().resolve()
-    inventory_path = _inventory_path(project)
-    data = inventory or (_read(inventory_path) if inventory_path else None)
+    if inventory is not None:
+        inventory_path = _inventory_path(project)
+        data = inventory
+    else:
+        _native = project / "spec/execution/ui-inputs/index.json"
+        if _native.is_file():
+            from lib.ios_stage1_scope import load_inventory
+            inventory_path, data = load_inventory(project, None)
+        else:
+            inventory_path = _inventory_path(project)
+            data = _read(inventory_path) if inventory_path else None
     units = data.get("units", []) if isinstance(data, dict) else []
     required_units = [
         str(unit.get("unit_id"))

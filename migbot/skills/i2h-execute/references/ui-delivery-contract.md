@@ -69,6 +69,24 @@ python3 <i2h-plan>/scripts/ui_delivery.py validate --project-root <project> \
 原地审批在 approved 清单保留候选和验证回执摘要。既有工程的历史清单路径继续兼容。
 检查修订：`ui_delivery.py diff --project-root <project> --inventory <inventory> --out <diff.json>`。
 
+### iOS 执行域解析路由
+
+canonical baseline 冻结不变，原始槽位、source_refs hash 严格锁定。解析请求明确为 JSON：baseline_sha256、requests 数组。
+集成诉求：unit_id、slot_index（可选，默认 0）、original_slot（原基线槽位对象）、integration（nested caller_file/caller_line/callee/expected_owner/targethost）。
+源码替代：unit_id、source_only（state_id/alternative_kind/source_file/source_sha256/source_line/declaration）。
+不涉及 required/states/roles/output/verification 分母改写。approved 类型化替代仅当确切状态冻结且当前运行确实缺失时应用；
+格式错或已审核/不完整绑定禁止降级；任意理由不足为证。G0 SOURCE_ONLY 结构 PASS 但视觉 BLOCKED；G1 STRUCTURAL_ONLY PASS 不证明编译/到达/视觉/业务/stage1_complete。
+保留完整视觉分母与历史尝试回执。
+
+~~~sh
+python3 <i2h-execute>/scripts/ui_inventory_resolution.py derive --project-root <absolute-project> --baseline spec/baseline/ui-delivery-approved.json --proof spec/execution/resolution-proof.json --out spec/execution/resolved-ui.json
+python3 <i2h-plan>/scripts/ui_delivery.py validate --project-root <absolute-project> --inventory <absolute-project>/spec/execution/resolved-ui.json --receipt-only --out <absolute-project>/spec/execution/resolution-receipt.json
+python3 <i2h-plan>/scripts/ui_delivery.py approve --project-root <absolute-project> --inventory <absolute-project>/spec/execution/resolved-ui.json --out <absolute-project>/spec/execution/resolved-ui.json --validation-receipt <absolute-project>/spec/execution/resolution-receipt.json --confirmation-ref <ref>
+python3 <i2h-execute>/scripts/ui_delivery_inputs.py --project-root <absolute-project> --inventory <absolute-project>/spec/execution/resolved-ui.json
+~~~
+
+消费者默认选用同标准原生 index.inventory_source 路径与原始 SHA，严格审批链条与重放；格式错或陈旧闭合失败；显式选择器优先；无原生索引时保留历史基线路径语义，历史尝试不变。
+
 ## Execute：脚本先声明输入
 
 ~~~sh

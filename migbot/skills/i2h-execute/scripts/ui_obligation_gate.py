@@ -713,11 +713,35 @@ def evaluate(root: Path | str, inventory: Path | str, *, sdk_symbol_catalog: Pat
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-root", required=True)
-    parser.add_argument("--inventory", default="spec/baseline/ui-delivery-approved.json")
+    parser.add_argument("--inventory", default=None)
     parser.add_argument("--output-json")
     parser.add_argument("--sdk-symbol-catalog", type=Path)
     args = parser.parse_args(argv)
-    result = evaluate(args.project_root, args.inventory, sdk_symbol_catalog=args.sdk_symbol_catalog)
+    project_root = Path(args.project_root).resolve()
+    inventory_path = args.inventory
+
+    if inventory_path is None:
+        index_path = project_root / "spec/execution/ui-inputs/index.json"
+        if index_path.is_file():
+            try:
+                from lib.ios_stage1_scope import load_inventory
+                inventory_path, _ = load_inventory(project_root, None)
+            except ValueError as e:
+                result = {"schema_version": 1, "gate": "i2h-execute.ui-obligations",
+                          "status": "FAIL", "inventory": str(index_path), "error": str(e), "errors": []}
+                text = json.dumps(result, ensure_ascii=False, indent=2) + "\n"
+                if args.output_json:
+                    Path(args.output_json).write_text(text, encoding="utf-8")
+                print(text, end="")
+                return 2
+        else:
+            inventory_path = "spec/baseline/ui-delivery-approved.json"
+
+    result = evaluate(project_root, inventory_path, sdk_symbol_catalog=args.sdk_symbol_catalog)
+    inv_file = Path(inventory_path) if Path(inventory_path).is_absolute() else project_root / inventory_path
+    if inv_file.is_file():
+        result["inventory_sha256"] = hashlib.sha256(inv_file.read_bytes()).hexdigest()
+
     text = json.dumps(result, ensure_ascii=False, indent=2) + "\n"
     if args.output_json:
         Path(args.output_json).write_text(text, encoding="utf-8")

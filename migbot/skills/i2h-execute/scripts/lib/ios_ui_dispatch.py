@@ -11,6 +11,7 @@ from pathlib import Path
 
 from .ios_stage1_scope import load_inventory
 from .ios_ui_delivery_gate import _check_unit, _project_file, _read_object, _states, host_slots
+from .ios_inventory_resolution import sha256_file
 
 
 INDEX = 'spec/execution/ui-inputs/index.json'
@@ -210,15 +211,68 @@ def prepare(root, unit_id, attempt, *, no_working_copies=False):
                     add(f'{state_id}:{kind}', path, expected, kind, project_relative(root, path), state_id=state_id)
             except (OSError, ValueError, KeyError) as exc:
                 gaps.append({'state_id': state_id, 'code': 'runtime_input_unavailable', 'detail': str(exc)})
+        from .ui_delivery_inputs_ios import _validate_typed_alternative, _evidence as _fresh_evidence
+        raw_alternatives = frozen.get('source_alternatives', [])
+        if not isinstance(raw_alternatives, list):
+            raise ValueError(f'source_alternatives must be a list: {unit_id}')
+        frozen_state_evidence = {s['state_id']: s['evidence'] for s in frozen['required_states']}
+        validated_alternatives = []
+        for alt in raw_alternatives:
+            if not isinstance(alt, dict):
+                raise ValueError(f'source alternative must be a dict: {unit_id}')
+            kind = alt.get('alternative_kind')
+            if kind != 'source_only':
+                raise ValueError(f'unrecognized alternative_kind: {kind}')
+            state_id = alt.get('state_id')
+            if state_id not in approved_states:
+                raise ValueError(f'source alternative for non-existent state: {state_id}')
+            approved_alts = [a for a in unit.get('input_alternatives', [])
+                             if isinstance(a, dict) and a.get('state_id') == state_id]
+            if len(approved_alts) != 1:
+                raise ValueError(f'source alternative requires exactly one approved typed alternative for state: {state_id}')
+            primary_refs = [*unit.get('source_refs', [])]
+            for st in approved_states.values():
+                primary_refs.extend(st.get('source_refs', []))
+            validated, error = _validate_typed_alternative(approved_alts[0], state_id, primary_refs, source_root)
+            if not validated:
+                raise ValueError(f'approved alternative validation failed for {state_id}: {error}')
+            if alt != validated:
+                raise ValueError(f'frozen alternative does not match approved validated proof: {state_id}')
+            frozen_ev = frozen_state_evidence.get(state_id, {})
+            if frozen_ev.get('status') != 'missing':
+                raise ValueError(f'source alternative requires frozen evidence missing, found: {frozen_ev.get("status")}')
+            approved_state = approved_states[state_id]
+            current_ev = _fresh_evidence(
+                root,
+                approved_state.get('evidence_page_id') or unit['page_id'],
+                approved_state.get('evidence_state_id') or state_id,
+            )
+            if current_ev['status'] != 'missing':
+                raise ValueError(f'source alternative requires current evidence missing, found: {current_ev["status"]}')
+            validated_alternatives.append(alt)
+            source_path = _project_file(source_root, alt['source_file'])
+            if source_path.is_file():
+                add(f'{state_id}:source_proof', source_path, alt['source_sha256'], 'ios_source_proof',
+                    alt['source_file'], state_id=state_id, alternative_kind='source_only')
         packet = {**frozen, 'schema_version': 2, 'dispatch_id': dispatch_id, 'attempt': attempt,
                   'required_inputs': inputs, 'input_gaps': gaps, 'inventory_source': source}
         if slots:
             packet['integration'] = slots
         packet_bytes = json_bytes(packet)
+        source_alt_state_ids = {alt['state_id'] for alt in validated_alternatives}
+        all_gaps_covered = gaps and all(gap['state_id'] in source_alt_state_ids for gap in gaps)
+        if all_gaps_covered:
+            status = 'SOURCE_ONLY'
+        elif gaps:
+            status = 'BLOCKED'
+        else:
+            status = 'READY'
+
         result = {
-            'status': 'BLOCKED' if gaps else 'READY', 'dispatch_id': dispatch_id, 'unit_id': unit_id, 'attempt': attempt,
+            'status': status, 'dispatch_id': dispatch_id, 'unit_id': unit_id, 'attempt': attempt,
             'packet_path': project_relative(root, destination / 'packet.json'), 'packet_sha256': sha256(packet_bytes),
             'prompt_path': project_relative(root, destination / 'prompt.md'), 'input_gaps': gaps,
+            'visual_status': 'BLOCKED' if status == 'SOURCE_ONLY' else None,
         }
         prompt = [
             '# iOS UI converter input', '', f'Unit {unit_id} / {unit["page_id"]} / {unit["component"]}',
@@ -288,8 +342,25 @@ def complete(root, dispatch_id):
         for item in packet['required_inputs']:
             checked_artifact(_project_file(root, item['object']), item['sha256'])
         errors, warnings = [], []
+        # Check if gaps have valid source alternatives
+        source_alternatives = packet.get('source_alternatives', [])
+        source_alt_states = {alt['state_id'] for alt in source_alternatives if alt.get('alternative_kind') == 'source_only'}
+
         for gap in prepared['input_gaps']:
-            errors.append({**gap, 'unit_id': unit['unit_id'], 'root_cause': 'information_gap'})
+            state_id = gap['state_id']
+            # If this gap has a valid source alternative, mark as SOURCE_ONLY instead of error
+            if state_id in source_alt_states:
+                # Verify source proof input was provided
+                source_proof_provided = any(
+                    item['kind'] == 'ios_source_proof' and item.get('state_id') == state_id
+                    for item in packet['required_inputs']
+                )
+                if source_proof_provided:
+                    warnings.append({**gap, 'unit_id': unit['unit_id'], 'resolution': 'source_only'})
+                else:
+                    errors.append({**gap, 'unit_id': unit['unit_id'], 'root_cause': 'information_gap'})
+            else:
+                errors.append({**gap, 'unit_id': unit['unit_id'], 'root_cause': 'information_gap'})
         inventory_source = packet['inventory_source']
         try:
             checked_artifact(_project_file(root, inventory_source['path']), inventory_source['sha256'])
@@ -312,16 +383,21 @@ def complete(root, dispatch_id):
             except (AttributeError, TypeError, KeyError, ValueError):
                 observations = set()
             for item in packet['required_inputs']:
+                # ALWAYS require image observations for screenshot_png inputs, never waived
                 if item['kind'] == 'screenshot_png' and (item['state_id'], item['input_id']) not in observations:
                     errors.append({'code': 'image_observation_missing', 'unit_id': unit['unit_id'],
-                                   'state_id': item['state_id'], 'input_id': item['input_id'],
+                                   'state_id': item.get('state_id'), 'input_id': item['input_id'],
                                    'root_cause': 'product_defect'})
         for name, path in artifacts.items():
             current = path.read_bytes() if path.is_file() else None
             if current != files.get(name):
                 raise ValueError(f'conversion output changed during G0 preflight: {path}')
+        # Determine status: PASS if no errors, SOURCE_ONLY if only source alternatives used, BLOCKED otherwise
+        has_source_only = any(w.get('resolution') == 'source_only' for w in warnings)
+        status = 'BLOCKED' if errors else ('SOURCE_ONLY' if has_source_only else 'PASS')
+
         preflight = {'schema_version': 2, 'policy_gate': 'execute.stage1-g0', 'dispatch_id': dispatch_id,
-                     'unit_id': unit['unit_id'], 'status': 'BLOCKED' if errors else 'PASS',
+                     'unit_id': unit['unit_id'], 'status': status, 'result_scope': 'SOURCE_ONLY' if has_source_only else 'ORIGINAL_G0',
                      'failure_findings': errors, 'warnings': warnings,
                      'archive_sha256': {name: sha256(data) for name, data in files.items()}}
         files['preflight.json'] = json_bytes(preflight)
@@ -347,33 +423,78 @@ def aggregate_g0(root):
     inventory_hash = sha256(inventory_path.read_bytes())
     with locked(folder):
         records = events(folder)
-        first = {}
+        attempts = {}
         for event in records:
             if event['event'] == 'prepare':
                 row = event['result']
                 name = row['unit_id']
-                if name not in first or row['attempt'] < first[name]['attempt']:
-                    first[name] = row
+                attempts.setdefault(name, []).append(row)
         units = []
         for unit in inventory['units']:
             if unit.get('required') is False:
                 continue
             name = unit['unit_id']
-            row = first.get(name)
-            archived = read_completed(root, records, row['dispatch_id']) if row else None
-            if archived:
-                archived_packet = _read_object(_project_file(root, row['packet_path']))
-                if digest(archived_packet['inventory_source']['sha256']) != inventory_hash:
-                    archived = {'unit_id': name, 'status': 'STALE', 'code': 'approved_inventory_changed'}
-            units.append(archived or {'unit_id': name, 'status': 'NOT_RUN', 'code': 'first_g0_archive_missing'})
+            all_rows = attempts.get(name, [])
+            current_rows = []
+            prior_rows = []
+            for row in all_rows:
+                packet_path = _project_file(root, row['packet_path'])
+                checked_artifact(packet_path, row['packet_sha256'])
+                packet = _read_object(packet_path)
+                row_inv_hash = digest(packet['inventory_source']['sha256'])
+                if row_inv_hash == inventory_hash:
+                    current_rows.append(row)
+                else:
+                    prior_rows.append((row, row_inv_hash))
+            if not current_rows:
+                units.append({'unit_id': name, 'status': 'NOT_RUN', 'code': 'first_g0_archive_missing'})
+                continue
+            current_rows.sort(key=lambda r: r['attempt'])
+            row = current_rows[0]
+            archived = read_completed(root, records, row['dispatch_id'])
+            unit_result = archived or {'unit_id': name, 'status': 'NOT_RUN', 'code': 'first_g0_archive_missing'}
+            prior_history = []
+            for prior_row, prior_inv_hash in prior_rows:
+                prior_completed = read_completed(root, records, prior_row['dispatch_id'])
+                prior_history.append({
+                    'unit_id': name, 'dispatch_id': prior_row['dispatch_id'],
+                    'inventory_sha256': prior_inv_hash,
+                    'status': prior_completed['status'] if prior_completed else 'NOT_RUN',
+                    'archive_path': prior_completed['archive_path'] if prior_completed else None,
+                })
+            if prior_history:
+                unit_result['prior_authority_history'] = prior_history
+            units.append(unit_result)
+        # Determine aggregate status: PASS if all PASS, structural if some SOURCE_ONLY, BLOCKED otherwise
+        pass_count = sum(1 for u in units if u['status'] == 'PASS')
+        source_only_count = sum(1 for u in units if u['status'] == 'SOURCE_ONLY')
+        blocked_count = sum(1 for u in units if u['status'] == 'BLOCKED')
+
+        if units and pass_count == len(units):
+            overall_status = 'PASS'
+            structural_status = 'PASS'
+        elif units and (pass_count + source_only_count) == len(units) and source_only_count > 0:
+            overall_status = 'BLOCKED'  # Visual still blocked
+            structural_status = 'PASS'  # But structural code is complete
+        else:
+            overall_status = 'BLOCKED'
+            structural_status = 'BLOCKED'
+
         result = {'schema_version': 2, 'policy_gate': 'execute.stage1-g0', 'result_scope': 'ORIGINAL_G0',
-                  'status': 'PASS' if units and all(row['status'] == 'PASS' for row in units) else 'BLOCKED',
-                  'stage1_complete': False, 'required_units': len(units), 'units': units}
-        if units and all(row['status'] in {'PASS', 'BLOCKED'} for row in units):
-            destination = folder / 'g0.json'
+                  'status': overall_status, 'structural_status': structural_status,
+                  'stage1_complete': False, 'visual_status': 'BLOCKED',
+                  'required_units': len(units), 'units': units, 'inventory_sha256': inventory_hash}
+        if units and all(row['status'] in {'PASS', 'BLOCKED', 'SOURCE_ONLY'} for row in units):
             raw = json_bytes(result)
-            if destination.exists() and destination.read_bytes() != raw:
-                raise ValueError('original aggregate already exists for a different approved scope')
+            content_hash = sha256(raw)
+            archive_root = folder / 'g0'
+            archive_root.mkdir(exist_ok=True)
+            archive_path = archive_root / content_hash
+            if archive_path.exists():
+                checked_artifact(archive_path / 'aggregate.json', content_hash)
+            else:
+                save_directory(archive_path, {'aggregate.json': raw})
+            destination = folder / 'g0.json'
             if not destination.exists():
                 atomic_write(destination, raw)
         return result

@@ -31,16 +31,31 @@ def _conversion_receipts(root, inventory, inventory_hash, records):
         if unit.get('required') is False:
             continue
         name = unit['unit_id']
-        rows = sorted(attempts.get(name, []), key=lambda row: row['attempt'])
-        if not rows:
+        all_rows = attempts.get(name, [])
+        if not all_rows:
             errors.append(_finding('g0_dispatch_missing', name, 'required unit was not dispatched'))
             continue
+        current_rows = []
+        prior_rows = []
+        for row in all_rows:
+            packet_path = _project_file(root, row['packet_path'])
+            checked_artifact(packet_path, row['packet_sha256'])
+            packet = _read_object(packet_path)
+            row_inv_hash = digest(packet['inventory_source']['sha256'])
+            if row_inv_hash == inventory_hash:
+                current_rows.append(row)
+            else:
+                prior_rows.append((row, row_inv_hash))
+        if not current_rows:
+            errors.append(_finding('g0_inventory_stale', name, 'no G0 attempts for current approved inventory'))
+            continue
+        rows = sorted(current_rows, key=lambda row: row['attempt'])
         original = read_completed(root, records, rows[0]['dispatch_id'])
         latest = read_completed(root, records, rows[-1]['dispatch_id']) if len(rows) > 1 else original
         if original is None:
             errors.append(_finding('g0_original_archive_missing', name, 'first attempt has no original archive'))
-        if latest is None or latest['status'] != 'PASS':
-            errors.append(_finding('g0_current_not_passed', name, 'latest attempt has no passing G0 archive'))
+        if latest is None or latest['status'] not in ('PASS', 'SOURCE_ONLY'):
+            errors.append(_finding('g0_current_not_passed', name, 'latest attempt has no passing or SOURCE_ONLY G0 archive'))
             continue
         path = _project_file(root, latest['archive_path'])
         packet = _read_object(path / 'packet.json')
@@ -53,11 +68,23 @@ def _conversion_receipts(root, inventory, inventory_hash, records):
             errors.append(_finding('g0_live_report_changed', name, 'current conversion report differs from the archived report'))
             continue
         if original is not None:
-            receipts.append({
+            receipt = {
                 'unit_id': name, 'first_dispatch_id': original['dispatch_id'], 'first_status': original['status'],
                 'current_dispatch_id': latest['dispatch_id'], 'archive_path': latest['archive_path'],
                 'preflight_sha256': latest['preflight_sha256'], 'report_sha256': sha256(archived_report.read_bytes()),
-            })
+            }
+            prior_history = []
+            for prior_row, prior_inv_hash in prior_rows:
+                prior_completed = read_completed(root, records, prior_row['dispatch_id'])
+                prior_history.append({
+                    'unit_id': name, 'dispatch_id': prior_row['dispatch_id'],
+                    'inventory_sha256': prior_inv_hash,
+                    'status': prior_completed['status'] if prior_completed else 'NOT_RUN',
+                    'archive_path': prior_completed['archive_path'] if prior_completed else None,
+                })
+            if prior_history:
+                receipt['prior_authority_history'] = prior_history
+            receipts.append(receipt)
     return receipts, errors
 
 
