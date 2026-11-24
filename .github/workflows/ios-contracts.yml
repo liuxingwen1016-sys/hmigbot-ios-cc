@@ -42,8 +42,24 @@ jobs:
       - name: Install contract test dependencies
         run: python -m pip install pytest Pillow ImageHash
 
+      - name: Install preserved regression test dependency
+        run: python -m pip install pytest==8.3.5 packaging==24.2 pluggy==1.5.0 iniconfig==2.0.0
+
+      - name: Run preserved routing and cumulative-budget contracts
+        if: runner.os != 'Windows'
+        run: |
+          python migbot/scripts/test_execution_policy.py -v
+          python migbot/scripts/test_execution_install.py -v
+
+      - name: Reopen original online G0 after modal-visual upgrade
+        if: runner.os != 'Windows'
+        run: python migbot/scripts/test_modal_visual_upgrade.py -v
+
       - name: Run offline iOS E2E fixture
         run: python tests/test_e2e_i2h_fixture.py -v
+
+      - name: Run preserved Plan/UI coverage regression
+        run: python tests/test_plan_ui_coverage.py -v
 
       - name: Run marker schema and hash tests
         run: python -m unittest tests/test_marker_contract.py -v
@@ -61,6 +77,16 @@ jobs:
 
       - name: Run native Verify contract tests
         run: python -m pytest -q migbot/skills/i2h-verify/scripts/tests
+
+      - name: Run preserved source and authority function-style tests
+        # These online pytest tests are not collected by unittest discover.
+        run: |
+          python -m pytest -q migbot/skills/i2h-spec/scripts/tests/test_declaration_scoping.py migbot/skills/i2h-spec/scripts/tests/test_resource_fidelity.py migbot/skills/i2h-spec/scripts/tests/test_native_skeleton_consumers.py
+          python -m pytest -q migbot/skills/i2h-plan/scripts/tests/test_feat_glob_fix.py migbot/skills/i2h-plan/scripts/tests/test_ui_delivery_host_validation.py migbot/skills/i2h-plan/scripts/tests/test_plan_dependency_checks.py
+          python -m pytest -q migbot/skills/i2h-execute/scripts/tests/test_authority_strict.py migbot/skills/i2h-execute/scripts/tests/test_current_authority_chain.py migbot/skills/i2h-execute/scripts/tests/test_indentation_defect.py
+
+      - name: Run modal foreground/capture regressions
+        run: python -m unittest discover -s migbot/skills/i2h-verify/scripts/tests -p "test_modal_visual_*.py" -v
 
       - name: Compile Python sources
         shell: bash

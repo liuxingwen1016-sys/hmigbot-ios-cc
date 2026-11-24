@@ -4,9 +4,48 @@
 
 ## 当前状态
 
-仓库已经包含 i2h 五阶段 Skill、iOS 参考 Skill、模板、脚本和 Cuike 试点记录。设计和文档改造已经形成体系，但目前还不能把它描述为“任意项目生产就绪”：安装运行时入口、阶段标记、部分脚本依赖和端到端验证仍有缺口，详见 [`docs/IMPLEMENTATION_AUDIT.md`](docs/IMPLEMENTATION_AUDIT.md)。
+仓库已经包含 i2h 五阶段 Skill、iOS 参考 Skill、模板与脚本。本次原生模态视觉工具契约和已安装验收入口通过了下文列出的 R3 回归；任意应用的签名、设备能力、视觉保真和完整行为仍须逐项目真实验证，不能据工具测试直接宣称“任意项目生产就绪”。历史问题与证据保留在 [`docs/IMPLEMENTATION_AUDIT.md`](docs/IMPLEMENTATION_AUDIT.md)。
 
 历史文档中的“90.8% 自动转换率”是 Cuike 原型阶段的统计估算，不代表编译通过率、行为等价率，也不是通用验收标准。
+
+## 2026-11-24 更新：原生模态视觉验收与门禁一致性（R3）
+
+本次将经过独立复审的 **modal-visual R3** 合入 `main_ui_optimize`，线上基线为 `e057f483540fd98d36d1541bbfecb00a36b6b4e3`。优化对象是可复用的工具和正式验收入口，不把工具回归通过写成 Cuike 等应用的设备验收通过，也不宣称全流水线已达到两小时目标。
+
+### 合并后具体优化了哪些能力
+
+| 能力 | 合并后的实际行为 |
+|---|---|
+| 原生活动层识别 | 从唯一聚焦的应用窗口识别当前 SheetPage / ModalPage。隐藏控件、异包窗口、UIExtension 和被遮挡底层控件不能满足严格状态谓词。多分支模态只按有明确原生证据的自身焦点关系消歧，不能按遍历顺序或“哪层能通过”猜测。 |
+| 截图前后状态一致 | 截图前后都执行同一个批准谓词；业务 is_ready 只是附加条件。同包、同路由下，截图后才出现或已经消失的弹层不能产出可通过正式回放的严格回执，底层重复 ID 也不能蒙混通过。保留前后原树与观察。 |
+| 实际安装包身份绑定 | 读取构建 HAP 的 module.json、安装成功日志和 bm 包身份日志。批准谓词包名、实际前台包名与已核验安装包名必须一致；身份缺失、错包、版本不符或畸形数据均阻断。 |
+| 截图与原树摘要核验 | capture-index、assemble、visual archive、正式 smoke 重新读取原件及 SHA。缺图、换图、改树不能只靠旧标签通过。严格采集汇总校验采集时保存的图像摘要，不会在换图后重新计算摘要并放行。 |
+| 批准清单与逐 pair 验证 | 按当前批准清单重建 scope，按 pair_id 读取对应谓词。同页同状态多条 pair 逐条校验并保留完整分母；删谓词、删 pair 或把传入 scope 改成旧 schema，不能退回标签验收。 |
+| 汇总状态、范围与安装一致 | 严格 case 必须已成功到态，build/install 回执绑定当前 scope，同一汇总使用同一 HAP 和设备；原件必须在当前采集目录。BLOCKED 场景的遗留文件不会被升级成 PASS。 |
+| 活动层匹配与原诊断共存 | 控件关系仅在活动层匹配；坐标继续使用原始视口，状态栏裁剪/重叠诊断继续读取完整原树。避免底层控件补齐缺失锚点，也避免过滤活动层时误丢系统状态栏。 |
+| Plan 空值与类型处理 | 先确认 verification_states 为列表再遍历。旧版非严格清单的字段缺失/null 可继续读取；非列表输入、严格运行时缺项返回结构化错误。 |
+| Windows/Linux/macOS CI | 保留三平台矩阵及原通用测试。依赖 fcntl 或 POSIX 假 CLI 的路由、预算和相关安装升级测试仅在 macOS/Linux 运行；Windows 保留通用契约与新增模态回归。 |
+| 旧项目升级 | 保留原配置及原 G0 归档。e057f48 原工具产生的 G0 PASS 升级后逐字节保留，可原样重新汇总，并通过 G1 结构验收。 |
+
+### 如何启用与兼容旧项目
+
+通过原 Plan 审批流程，在批准 UI 清单的 verification_states 对应行添加 target_observation，例如：
+
+```json
+{"bundle":"com.example.demo","page_path":"pages/Root","present":[{"id":"editorName"}],"absent":[{"id":"errorDialog"}]}
+```
+
+带批准谓词的 pair 自动要求严格回放。若要求所有视觉 pair 都必须严格验证，可在项目阶段断点将 `.migbot/config.json` 的 `native_visual_observation` 设置为 `native-page-state-v2`，缺谓词即阻断。采集器必须把同一批准谓词交给 capture_checkpoint，并将回调提供的截图前原树传给 write_visual_arrival；具体字段、调用示例见[原生模态视觉合同](migbot/skills/i2h-verify/references/native-modal-visual.md)。
+
+安装升级不会自动开启严格模式、改写批准范围或给历史回执补造证据。旧非严格回执维持原读取规则；缺前后树、原图摘要或真实安装身份的严格证据保持未验证。CHECK-5 行为录制、uitest_scenario.py 与 layout_from_step 不在本次范围内。
+
+### 保留的线上能力与验证结果
+
+此前快照同步包涉及的 **48 个线上文件全部保留，SHA 不变**。Claude 任务路由、累计预算和 agent 安装，Execute 批准清单/source_only，Plan 需求索引/覆盖，以及 Spec Swift 声明、本地化、字体、主题和实际安装身份检查及原测试均保留。此前已完成的“旧 Android 二进制改为 Python iOS 门禁”也继续保留，不会重新装回旧 Android 二进制。
+
+R3 工具产物与本次合并副本分别在 macOS 本机完成 **773 项回归、0 跳过**，包括干净安装、旧 G0 原样重汇总和 G1。13 项新增独立安装入口测试在原 R2 上为 **11 失败、2 通过**，补修后 **13 通过**。e057f48 上的正反向应用及全文件摘要校验通过。Windows/Linux 只配置了 CI，本次本地复审未实跑，提交后的远端 CI 结果需单独查看。以上不代表真实应用已通过设备 Verify。
+
+见[独立复审与验证摘要](docs/patches/20261124-modal-visual-review.md)、[逐文件原因](docs/patches/20261123-modal-visual-port.md)和[机器验证记录](docs/patches/20261124-modal-visual-validation.json)。已有转换项目在当前阶段结束后再用原安装器升级，避免在进行中的转换阶段更换工具。
 
 ## 流水线
 

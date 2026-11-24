@@ -142,8 +142,12 @@ def validate_smoke(root, scope, scope_hash, report):
         pair = formal.get(pair_id)
         evidence_id = digest(case['evidence']['sha256'])
         if (not pair or pair_id in seen_pairs or evidence_id in seen_evidence or case.get('arrived') is not True
-                or case.get('page_id') != pair['page_id'] or receipt.get('observed_page_id') != pair['page_id']
-                or receipt.get('observed_state_id') != pair['state_id'] or not receipt.get('capture_run_id')):
+                or case.get('page_id') != pair['page_id'] or not receipt.get('capture_run_id')):
+            raise ValueError('smoke case requires unique evidence for the actual formal page and state')
+        if isinstance(receipt.get('page_state_observation'), dict):
+            if (receipt.get('declared_page_id'), receipt.get('declared_state_id')) != (pair['page_id'], pair['state_id']):
+                raise ValueError('smoke case declared page or state differs from the approved pair')
+        elif (receipt.get('observed_page_id'), receipt.get('observed_state_id')) != (pair['page_id'], pair['state_id']):
             raise ValueError('smoke case requires unique evidence for the actual formal page and state')
         if receipt['build_receipt'] != report['build_receipt'] or receipt['install_receipt'] != report['install_receipt']:
             raise ValueError('smoke cases must use the same build and install receipts')

@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "baseline_commit": "e057f483540fd98d36d1541bbfecb00a36b6b4e3",
+  "component": "native modal visual acceptance R3",
+  "evidence_scope": "offline tool-contract tests; no application device acceptance",
+  "macOS": {
+    "tests_passed": 773,
+    "tests_skipped": 0,
+    "python": "3.12.1",
+    "suites": [
+      {
+        "suite": "root-fixture",
+        "tests": 1,
+        "exit_code": 0
+      },
+      {
+        "suite": "root-markers",
+        "tests": 9,
+        "exit_code": 0
+      },
+      {
+        "suite": "root-plan-coverage",
+        "tests": 18,
+        "exit_code": 0
+      },
+      {
+        "suite": "execution-policy",
+        "tests": 22,
+        "exit_code": 0
+      },
+      {
+        "suite": "execution-install",
+        "tests": 3,
+        "exit_code": 0
+      },
+      {
+        "suite": "g0-upgrade",
+        "tests": 2,
+        "exit_code": 0
+      },
+      {
+        "suite": "installed-runtime",
+        "tests": 18,
+        "exit_code": 0
+      },
+      {
+        "suite": "spec",
+        "tests": 98,
+        "exit_code": 0
+      },
+      {
+        "suite": "plan",
+        "tests": 195,
+        "exit_code": 0
+      },
+      {
+        "suite": "execute",
+        "tests": 360,
+        "exit_code": 0
+      },
+      {
+        "suite": "verify",
+        "tests": 47,
+        "exit_code": 0
+      }
+    ]
+  },
+  "independent_tests": {
+    "original_R2": {
+      "failed": 11,
+      "passed": 2
+    },
+    "corrected_R3": {
+      "passed": 13
+    }
+  },
+  "patch_apply_reverse_full_hashes": "PASS",
+  "legacy_G0_exact_resummary_and_G1": "PASS",
+  "all48_online_files_unchanged": true,
+  "Linux": {
+    "actual_run": false,
+    "status": "NOT_RUN_IN_LOCAL_REVIEW"
+  },
+  "Windows": {
+    "actual_run": false,
+    "status": "NOT_RUN_IN_LOCAL_REVIEW"
+  },
+  "integration_test_result": {
+    "status": "PASS",
+    "tests_passed": 773,
+    "tests_skipped": 0,
+    "platform": "macOS",
+    "at": "2026-11-24T15:00:32.463450+08:00"
+  }
+}

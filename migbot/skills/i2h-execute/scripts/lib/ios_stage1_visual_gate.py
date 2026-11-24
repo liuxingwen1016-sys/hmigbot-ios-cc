@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from pathlib import Path
 import json
 
 from .ios_stage1_scope import MAX_REPAIRS, acceptance_lane, build_scope_from_inventory
@@ -62,6 +63,31 @@ def checked_build(root, ref, scope_hash, source_hash):
     return build
 
 
+def checked_install_bundle(root, build, install, predicate):
+    """Replay the existing HAP metadata, install log and bm identity receipt, read-only."""
+    from .host_verify_handoff import _identity, _observed_identity, _read, INSTALL_SUCCESS
+    if (build.get('hap_path') != install.get('hap_path')
+            or digest(build.get('hap_sha256')) != digest(install.get('hap_sha256'))):
+        raise ValueError('strict installation does not bind the built HAP')
+    hap = _project_file(root, build['hap_path'])
+    checked_artifact(hap, build['hap_sha256'])
+    try:
+        bundle, version = _identity(hap)
+    except (TypeError, AttributeError) as error:
+        raise ValueError('strict HAP metadata has an invalid identity shape') from error
+    if (install.get('bundle'), install.get('version_code')) != (bundle, version):
+        raise ValueError('strict visual installation identity is missing or differs from HAP')
+    if predicate.get('bundle') != bundle:
+        raise ValueError('approved predicate bundle differs from installed HAP bundle')
+    if not INSTALL_SUCCESS.search(_read(root, install['install_log']).decode(errors='replace')):
+        raise ValueError('strict visual install log does not confirm installation')
+    try:
+        _observed_identity(_read(root, install['identity_log']).decode(errors='replace'), bundle, version)
+    except (TypeError, AttributeError) as error:
+        raise ValueError('strict installed identity query must contain an object') from error
+    return bundle
+
+
 def _arrival(root, expected, actual, scope_hash, source_hash):
     receipt = _checked_json(root, actual['arrival_receipt'])
     if (receipt.get('status'), receipt.get('pair_id'), receipt.get('arrival_mode')) != (
@@ -74,8 +100,56 @@ def _arrival(root, expected, actual, scope_hash, source_hash):
         raise ValueError('build and device installation do not bind the same HAP')
     if receipt.get('device_id') != install['device_id']:
         raise ValueError('arrival device does not match installation')
+    # Strict state claims are recomputed from the bound raw tree in the active native layer.
+    # No expected page ID, echoed label, root envelope or background window can substitute.
+    config_path = root / '.migbot/config.json'
+    config = _json_object(config_path.read_bytes()) if config_path.is_file() else {}
+    contract = config.get('native_visual_observation')
+    if contract not in (None, 'native-page-state-v2'):
+        raise ValueError('unsupported configured native visual observation contract')
+    predicate = expected.get('target_observation')
+    observation = receipt.get('page_state_observation')
+    if contract and predicate is None:
+        raise ValueError('approved target page/state observation predicate required')
+    if predicate is not None or observation is not None:
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'i2h-plan/scripts'))
+        from native_scenario_evidence import observe_state
+        if predicate is None or not isinstance(observation, dict):
+            raise ValueError('native page/state observation is not bound to the approved predicate')
+        if (receipt.get('declared_page_id'), receipt.get('declared_state_id')) != (
+                expected['page_id'], expected['state_id']):
+            raise ValueError('declared page/state differs from the approved pair')
+        checked_install_bundle(root, build, install, predicate)
+        before_ref = receipt.get('pre_capture_tree')
+        if not isinstance(before_ref, dict):
+            raise ValueError('strict visual arrival lacks pre-capture approved observation')
+        before = {**observe_state(_checked_json(root, before_ref), predicate),
+                  'layout_sha256': before_ref['sha256']}
+        if receipt.get('pre_capture_observation') != before:
+            raise ValueError('pre-capture observation differs from the approved native tree')
+        frames = receipt.get('frames')
+        if not isinstance(frames, list) or not frames:
+            raise ValueError('native page/state observation needs captured frames')
+        if _index(frames, 'comparison_id').keys() != _index(expected['comparisons'], 'comparison_id').keys():
+            raise ValueError('native observation frames differ from approved comparisons')
+        for frame in frames:
+            tree_ref = frame['harmony_xml']
+            tree = _checked_json(root, tree_ref)
+            actual_observation = {**observe_state(tree, predicate), 'layout_sha256': tree_ref['sha256']}
+            if actual_observation['active_layer'] != before['active_layer']:
+                raise ValueError('active native layer changed during screenshot')
+            if actual_observation != observation:
+                raise ValueError('native page/state observation differs from actual captured tree')
+            if 'observed_window' in receipt and receipt['observed_window'] != {
+                    'bundle': actual_observation['bundle'], 'page_path': actual_observation['page_path']}:
+                raise ValueError('observed window differs from the bound native tree')
     if 'frames' in receipt:
-        if (receipt.get('observed_page_id'), receipt.get('observed_state_id')) != (
+        for frame in receipt['frames']:
+            _, image = _checked_ref(root, frame['harmony_png'])
+            if not image.startswith((b'\x89PNG\r\n\x1a\n', b'\xff\xd8\xff')):
+                raise ValueError('arrival screenshot is not PNG or JPEG')
+        if observation is None and (receipt.get('observed_page_id'), receipt.get('observed_state_id')) != (
             expected['page_id'], expected['state_id']
         ):
             raise ValueError('arrival receipt does not confirm approved page/state')

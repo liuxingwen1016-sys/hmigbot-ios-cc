@@ -13,7 +13,7 @@ import time
 from uuid import uuid4
 import warnings
 
-from uitest_action import require_focused_app
+from uitest_action import native, observed_window, require_focused_app
 
 
 class CheckpointTimeout(RuntimeError):
@@ -88,7 +88,7 @@ def capture_uitest_artifact(destination, *, kind, send):
 
 def write_visual_arrival(spec_root, destination, *, pair, capture_run_id, device_id,
                          screenshot, layout, matched_tree, build_receipt, install_receipt,
-                         landing_evidence=None):
+                         landing_evidence=None, pre_capture_tree=None):
     """Persist native evidence after capture_checkpoint confirms the expected state."""
     root = Path(spec_root).resolve()
 
@@ -105,13 +105,29 @@ def write_visual_arrival(spec_root, destination, *, pair, capture_run_id, device
     tree_ref, raw_layout = artifact(layout)
     if json.loads(raw_layout) != matched_tree:
         raise ValueError('saved layout differs from the state-ready tree')
+    # Record the actual unique foreground window. Plan page IDs are declarations, not native routes.
+    window = observed_window(matched_tree)
+    predicate = pair.get('target_observation')
+    if predicate is not None:
+        if pre_capture_tree is None:
+            raise ValueError('strict arrival requires the approved pre-capture tree')
+        before_observed = native.observe_state(pre_capture_tree, predicate)
+        observed = native.observe_state(matched_tree, predicate)
+        if before_observed['active_layer'] != observed['active_layer']:
+            raise ValueError('active native layer changed during screenshot')
+        identity = {'declared_page_id': pair['page_id'], 'declared_state_id': pair['state_id'],
+                    'page_state_observation': {**observed, 'layout_sha256': tree_ref['sha256']}}
+    else:
+        # Historical receipts keep their explicit legacy identity. They are not native state proof.
+        identity = {'observed_page_id': pair['page_id'], 'observed_state_id': pair['state_id'],
+                    'identity_origin': 'legacy_runner_declared_not_native_observation'}
     screenshot_ref, _ = artifact(screenshot)
     build_ref, _ = artifact(build_receipt)
     install_ref, _ = artifact(install_receipt)
     landing_ref = artifact(landing_evidence)[0] if landing_evidence else tree_ref
     receipt = {
         'status': 'PASS', 'pair_id': pair['pair_id'], 'arrival_mode': pair['arrival_mode'],
-        'observed_page_id': pair['page_id'], 'observed_state_id': pair['state_id'],
+        **identity, 'observed_window': window,
         'capture_run_id': capture_run_id, 'device_id': device_id,
         'build_receipt': build_ref, 'install_receipt': install_ref, 'landing_evidence': landing_ref,
         'frames': [{'comparison_id': frame['comparison_id'], 'harmony_png': screenshot_ref,
@@ -119,6 +135,12 @@ def write_visual_arrival(spec_root, destination, *, pair, capture_run_id, device
     }
     destination = Path(destination).resolve()
     destination.relative_to(root)
+    if predicate is not None:
+        before_path = destination.with_suffix('.before.json')
+        before_path.write_text(json.dumps(pre_capture_tree, ensure_ascii=False, sort_keys=True), encoding='utf-8')
+        before_ref, _ = artifact(before_path)
+        receipt['pre_capture_tree'] = before_ref
+        receipt['pre_capture_observation'] = {**before_observed, 'layout_sha256': before_ref['sha256']}
     with NamedTemporaryFile(dir=destination.parent, mode='w', encoding='utf-8', delete=False) as stream:
         temporary = Path(stream.name)
         try:
@@ -143,6 +165,7 @@ def capture_checkpoint(
     timeout: float = 8,
     interval: float = 0.15,
     image_ready_seconds: float = 0,
+    target_observation: dict | None = None,
 ) -> dict:
     """Return the matched tree and capture an image only in the requested scope.
 
@@ -157,13 +180,25 @@ def capture_checkpoint(
         raise ValueError('checkpoint timeout and interval must be finite and positive')
     if not math.isfinite(image_ready_seconds) or not 0 <= image_ready_seconds < timeout:
         raise ValueError('image readiness duration must be nonnegative and less than the timeout')
+    if target_observation is not None:
+        native.validate_state_predicate(target_observation)
+        if target_observation['bundle'] != bundle or record_arrival is None:
+            raise ValueError('strict capture requires the approved bundle and arrival callback')
+    def approved_ready(value):
+        if target_observation is None:
+            return True
+        try:
+            native.observe_state(value, target_observation)
+            return True
+        except ValueError:
+            return False
     wants_image = approved_images is None or name in approved_images
     ready_since = None
     deadline = time.monotonic() + timeout
     while True:
         tree = read_layout(name)
         require_focused_app(tree, bundle)
-        ready = is_ready(tree)
+        ready = is_ready(tree) and approved_ready(tree)
         now = time.monotonic()
         if ready and now <= deadline:
             if not wants_image:
@@ -171,14 +206,21 @@ def capture_checkpoint(
             if ready_since is None:
                 ready_since = now
             if now - ready_since >= image_ready_seconds:
+                pre_capture_tree = json.loads(json.dumps(tree))
                 capture_image(name)
                 if record_arrival is None:
                     return tree
                 confirmed = read_layout(name)
                 require_focused_app(confirmed, bundle)
-                if not is_ready(confirmed):
+                same_layer = (target_observation is None or not approved_ready(confirmed)
+                              or native.observe_state(pre_capture_tree, target_observation)['active_layer']
+                              == native.observe_state(confirmed, target_observation)['active_layer'])
+                if not is_ready(confirmed) or not approved_ready(confirmed) or not same_layer:
                     raise CheckpointTimeout(f'expected app state changed during image capture: {name}')
-                record_arrival(name, confirmed)
+                if target_observation is not None:
+                    record_arrival(name, confirmed, pre_capture_tree=pre_capture_tree)
+                else:
+                    record_arrival(name, confirmed)
                 return confirmed
         else:
             ready_since = None

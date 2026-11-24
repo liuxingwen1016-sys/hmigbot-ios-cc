@@ -222,18 +222,7 @@ CHECK-1/2 的具体规则见 [静态分析与 App 身份](references/static-and-
 明确要求首轮功能验证或局部复检时，使用 `/i2h-verify behavior` 或 `/i2h-verify recheck`
 及其独立报告。只读验证可使用该原生路径。
 
-**通用 Android Oracle 路径**：iOS 适配尚未完成，缺原生 runner 的范围保持 DEFERRED。
-
-**执行条件**（如未来支持）：
-- 调用 `Skill(arkts-behavior-verify)`
-- 传入：`ios_root`、`arkts_root`、`out`、`max_agents`、`ios_device_type`
-- 默认 `repair_mode=single-round`
-- 明确授权才执行 `--full-repair` 第二轮
-
-**状态映射**（参考）：
-- WARN：已修改并安装，但正确性未验证
-- DEFERRED：前置不满足（当前 iOS 不支持）
-- ERROR：构建/安装/流程失败
+没有项目原生runner或有效回执的范围保持DEFERRED，记录所缺输入；不启用Android Oracle，也不将已具备原生路径的CHECK-5整体描述为“iOS未来支持”。本次模态视觉升级不引入新的行为记录器或layout_from_step，参见[模态视觉合同](references/native-modal-visual.md)。
 
 **非门控特性**：
 - CHECK-5 的全部状态均不加入基础及已选视觉/UT 范围结论

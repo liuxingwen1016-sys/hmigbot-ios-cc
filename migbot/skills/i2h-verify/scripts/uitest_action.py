@@ -1,30 +1,134 @@
 """Resolve a label to its visible HarmonyOS UITest action."""
 from __future__ import annotations
 
+import importlib
+from pathlib import Path
 import re
+import sys
+
+_NATIVE_MODULE = 'native_scenario_evidence'
+
+# The self-contained install contract: a source checkout and the installed
+# ``.claude`` tree have the same shape, so this file always lives in
+# ``skills/i2h-verify/scripts`` next to the shared contract in
+# ``skills/i2h-plan/scripts``.  That one directory is the whole search space.
+_PLAN_SCRIPTS = Path(__file__).resolve().parents[2] / 'i2h-plan' / 'scripts'
+
+
+def _native_module_directory():
+    """Return the single sibling Plan ``scripts`` directory this install ships.
+
+    Nothing else is searched: a same-named module in some other ancestor directory
+    or elsewhere on ``sys.path`` belongs to a different project and must never be
+    mixed with this installation.
+    """
+    if not (_PLAN_SCRIPTS / f'{_NATIVE_MODULE}.py').is_file():
+        return None
+    return _PLAN_SCRIPTS
+
+
+def _is_installed_copy(module, expected: Path) -> bool:
+    """Accept only the module file this installation actually ships."""
+    origin = getattr(module, '__file__', None)
+    return isinstance(origin, str) and Path(origin).resolve() == expected
+
+
+def _import_native_module():
+    """Import the shared native evidence contract, refusing every other copy.
+
+    The caller's ``sys.path`` is never trusted to locate the module, and a module of
+    the same name that was already imported from anywhere else is a version mix:
+    it is rejected instead of silently reused from the import cache.
+    """
+    directory = _native_module_directory()
+    if directory is None:
+        raise ImportError(
+            f'cannot import {_NATIVE_MODULE!r}: the shared contract is not installed next to '
+            f'this module at {_PLAN_SCRIPTS}')
+    expected = (directory / f'{_NATIVE_MODULE}.py').resolve()
+    loaded = sys.modules.get(_NATIVE_MODULE)
+    if loaded is not None:
+        if not _is_installed_copy(loaded, expected):
+            raise ImportError(
+                f'{_NATIVE_MODULE!r} is already imported from '
+                f'{getattr(loaded, "__file__", None)!r}, not from this installation at {expected}')
+        return loaded
+    path = str(directory)
+    if path not in sys.path:
+        # Insert first so a foreign copy elsewhere on ``sys.path`` cannot win.
+        sys.path.insert(0, path)
+    module = importlib.import_module(_NATIVE_MODULE)
+    if not _is_installed_copy(module, expected):
+        raise ImportError(
+            f'{_NATIVE_MODULE!r} resolved to {getattr(module, "__file__", None)!r}, not to this '
+            f'installation at {expected}')
+    return module
+
+
+native = _import_native_module()
 
 
 class ForegroundError(ValueError):
-    def __init__(self, bundle: str, windows: list[dict]):
+    def __init__(self, bundle: str, windows: list[dict], detail: str = ''):
         self.windows = windows
         focused = sorted({window['bundle'] for window in windows if window['bundle']})
-        super().__init__(f"expected foreground {bundle!r}, observed {focused!r}")
+        message = f"expected foreground {bundle!r}, observed {focused!r}"
+        super().__init__(f"{message}: {detail}" if detail else message)
+
+
+def _is_focused(attrs: dict) -> bool:
+    """Read the focus flag through the shared native window contract."""
+    return native.focus_flag(attrs)
+
+
+def _focused_windows(tree: dict, expected: str = '') -> list[dict]:
+    """Project the focused windows, keeping this module's own error type and diagnostics.
+
+    ``native`` refuses a malformed focus flag; that refusal is translated here so callers
+    never see a bare ``native.ValueError`` that has dropped the observed windows.
+    """
+    try:
+        records = native.focused_window_records(tree)
+    except native.FocusWindowDiagnosticsError as error:
+        raise ForegroundError(expected, error.windows, str(error)) from error
+    return native.window_diagnostics(records)
 
 
 def require_focused_app(tree: dict, bundle: str) -> None:
-    """Require a focused app root before treating a dump as product evidence."""
-    windows = [
-        {'bundle': attrs.get('bundleName', ''), 'page': attrs.get('pagePath', '')}
-        for node in tree.get("children", [])
-        if (attrs := node.get("attributes", {})).get("focused") == "true"
-        and isinstance(attrs.get("bundleName", ''), str)
-    ]
-    focused = {window['bundle'] for window in windows if window['bundle']}
+    """Require one focused app root before treating a dump as product evidence."""
+    native.validate_bundle(bundle)
+    windows = _focused_windows(tree, bundle)
     # The app may expose an unfocused root below a system-owned modal.
-    # Require a focused root that also identifies an actual ability surface.
-    surface = any(window['bundle'] == bundle and window['page'] for window in windows)
-    if focused != {bundle} or not surface:
+    # Require a single focused root that also identifies an actual ability surface,
+    # so that a duplicated or ghost window cannot satisfy the foreground check.  A blank
+    # route is not an ability surface, so it can never be accepted as product evidence.
+    surface = any(window['bundle'] == bundle and window['page'].strip() for window in windows)
+    if len(windows) != 1 or windows[0]['bundle'] != bundle or not surface:
         raise ForegroundError(bundle, windows)
+
+
+def observed_window(tree: dict) -> dict:
+    """Read the foreground app window so a receipt records what was actually observed."""
+    windows = _focused_windows(tree)
+    if len(windows) != 1:
+        raise ForegroundError('', windows)
+    bundle, page = windows[0]['bundle'], windows[0]['page']
+    # Same actual-ability-page requirement as require_focused_app: an unfocused envelope,
+    # a missing page or a page that is not a real path is not a product window.
+    if not isinstance(bundle, str) or not bundle.strip() or not isinstance(page, str) or not page.strip():
+        raise ForegroundError('', windows)
+    return {'bundle': bundle, 'page_path': page}
+
+
+def focused_page_matches(tree: dict, bundle: str, page: str) -> bool:
+    """Match the one focused app window, rejecting envelope attributes and conflicts."""
+    try:
+        windows = _focused_windows(tree)
+    except ValueError:
+        return False
+    return (len(windows) == 1 and isinstance(bundle, str) and bool(bundle.strip())
+            and isinstance(page, str) and bool(page.strip())
+            and windows[0]['bundle'] == bundle and windows[0]['page'] == page)
 
 
 def _bounds(node, key="bounds"):
@@ -153,12 +257,12 @@ def grouped_row_action_center(
         for child in node.get("children", []):
             yield from visible_nodes(child, window_id)
 
-    windows = [node for node in tree.get("children", [])
-               if node.get("attributes", {}).get("focused") == "true"
-               and node["attributes"].get("bundleName") == bundle and node["attributes"].get("pagePath")]
-    if len(windows) != 1 or not (window_id := windows[0]["attributes"].get("hostWindowId")):
+    records = [record for record in native.focused_window_records(tree)
+               if record['bundle'] == bundle
+               and isinstance(record['page'], str) and record['page'].strip()]
+    if len(records) != 1 or not (window_id := records[0]['attributes'].get("hostWindowId")):
         raise ValueError("expected one focused app window with a native window ID")
-    window = windows[0]
+    window = records[0]['node']
     nodes = list(visible_nodes(window, window_id))
     overlays = [node["attributes"] for node in nodes if node["attributes"].get("id") in obstruction_ids]
     obstructions = visible_tab_bar_bounds(window)
@@ -224,7 +328,6 @@ def selected_tab_label(tree: dict, labels: set[str], *, container_id: str | None
     if len(selected) != 1:
         raise ValueError(f"expected one selected TabBar label, found {selected!r}")
     return selected[0]
-
 
 if __name__ == "__main__":
     import sys

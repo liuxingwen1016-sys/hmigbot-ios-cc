@@ -495,6 +495,11 @@ def compare_relationships(root, pair, frame, target_path, target_sha256=None, *,
     source_data, target_data = json.loads(source), json.loads(target)
     if not isinstance(source_data, dict) or not isinstance(target_data, dict):
         raise ValueError('native dumps must be JSON objects')
+    raw_target_data = target_data
+    if pair.get('target_observation') is not None:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'i2h-plan/scripts'))
+        from native_scenario_evidence import active_layer_tree
+        target_data = active_layer_tree(target_data, pair['target_observation'])
     ios_nav, harmony_surface = diagnostic_surface or (None, None)
     source_view, source_nodes = collect_ios(source_data, navigation_identifier=ios_nav)
     target_view, target_nodes = collect_harmony(target_data, native_control_roles=native_control_roles,
@@ -534,7 +539,7 @@ def compare_relationships(root, pair, frame, target_path, target_sha256=None, *,
         report['cross_presentation_overlaps'] = cross_presentation_overlaps
     if audit_status_bar:
         report['navigation_control_ids'] = sorted(set(navigation_control_ids))
-        report['navigation_status_bar'] = audit_navigation_status_bar(target_data, navigation_control_ids)
+        report['navigation_status_bar'] = audit_navigation_status_bar(raw_target_data, navigation_control_ids)
     if diagnostic_surface is not None:
         report['diagnostic_surface'] = {'ios_navigation_identifier': ios_nav,
                                         'harmony_surface_type': harmony_surface}

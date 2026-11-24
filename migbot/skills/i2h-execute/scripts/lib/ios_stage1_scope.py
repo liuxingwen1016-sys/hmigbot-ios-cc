@@ -304,6 +304,11 @@ def build_scope_from_inventory(root: Path | str, value: str | None) -> dict[str,
             "baseline": page["baseline"], "comparisons": [{"comparison_id": f"{pair_id}:0",
                                                               "ios_region_px": state.get("region_px")}],
         })
+        if 'target_observation' in row:
+            import sys
+            sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'i2h-plan/scripts'))
+            from native_scenario_evidence import validate_state_predicate
+            pairs[-1]['target_observation'] = validate_state_predicate(row['target_observation'])
     if verification:
         for page_id, state_id in sorted({(page["page_id"], page["state_id"]) for page, _ in approved_pages.values()} - covered):
             failures.append({"code": "visual_pair_missing", "page_id": page_id, "state_id": state_id,

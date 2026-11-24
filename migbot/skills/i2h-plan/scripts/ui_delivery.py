@@ -581,6 +581,17 @@ def validate(project_root: str | Path, inventory: dict[str, Any], *, require_run
             for code, rows in visual_binding_gaps(units, verification).items():
                 if rows:
                     errors.append({"code": code, "rows": rows})
+    verification_rows = inventory.get('verification_states')
+    if verification_rows is not None and not isinstance(verification_rows, list):
+        errors.append({'code': 'verification_states_invalid', 'message': 'verification_states must be a list or null'})
+    for row in verification_rows if isinstance(verification_rows, list) else []:
+        if isinstance(row, dict) and 'target_observation' in row:
+            from native_scenario_evidence import validate_state_predicate
+            try:
+                validate_state_predicate(row['target_observation'])
+            except (KeyError, TypeError, ValueError) as error:
+                errors.append({'code': 'target_observation_invalid',
+                               'verification_id': row.get('verification_id'), 'message': str(error)})
     seen_ids: set[str] = set()
     seen_outputs: set[str] = set()
     native_hashes: dict[Path, str | None] = {}

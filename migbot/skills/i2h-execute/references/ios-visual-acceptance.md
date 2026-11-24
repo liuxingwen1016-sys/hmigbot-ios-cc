@@ -293,3 +293,8 @@ Flash 1M 平台归属错误时，把 `pending[].labeled_recheck.status` 标为 `
 同时传入两张原图、标注对照图和关系报告，记录新上下文摘要及原组号
 `recovery_for`。续跑用 `attempted_labeled_rechecks` 读取已留存的补判回执。
 同一输入补判仍失败时保留缺口，继续由严格门禁报告。
+
+
+## 模态视觉的原生到态证据
+
+本版增加批准`target_observation`的活动原生层回放；旧G0归档和线上UI清单权威/source_only路径保持不变。具体前台唯一性、SheetPage/ModalPage消歧、截图+原树SHA绑定、严格开关和旧视觉证据边界见[模态视觉合同](../../i2h-verify/references/native-modal-visual.md)。不要以原树根pagePath或底层页面仍可见的标志控件证明上层模态状态。新回执只记录实际窗口，Plan page_id另列为声明身份。
