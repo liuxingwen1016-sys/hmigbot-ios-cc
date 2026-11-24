@@ -163,3 +163,7 @@ python -m pytest -q migbot/skills/i2h-verify/scripts/tests
 ## 合并后的文档入口
 
 本变更随main_ui_optimize的R3集成提交发布。仓库根README.md/README_CN.md逐项说明能力，独立复审与测试复现入口见[复审记录](20261124-modal-visual-review.md)，平台与本机回归数据见[验证摘要](20261124-modal-visual-validation.json)。原补丁交付目录的完整日志作为本机工具维护证据保留，不与应用工程或门禁状态混用。
+
+## 远端CI接续修正
+
+合并后追加的跨平台依赖、UTF-8、runner与静态分析JSON解析修复详见[复审记录的CI适配段](20261124-modal-visual-review.md#合并后的远端ci适配)。原25项R3移植清单保留为原补丁记录；接续提交另含静态分析器及其既有测试文件的修正，未删除线上文件。

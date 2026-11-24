@@ -26,8 +26,10 @@ This update integrates the reviewed **modal-visual R3** changes onto `main_ui_op
 | Capture-summary consistency | Keep every required pair, require a successful arrival state, bind build/install receipts to the current scope and one HAP/device, and confine raw artifacts to the current capture directory. A `BLOCKED` case with leftover files cannot become `PASS`. |
 | Relationship checks without lost diagnostics | Match semantic controls only in the active layer, while keeping the original coordinate viewport and the complete raw tree for existing status-bar clipping/overlap diagnostics. A covered control cannot fill a missing foreground anchor, and activity filtering no longer discards the system status bar. |
 | Plan input compatibility | Check that `verification_states` is a list before iterating. Missing/null fields remain readable in the legacy non-strict contract; invalid types and required runtime-state omissions produce structured validation errors. |
-| Cross-platform CI routing | Preserve the Ubuntu/macOS/Windows matrix and original common tests. Run POSIX-only routing, cumulative-budget and related upgrade tests on macOS/Linux. Windows retains common contract and new modal regression tests. |
+| Cross-platform CI routing | Preserve the Ubuntu/macOS/Windows matrix and original common tests. Use the supported `macos-latest` image, explicit ripgrep installation and UTF-8 Python I/O. Run POSIX-only routing, cumulative-budget and related upgrade tests on macOS/Linux. Windows retains common contract and new modal regression tests. |
 | Existing-project upgrades | Preserve existing project configuration and immutable old G0 receipts. The e057f48-generated G0 `PASS` fixture re-summarizes unchanged after installation, and G1 structural acceptance still passes. |
+
+The first remote CI run additionally exposed Windows console encoding, an unprovisioned ripgrep dependency and a retired macOS runner label. CI now provisions that dependency and UTF-8 explicitly and uses a supported macOS image. Static analysis uses ripgrep JSON events so Windows drive letters do not corrupt file/line parsing; failed search commands produce tool errors rather than a false zero-violation result. [macOS runner retirement notice](https://github.com/actions/runner-images/issues/13518).
 
 ### How to enable the strict visual contract
 
@@ -51,6 +53,8 @@ Upgrades do not automatically enable strict mode, rewrite approved scope, or man
 All **48 online files** previously at risk in an older snapshot-sync patch remain byte-for-byte unchanged. Claude task routing, cumulative budgets and agent installation; Execute approved-inventory/source-only checks; Plan requirements and coverage; and Spec Swift declarations, localization, fonts, themes and actual installed-app identity remain in place, with their existing tests. The already-completed Android-binary-to-Python iOS gate migration is retained; this update does not restore old Android executables.
 
 The reviewed tool payload and this integration checkout each passed **773 local macOS contract tests, with zero skips**, including installation/upgrade and old G0/G1 compatibility. Thirteen independent installed-entry tests produced **11 failures / 2 passes on original R2**, then **13 passes after correction**. Applying and reversing the patch at e057f48 restores all baseline file hashes. Windows/Linux CI is configured but had **not been run in that local review**; CI results after this commit must be checked separately. These are tool-contract results, not real-device application verification.
+
+After the remote CI environment fixes, the integration checkout passed **777 local tests, zero skips**, including four new static-analysis transport regressions. This supplements the original 773-test R3 review; remote platform results remain separate.
 
 See [the independent review and validation summary](docs/patches/20261124-modal-visual-review.md), [per-file changes](docs/patches/20261123-modal-visual-port.md), and the [machine-readable validation record](docs/patches/20261124-modal-visual-validation.json). Upgrade projects at an existing stage boundary using the standard installer; do not replace tools in the middle of an active conversion stage.
 
@@ -96,7 +100,7 @@ cd /path/to/hmigbot-ios
 ./install.sh --project /path/to/HarmonyOSProject --ios /path/to/iOSApp
 ```
 
-Prerequisites are Python 3.8+, Claude Code, an iOS project containing an `.xcodeproj` or `Package.swift`, and a HarmonyOS project prepared for DevEco Studio. Device checks additionally require Xcode tools, `hdc`, and the relevant device or simulator.
+Prerequisites are Python 3.8+, ripgrep (`rg`) for static checks, Claude Code, an iOS project containing an `.xcodeproj` or `Package.swift`, and a HarmonyOS project prepared for DevEco Studio. Device checks additionally require Xcode tools, `hdc`, and the relevant device or simulator.
 
 After installation, `/i2h-init` and `/i2h-run` are the intended workflow entry points. `/i2h-build` uses the installed `i2h-tool` helper; device and DevEco checks remain explicit runtime prerequisites.
 

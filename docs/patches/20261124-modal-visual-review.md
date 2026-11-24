@@ -58,3 +58,16 @@ python migbot/scripts/test_modal_visual_upgrade.py -v
 ```
 
 重点独立用例：`migbot/skills/i2h-execute/scripts/tests/test_modal_visual_independent_review.py`，实际安装到临时合成项目后调用正式Python入口；不访问Cuike等实例或真实设备。
+
+## 合并后的远端CI适配
+
+首个集成提交455faca触发的远端CI已实际运行：Windows在Plan覆盖测试因cp1252控制台编码失败；Linux的Verify静态分析子进程未产生JSON，原工作流未声明安装ripgrep；macOS任务在启动前报告macos-14-arm64-us-default不受支持。原始日志作为本机工具维护证据保留。
+
+接续修复不删测试、不降低断言：
+
+- `.github/workflows/ios-contracts.yml`：使用受支持的macos-latest，显式安装/检查ripgrep，统一PYTHONUTF8与PYTHONIOENCODING，保留三平台矩阵、通用回归及POSIX分组规则。
+- `migbot/skills/i2h-verify/scripts/ios_static_analyzer.py`：用shutil.which查找程序，按rg --json解析文件/行号，避免Windows盘符冒号被拆错；rg非0/1退出、超时或畸形事件返回工具错误，不冒充零违规。
+- `migbot/skills/i2h-verify/scripts/tests/test_ios_static_analyzer.py`：保留原3项规则测试，新增Windows路径、无匹配、搜索故障和缺依赖的4项回归；子进程无JSON时显示stderr首因。
+- 中英文README与验证摘要同步说明依赖、平台和新增能力；R3原773项记录保留为历史，接续本机完整回归共777项。
+
+macOS镜像依据：[GitHub官方退役公告](https://github.com/actions/runner-images/issues/13518)。远端修复后的最终状态以对应集成提交的Actions运行结果为准。

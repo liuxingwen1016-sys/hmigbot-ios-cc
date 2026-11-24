@@ -8,6 +8,9 @@ import subprocess
 import re
 import json
 import sys
+import shutil
+import base64
+import os
 from contextlib import redirect_stdout
 from pathlib import Path
 from typing import List, Dict, Tuple
@@ -170,37 +173,30 @@ class IOSStaticAnalyzer:
         return self._sources[file_path]
 
     def search_pattern(self, pattern: str) -> List[Tuple[str, int, str]]:
-        """使用 rg 搜索模式"""
-        try:
-            # 使用 rg 搜索
-            result = subprocess.run(
-                ['rg', '-n', '--no-heading', '-g', '*.ets', pattern, str(self.project_root)],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-
-            matches = []
-            for line in result.stdout.strip().split('\n'):
-                if not line:
-                    continue
-
-                # 解析 rg 输出：文件:行号:内容
-                parts = line.split(':', 2)
-                if len(parts) >= 3:
-                    file_path = parts[0]
-                    line_num = int(parts[1])
-                    content = parts[2]
-                    matches.append((file_path, line_num, content))
-
-            return matches
-
-        except subprocess.TimeoutExpired:
-            print(f"搜索超时: {pattern}", file=sys.stderr)
-            return []
-        except Exception as e:
-            print(f"搜索失败: {pattern}, {e}", file=sys.stderr)
-            return []
+        """Read ripgrep's structured events; drive letters are not field separators."""
+        result = subprocess.run(
+            ['rg', '--json', '-n', '-g', '*.ets', pattern, str(self.project_root)],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode not in (0, 1):
+            raise RuntimeError(f"ripgrep failed ({result.returncode}): {result.stderr.strip()}")
+        matches = []
+        def text_field(field):
+            if isinstance(field.get('text'), str):
+                return field['text']
+            if isinstance(field.get('bytes'), str):
+                return os.fsdecode(base64.b64decode(field['bytes'], validate=True))
+            raise ValueError('ripgrep event is missing text/bytes')
+        for line in result.stdout.splitlines():
+            event = json.loads(line)
+            if event.get('type') != 'match':
+                continue
+            data = event['data']
+            number = data['line_number']
+            if type(number) is not int or number < 1:
+                raise ValueError('ripgrep event has an invalid line number')
+            matches.append((text_field(data['path']), number, text_field(data['lines']).rstrip('\r\n')))
+        return matches
 
     def verify_match(self, check: Dict, file_path: str, line_num: int) -> bool:
         contexts, executable = self.source_lines(file_path)
@@ -357,21 +353,22 @@ def main():
 
     args = parser.parse_args()
 
-    # 检查 rg 是否可用
+    # Resolve executable portably: native Windows does not provide POSIX `which`.
     try:
-        subprocess.run(['which', 'rg'], capture_output=True, check=True)
-    except subprocess.CalledProcessError:
-        print("错误: 需要安装 ripgrep (rg)", file=sys.stderr)
-        print("安装: brew install ripgrep", file=sys.stderr)
-        sys.exit(1)
-
-    # 执行分析
-    analyzer = IOSStaticAnalyzer(args.project_root)
-    if args.json:
-        with redirect_stdout(sys.stderr):
+        if shutil.which('rg') is None:
+            raise RuntimeError('ripgrep (rg) is required for static analysis')
+        analyzer = IOSStaticAnalyzer(args.project_root)
+        if args.json:
+            with redirect_stdout(sys.stderr):
+                results = analyzer.analyze_all()
+        else:
             results = analyzer.analyze_all()
-    else:
-        results = analyzer.analyze_all()
+    except (OSError, RuntimeError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as error:
+        if args.json:
+            print(json.dumps({'status': 'ERROR', 'error': str(error)}, ensure_ascii=False))
+        else:
+            print(f'static analysis tool error: {error}', file=sys.stderr)
+        sys.exit(2)
 
     # 输出结果
     if args.json:

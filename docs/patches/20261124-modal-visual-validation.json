@@ -87,9 +87,17 @@
   },
   "integration_test_result": {
     "status": "PASS",
-    "tests_passed": 773,
+    "tests_passed": 777,
     "tests_skipped": 0,
     "platform": "macOS",
-    "at": "2026-11-24T15:00:32.463450+08:00"
+    "at": "2026-11-24T15:09:42.204667+08:00"
+  },
+  "remote_first_run": {
+    "commit": "455faca6b7abfdd3bd4a5c19b1e39ea534086f60",
+    "run_id": 45344771522,
+    "Windows": "failed: cp1252 console encoding",
+    "Linux": "failed: native static analyzer had no declared ripgrep installation",
+    "macOS": "cancelled: unsupported macos-14 runner",
+    "follow_up": "UTF-8 job environment, explicit ripgrep provisioning, supported macos-latest and structured rg JSON parsing; rerun pending"
   }
 }

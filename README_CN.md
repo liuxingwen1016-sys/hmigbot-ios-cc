@@ -24,8 +24,10 @@
 | 汇总状态、范围与安装一致 | 严格 case 必须已成功到态，build/install 回执绑定当前 scope，同一汇总使用同一 HAP 和设备；原件必须在当前采集目录。BLOCKED 场景的遗留文件不会被升级成 PASS。 |
 | 活动层匹配与原诊断共存 | 控件关系仅在活动层匹配；坐标继续使用原始视口，状态栏裁剪/重叠诊断继续读取完整原树。避免底层控件补齐缺失锚点，也避免过滤活动层时误丢系统状态栏。 |
 | Plan 空值与类型处理 | 先确认 verification_states 为列表再遍历。旧版非严格清单的字段缺失/null 可继续读取；非列表输入、严格运行时缺项返回结构化错误。 |
-| Windows/Linux/macOS CI | 保留三平台矩阵及原通用测试。依赖 fcntl 或 POSIX 假 CLI 的路由、预算和相关安装升级测试仅在 macOS/Linux 运行；Windows 保留通用契约与新增模态回归。 |
+| Windows/Linux/macOS CI | 保留三平台矩阵及原通用测试；改用受支持的 macos-latest，显式安装 ripgrep 并统一 Python UTF-8。依赖 fcntl 或 POSIX 假 CLI 的路由、预算和相关安装升级测试仅在 macOS/Linux 运行；Windows 保留通用契约与新增模态回归。 |
 | 旧项目升级 | 保留原配置及原 G0 归档。e057f48 原工具产生的 G0 PASS 升级后逐字节保留，可原样重新汇总，并通过 G1 结构验收。 |
+
+首轮远端 CI 另外暴露了 Windows 默认控制台编码、未安装 ripgrep 和旧 macOS runner 退役问题。本次接续修正 CI 环境，不跳过原通用测试；静态分析改读 ripgrep JSON 事件，Windows 盘符不再破坏文件/行号解析，搜索失败记工具错误而非“零违规通过”。[GitHub 官方 runner 退役说明](https://github.com/actions/runner-images/issues/13518)。
 
 ### 如何启用与兼容旧项目
 
@@ -44,6 +46,8 @@
 此前快照同步包涉及的 **48 个线上文件全部保留，SHA 不变**。Claude 任务路由、累计预算和 agent 安装，Execute 批准清单/source_only，Plan 需求索引/覆盖，以及 Spec Swift 声明、本地化、字体、主题和实际安装身份检查及原测试均保留。此前已完成的“旧 Android 二进制改为 Python iOS 门禁”也继续保留，不会重新装回旧 Android 二进制。
 
 R3 工具产物与本次合并副本分别在 macOS 本机完成 **773 项回归、0 跳过**，包括干净安装、旧 G0 原样重汇总和 G1。13 项新增独立安装入口测试在原 R2 上为 **11 失败、2 通过**，补修后 **13 通过**。e057f48 上的正反向应用及全文件摘要校验通过。Windows/Linux 只配置了 CI，本次本地复审未实跑，提交后的远端 CI 结果需单独查看。以上不代表真实应用已通过设备 Verify。
+
+远端 CI 环境修正后，合并副本再次通过 **777 项本机回归、0 跳过**，其中新增4项静态分析传输回归；原 R3 的773项记录作为历史保留，远端各平台结果单独记录。
 
 见[独立复审与验证摘要](docs/patches/20261124-modal-visual-review.md)、[逐文件原因](docs/patches/20261123-modal-visual-port.md)和[机器验证记录](docs/patches/20261124-modal-visual-validation.json)。已有转换项目在当前阶段结束后再用原安装器升级，避免在进行中的转换阶段更换工具。
 
@@ -88,7 +92,7 @@ cd /path/to/hmigbot-ios
 ./install.sh --project /path/to/HarmonyOSProject --ios /path/to/iOSApp
 ```
 
-需要 Python 3.8+、Claude Code、带 `.xcodeproj` 或 `Package.swift` 的 iOS 项目，以及可供 DevEco Studio 使用的 HarmonyOS 工程。设备验证还需要 Xcode 工具、`hdc` 和实际设备或模拟器。
+需要 Python 3.8+、静态检查所需的 ripgrep（rg）、Claude Code、带 `.xcodeproj` 或 `Package.swift` 的 iOS 项目，以及可供 DevEco Studio 使用的 HarmonyOS 工程。设备验证还需要 Xcode 工具、`hdc` 和实际设备或模拟器。
 
 安装后使用 `/i2h-init` 和 `/i2h-run` 作为主要入口。`/i2h-build` 使用已安装的 `i2h-tool` 辅助程序；设备和 DevEco 检查仍需要真实运行环境。
 
