@@ -26,10 +26,12 @@ This update integrates the reviewed **modal-visual R3** changes onto `main_ui_op
 | Capture-summary consistency | Keep every required pair, require a successful arrival state, bind build/install receipts to the current scope and one HAP/device, and confine raw artifacts to the current capture directory. A `BLOCKED` case with leftover files cannot become `PASS`. |
 | Relationship checks without lost diagnostics | Match semantic controls only in the active layer, while keeping the original coordinate viewport and the complete raw tree for existing status-bar clipping/overlap diagnostics. A covered control cannot fill a missing foreground anchor, and activity filtering no longer discards the system status bar. |
 | Plan input compatibility | Check that `verification_states` is a list before iterating. Missing/null fields remain readable in the legacy non-strict contract; invalid types and required runtime-state omissions produce structured validation errors. |
-| Cross-platform CI routing | Preserve the Ubuntu/macOS/Windows matrix and original common tests. Use the supported `macos-latest` image, explicit ripgrep installation and UTF-8 Python I/O. Run POSIX-only routing, cumulative-budget and related upgrade tests on macOS/Linux. Windows retains common contract and new modal regression tests. |
+| macOS acceptance and optional cross-platform CI | Default pushes/PRs validate `macos-latest`. Keep Windows/Linux code and tests, but run those platforms only through the manual `cross_platform` input; their failures are non-blocking. Retain all common tests, explicit ripgrep setup and UTF-8, including isolated Python subprocess flags. |
 | Existing-project upgrades | Preserve existing project configuration and immutable old G0 receipts. The e057f48-generated G0 `PASS` fixture re-summarizes unchanged after installation, and G1 structural acceptance still passes. |
 
 The first remote CI run additionally exposed Windows console encoding, an unprovisioned ripgrep dependency and a retired macOS runner label. CI now provisions that dependency and UTF-8 explicitly and uses a supported macOS image. Static analysis uses ripgrep JSON events so Windows drive letters do not corrupt file/line parsing; failed search commands produce tool errors rather than a false zero-violation result. [macOS runner retirement notice](https://github.com/actions/runner-images/issues/13518).
+
+**Current acceptance scope is macOS.** Windows/Linux compatibility is retained for optional investigation and is not a release requirement. In Actions → Run workflow, enable `cross_platform` only when those checks are wanted. This does not change another project’s installed tools, modify its worktree or cancel an existing task.
 
 ### How to enable the strict visual contract
 

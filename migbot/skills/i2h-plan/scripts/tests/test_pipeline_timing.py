@@ -236,7 +236,7 @@ class PipelineTimingTest(unittest.TestCase):
 
     def test_cli_records_pending_spec_without_advancing_gate(self):
         result = subprocess.run(
-            [sys.executable, "-I", "-B", str(SCRIPTS / "pipeline_resume.py"), "--project-root", str(self.root),
+            [sys.executable, "-I", "-B", "-X", "utf8", str(SCRIPTS / "pipeline_resume.py"), "--project-root", str(self.root),
              "--summary", "--timing", "start", "--timing-stage", "i2h-spec"],
             capture_output=True, encoding="utf-8", timeout=15,
         )
@@ -253,7 +253,7 @@ class PipelineTimingTest(unittest.TestCase):
         legacy["attempts"][0].pop("end_monotonic")
         path.write_text(json.dumps(legacy), encoding="utf-8")
         before = path.read_bytes()
-        command = [sys.executable, "-I", "-B", str(SCRIPTS / "pipeline_resume.py"),
+        command = [sys.executable, "-I", "-B", "-X", "utf8", str(SCRIPTS / "pipeline_resume.py"),
                    "--project-root", str(self.root), "--timing-report", "--timing-run", self.run_id]
         result = subprocess.run(command, capture_output=True, encoding="utf-8", timeout=15)
         self.assertEqual(result.returncode, 0, result.stderr)

@@ -71,3 +71,13 @@ python migbot/scripts/test_modal_visual_upgrade.py -v
 - 中英文README与验证摘要同步说明依赖、平台和新增能力；R3原773项记录保留为历史，接续本机完整回归共777项。
 
 macOS镜像依据：[GitHub官方退役公告](https://github.com/actions/runner-images/issues/13518)。远端修复后的最终状态以对应集成提交的Actions运行结果为准。
+
+Windows第二轮CI进一步确认：安装回归内部的acceptance_plan测试通过-I创建了新的Python子进程，隔离模式会忽略环境变量，因此此前job级UTF-8设置不会自动传下去。接续为acceptance_plan、pipeline_timing和visual_worklist测试中的隔离调用显式添加-X utf8；保留-I隔离和全部原断言，不改验收生产规则。
+
+## 当前支持范围与线程隔离
+
+按维护者最新要求，以macOS为当前必要验收平台。保留Windows/Linux实现、测试和手动入口，但不继续把这些平台兼容性作为发布阻塞。默认push/PR只跑macOS合同组；workflow_dispatch的cross_platform=true可附加Windows/Linux，且continue-on-error仅用于这两个可选平台。macOS仍失败即失败，不放宽工具自身的验收断言。
+
+Windows隔离子进程UTF-8启动修正作为已有测试配置保留，不宣称已重新通过Windows。此前修正后的macOS/Linux远端检查已通过，Windows安装升级检查曾失败，原始状态如实保留。
+
+本轮修改限于独立的合并工作副本和维护者已授权更新的线上main_ui_optimize；原工作区、其他候选未提交改动、实际应用项目和latest均不改动，也未取消其他线程/设备任务。

@@ -24,10 +24,12 @@
 | 汇总状态、范围与安装一致 | 严格 case 必须已成功到态，build/install 回执绑定当前 scope，同一汇总使用同一 HAP 和设备；原件必须在当前采集目录。BLOCKED 场景的遗留文件不会被升级成 PASS。 |
 | 活动层匹配与原诊断共存 | 控件关系仅在活动层匹配；坐标继续使用原始视口，状态栏裁剪/重叠诊断继续读取完整原树。避免底层控件补齐缺失锚点，也避免过滤活动层时误丢系统状态栏。 |
 | Plan 空值与类型处理 | 先确认 verification_states 为列表再遍历。旧版非严格清单的字段缺失/null 可继续读取；非列表输入、严格运行时缺项返回结构化错误。 |
-| Windows/Linux/macOS CI | 保留三平台矩阵及原通用测试；改用受支持的 macos-latest，显式安装 ripgrep 并统一 Python UTF-8。依赖 fcntl 或 POSIX 假 CLI 的路由、预算和相关安装升级测试仅在 macOS/Linux 运行；Windows 保留通用契约与新增模态回归。 |
+| macOS验收与可选跨平台CI | 默认push/PR只验收macos-latest。保留Windows/Linux代码与全部测试，通过手动cross_platform选项才执行，失败不阻塞本次交付。继续保留通用回归、ripgrep依赖和UTF-8（含隔离子进程显式参数）。 |
 | 旧项目升级 | 保留原配置及原 G0 归档。e057f48 原工具产生的 G0 PASS 升级后逐字节保留，可原样重新汇总，并通过 G1 结构验收。 |
 
 首轮远端 CI 另外暴露了 Windows 默认控制台编码、未安装 ripgrep 和旧 macOS runner 退役问题。本次接续修正 CI 环境，不跳过原通用测试；静态分析改读 ripgrep JSON 事件，Windows 盘符不再破坏文件/行号解析，搜索失败记工具错误而非“零违规通过”。[GitHub 官方 runner 退役说明](https://github.com/actions/runner-images/issues/13518)。
+
+**当前以macOS为验收范围。** Windows/Linux兼容保留但不列为发布必达项；需要时在Actions的Run workflow中手动开启cross_platform。不会自动更换其他线程/项目的已安装工具，不修改其工作区，也不取消已有任务。
 
 ### 如何启用与兼容旧项目
 

@@ -194,7 +194,7 @@ class AcceptancePlanTest(unittest.TestCase):
 
     def invoke(self, mode, *args):
         return subprocess.run(
-            [sys.executable, '-I', '-B', str(SCRIPTS / 'acceptance_plan.py'),
+            [sys.executable, '-I', '-B', '-X', 'utf8', str(SCRIPTS / 'acceptance_plan.py'),
              '--project-root', str(self.root), mode, *map(str, args)],
             cwd=self.root, capture_output=True, encoding='utf-8', timeout=20,
         )

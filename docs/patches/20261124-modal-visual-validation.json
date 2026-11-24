@@ -90,7 +90,7 @@
     "tests_passed": 777,
     "tests_skipped": 0,
     "platform": "macOS",
-    "at": "2026-11-24T15:09:42.204667+08:00"
+    "at": "2026-11-24T15:18:32.498209+08:00"
   },
   "remote_first_run": {
     "commit": "455faca6b7abfdd3bd4a5c19b1e39ea534086f60",
@@ -99,5 +99,25 @@
     "Linux": "failed: native static analyzer had no declared ripgrep installation",
     "macOS": "cancelled: unsupported macos-14 runner",
     "follow_up": "UTF-8 job environment, explicit ripgrep provisioning, supported macos-latest and structured rg JSON parsing; rerun pending"
+  },
+  "current_support_scope": {
+    "required": [
+      "macOS"
+    ],
+    "optional_manual": [
+      "Windows",
+      "Linux"
+    ],
+    "optional_platform_failure_blocks_release": false,
+    "default_ci_runner": "macos-latest",
+    "other_project_tools_or_workspaces_changed": false
+  },
+  "remote_second_run": {
+    "commit": "15ce309ac40ca89380a85e0aeacf5fdde5f7bf19",
+    "run_id": 45345875325,
+    "macOS": "PASS",
+    "Linux": "PASS",
+    "Windows": "FAIL in installed nested isolated Python encoding; not required by current support scope",
+    "note": "No Windows pass claimed. Isolated test startup flags retained, not a required compatibility program."
   }
 }

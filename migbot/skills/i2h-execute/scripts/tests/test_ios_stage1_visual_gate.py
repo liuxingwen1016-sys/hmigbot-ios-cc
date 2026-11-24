@@ -510,7 +510,7 @@ class IOSVisualGateTests(unittest.TestCase):
         initial = timed_out(2, original)
         attempted = timed_out(3, labeled, recovery_for=2)
         cli = Path(__file__).resolve().parents[1] / 'stage1_visual_report.py'
-        command = [sys.executable, '-I', str(cli), 'review-worklist', '--project-root', str(self.root),
+        command = [sys.executable, '-I', '-X', 'utf8', str(cli), 'review-worklist', '--project-root', str(self.root),
                    '--scope', str(self.scope_path), '--capture', str(capture), '--review-inputs', str(bindings),
                    '--review-receipt', str(initial)]
 
