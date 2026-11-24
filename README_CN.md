@@ -51,6 +51,8 @@ R3 工具产物与本次合并副本分别在 macOS 本机完成 **773 项回归
 
 远端 CI 环境修正后，合并副本再次通过 **777 项本机回归、0 跳过**，其中新增4项静态分析传输回归；原 R3 的773项记录作为历史保留，远端各平台结果单独记录。
 
+必要的 **macOS 远端 CI 与插件清单检查已通过**，对应代码提交 `dc873de`：[实际 Actions 结果](https://github.com/liuxingwen1016-sys/hmigbot-ios-cc/actions/runs/45347008395)。该默认运行没有启动 Windows/Linux 兼容任务，也不将它们列为交付阻塞。
+
 见[独立复审与验证摘要](docs/patches/20261124-modal-visual-review.md)、[逐文件原因](docs/patches/20261123-modal-visual-port.md)和[机器验证记录](docs/patches/20261124-modal-visual-validation.json)。已有转换项目在当前阶段结束后再用原安装器升级，避免在进行中的转换阶段更换工具。
 
 ## 流水线
@@ -137,4 +139,4 @@ hmigbot-ios/
 
 ## CI 契约检查
 
-GitHub Actions 会在 Ubuntu、macOS 和 Windows 上运行离线 SwiftUI/UIKit fixture、i2h-execute 测试、spec/plan 契约测试和 Python 编译检查。fixture 将设备与 DevEco 检查记录为 `DEFERRED`，不会伪造运行时证据。
+默认 GitHub Actions 在 macOS 运行离线 SwiftUI/UIKit fixture、i2h-execute、spec/plan/原生 Verify 契约与 Python 编译检查，并保留通用插件清单检查。Windows/Linux 通过手动 cross_platform 选项保留，失败不阻塞当前交付。fixture 将设备与 DevEco 检查记录为 `DEFERRED`，不会伪造运行时证据。

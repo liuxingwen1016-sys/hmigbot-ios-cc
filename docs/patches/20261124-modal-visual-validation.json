@@ -98,7 +98,7 @@
     "Windows": "failed: cp1252 console encoding",
     "Linux": "failed: native static analyzer had no declared ripgrep installation",
     "macOS": "cancelled: unsupported macos-14 runner",
-    "follow_up": "UTF-8 job environment, explicit ripgrep provisioning, supported macos-latest and structured rg JSON parsing; rerun pending"
+    "follow_up": "Addressed by explicit dependency/encoding/runner fixes; subsequent runs are recorded below."
   },
   "current_support_scope": {
     "required": [
@@ -119,5 +119,15 @@
     "Linux": "PASS",
     "Windows": "FAIL in installed nested isolated Python encoding; not required by current support scope",
     "note": "No Windows pass claimed. Isolated test startup flags retained, not a required compatibility program."
+  },
+  "current_required_acceptance": {
+    "code_commit": "dc873deadf94abca72da5c3caf2b6ae80081b866",
+    "run_id": 45347008395,
+    "url": "https://github.com/liuxingwen1016-sys/hmigbot-ios-cc/actions/runs/45347008395",
+    "macOS": "PASS",
+    "plugin_manifests": "PASS",
+    "Windows": "NOT_RUN_OPTIONAL",
+    "Linux": "NOT_RUN_OPTIONAL",
+    "default_run_only_required_platform": true
   }
 }

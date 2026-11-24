@@ -58,6 +58,8 @@ The reviewed tool payload and this integration checkout each passed **773 local 
 
 After the remote CI environment fixes, the integration checkout passed **777 local tests, zero skips**, including four new static-analysis transport regressions. This supplements the original 773-test R3 review; remote platform results remain separate.
 
+The required **macOS CI and plugin manifest checks passed** on code commit `dc873de`: [verified Actions run](https://github.com/liuxingwen1016-sys/hmigbot-ios-cc/actions/runs/45347008395). Windows/Linux were not started by this default run and are not acceptance blockers.
+
 See [the independent review and validation summary](docs/patches/20261124-modal-visual-review.md), [per-file changes](docs/patches/20261123-modal-visual-port.md), and the [machine-readable validation record](docs/patches/20261124-modal-visual-validation.json). Upgrade projects at an existing stage boundary using the standard installer; do not replace tools in the middle of an active conversion stage.
 
 ## Pipeline
@@ -145,4 +147,4 @@ See:
 
 ## CI contract checks
 
-GitHub Actions runs the offline SwiftUI/UIKit fixture, i2h-execute tests, spec/plan contract tests and Python compilation on Ubuntu, macOS and Windows. The fixture records device and DevEco checks as `DEFERRED` and never fabricates runtime evidence.
+Default GitHub Actions runs the offline SwiftUI/UIKit fixture, i2h-execute tests, spec/plan/native Verify contracts and Python compilation on macOS, plus shared plugin manifest checks. Windows/Linux are retained behind the manual `cross_platform` input and are non-blocking. The fixture records device and DevEco checks as `DEFERRED` and never fabricates runtime evidence.
