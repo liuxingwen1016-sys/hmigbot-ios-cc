@@ -385,3 +385,26 @@ python3 .claude/skills/i2h-execute/scripts/ui_relationships.py --project-root . 
 具体边界见 layout-fidelity.md。六行月新证据单列 new-only，增加截图数量的收益另做实验。
 
 完整模式的 typed build/install、device/run/landing 回执字段以 ui-integration-1030.md 为准；不复用旧模式的 receipt_ok 或单一安装成功标记。
+
+
+## 显式原生符号与独立源导航（2026-11-28）
+
+`ui_relationships.py --native-control-roles --native-symbol-anchors` 为显式选择的模式：
+要求当前批准 pair 的 `target_observation`，按唯一前台窗口及活动原生模态取证。
+只有可见、不可点击、完整入屏、未裁剪的 `SymbolGlyph` 叶节点可提供符号锚点。
+源必须有 XCUI Image identifier；目标显式 ID 与非空说明不得冲突。说明别名须在
+同一已配对父按钮上下文唯一，按钮边界须包含图标。页签还须属于真实 TabBar 或
+`--audit-viewport --tab-bar-id <已声明控件ID>`；不得从栏外或背景取同名候选。
+重复组须数量相等并在 16 归一化 pt 内双向唯一，最后仍执行原有 **4 pt** 几何门槛。
+同 ID 但不同说明不能通过位置互换后获得 PASS。
+
+`--approved-source-navigation` 只在目标有可标识的活动原生模态时启用。
+iOS 原树须有唯一主窗口、前后独立的导航容器；后继导航须由批准标题文本，或
+两侧唯一且具有相同非空语义标签和角色的控件 ID 绑定。歧义、外部窗口、空标签、
+无模态身份均阻断。该模式保留全窗坐标，只限制源锚点容器，不使用诊断模式代替验收。
+
+正式 Stage 1 使用当前批准 pair 和绑定的原始树重算整份关系报告；新模式字段、
+identifier、binding 或 PASS 的篡改均不能通过。截图摘要、安装身份和独立外观报告
+继续执行原合同。没有新模式时保留旧报告和旧页签匹配语义，G0/G1 合同不变。
+
+在新符号模式中，同名重复按钮可按真实或明确声明的页签内部/非页签上下文分组，源与目标在该分组中各自唯一时才配对；同区多候选保持未决，不用位置或控件 ID 猜按钮。旧模式不启用此消歧。

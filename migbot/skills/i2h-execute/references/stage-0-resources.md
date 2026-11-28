@@ -22,15 +22,17 @@ Stage 0 负责**静态资源事实消费与资源落地**，是执行的前置�
 
 ### 模式选择
 
-根据 `spec/.i2h/config.json` 中的 `resource_policy` 字段选择：
+通过 `.migbot/bin/i2h execute-inputs` 命令指定：
 
-1. **static-v1** (推荐)
+1. **static-v1** (默认，推荐)
    - 读取 `spec/.i2h/target-input.json`
    - 读取 canonical `spec/baseline/res-index/`
+   - 读取 `spec/baseline/ui-delivery-approved.json` 批准范围
    - 执行静态事实校验
 
 2. **legacy** (兼容模式)
-   - 读取 plans/execution-plan.md
+   - 通过 `--resource-policy legacy` 显式选择
+   - 仍需 `spec/baseline/ui-delivery-approved.json` 确认批准范围
    - 扫描已审批 UI/Feature Spec 及源码中的资源引用
    - 批量落地资源
 
@@ -44,28 +46,34 @@ Stage 0 负责**静态资源事实消费与资源落地**，是执行的前置�
 
 **校验内容**:
 1. 文件存在性
-2. Schema 完整性
-3. SHA256 哈希值
+2. Schema 版本 = 1
+3. target_input_sha256 (64位hex)
+4. inventory 路径有效
 
-**格式**:
+**实际格式** (由 ui_evidence.py 生成):
 ```json
 {
-  "version": "1.0",
-  "ios_project": {
-    "path": "/path/to/ios/project",
-    "bundle_id": "com.example.app",
-    "version": "1.0.0"
-  },
-  "harmonyos_project": {
-    "path": "/path/to/harmonyos/project",
-    "bundle_name": "com.example.app",
-    "version": "1.0.0"
-  },
-  "sha256": "abc123..."
+  "schema_version": 1,
+  "producer": "ui_evidence.py",
+  "timestamp": "2024-11-26T10:00:00Z",
+  "target_input_sha256": "abc123...",
+  "inventory": "spec/.i2h/resources-inventory.json",
+  "locale": "zh_CN",
+  "font_family": "HarmonyOS Sans",
+  "theme": "light"
 }
 ```
 
-### Step 2: 校验 res-index 文件
+### Step 2: 校验 resources-inventory.json
+
+**位置**: 由 target-input.json 中的 `inventory` 字段指定
+
+**校验内容**:
+- 文件存在性
+- `target_input_sha256` 与 target-input.json 一致
+- `project_root` 与 `.migbot/config.json` 的 `ios` 字段解析后一致
+
+### Step 3: 校验 res-index 文件
 
 **位置**: `spec/baseline/res-index/`
 
@@ -73,84 +81,128 @@ Stage 0 负责**静态资源事实消费与资源落地**，是执行的前置�
 - `values.json` — 字符串、颜色、尺寸等值资源
 - `drawables.json` — 图片资源
 - `usage.json` — 资源引用关系
+- `handoff.json` — 资源交接清单
 - `design-tokens.json` — 设计 token（可选）
 
 **校验内容**:
 - 文件存在性
-- `target_input_sha256` 与 target-input.json 的哈希一致
+- 每个文件的 `schema_version` = 1
+- 每个文件的 `target_input_sha256` 与 target-input.json 一致
 
 **values.json 示例**:
 ```json
 {
-  "version": "1.0",
+  "schema_version": 1,
   "target_input_sha256": "abc123...",
   "strings": [
     {
       "name": "app_name",
       "value": "我的应用",
-      "source": "iOS:CFBundleDisplayName"
+      "source_ref": "iOS:Info.plist/CFBundleDisplayName"
     }
   ],
   "colors": [
     {
       "name": "primary",
       "value": "#007AFF",
-      "source": "iOS:Assets.xcassets/Colors/primary"
+      "source_ref": "iOS:Assets.xcassets/Colors/primary"
     }
   ]
 }
 ```
 
-### Step 3: 校验 Gate B
+### Step 3: 校验 ui-delivery-approved.json
+
+**位置**: `spec/baseline/ui-delivery-approved.json`
+
+**校验内容**:
+- 文件存在性（static-v1 和 legacy 都要求）
+- `schema_version` = 2
+- `status` = "approved"
+- `target_input_sha256` 与 target-input.json 一致
+- `source_project_root` 与 `.migbot/config.json` 的 `ios` 字段解析后一致
+- `units` 数组存在且非空
+
+**格式示例**:
+```json
+{
+  "schema_version": 2,
+  "status": "approved",
+  "scope": "full_ui",
+  "target_input_sha256": "abc123...",
+  "source_project_root": "/path/to/ios/project",
+  "approval": {
+    "timestamp": "2024-11-26T10:00:00Z",
+    "confirmation_ref": "user:developer"
+  },
+  "units": [
+    {
+      "unit_id": "home_screen",
+      "page_id": "HomeView",
+      "required": true,
+      "source_refs": [
+        {
+          "file": "HomeView.swift",
+          "line": 10,
+          "sha256": "def456..."
+        }
+      ],
+      "output": {
+        "file": "entry/src/main/ets/pages/HomeView.ets",
+        "symbol": "HomeView"
+      }
+    }
+  ]
+}
+```
+
+### Step 4: 校验 Gate B（资源闭包）
 
 **Gate B**: 资源闭包校验门
 
 **检查内容**:
-- 没有 selected scope 的 blocking finding
-- 所有必需资源都已就绪
-- 没有未解决的资源冲突
+- 读取 `usage.json` 中的 `resources` 数组
+- 对于 `ui-delivery-approved.json` 中 `units` 的 `source_refs` 指向的文件：
+  - 检查该文件中引用的资源是否有 `disposition: "unresolved"` 或 `resolved: false`
+  - 如果有未解决的资源，标记为 BLOCKED
+- 其他未选中源文件中的未解决资源：诊断保留但不全局阻断
 
-**blocking finding 类型**:
-- `MISSING_xxx` 未登记
-- 资源引用错误
-- 资源格式不正确
+**blocking 条件**:
+- 批准范围内的源文件引用了未解决的资源
 
-### Step 4: 形成资源闭包
+### Step 5: 形成资源闭包
 
-**资源闭包**: 所有代码中引用的资源集合
+**资源闭包**: 批准范围内代码引用的资源集合
 
 **收集方式**:
-```bash
-# 从 usage.json 读取资源引用
-grep -r "\$r('app\." entry/src/main/ets/ | \
-  sed "s/.*\$r('\(app\.[^']*\)').*/\1/" | \
-  sort -u > resource-closure.txt
-```
+- 从 `usage.json` 读取资源引用
+- 过滤出批准 `units` 的 `source_refs` 文件中的引用
+- 保留 locale、font_family、theme 等事实指针
+- 不重新推导资源值
 
-**闭包验证**:
-- 所有引用的资源都在 res-index 中
-- 或已登记为 `MISSING_xxx`
+### Step 5: 资源落地
 
-### Step 5: 调用资源转换器
-
-**转换器**: 将 iOS 资源转换为 HarmonyOS 格式
+**目标**: 将已验证的资源事实转换为 HarmonyOS 格式并写入目标目录
 
 **输出位置**: `entry/src/main/resources/`
 
 **转换内容**:
 1. **图片资源** → `base/media/`
 2. **颜色资源** → `base/element/color.json`
-3. **字符串资源** → `zh_CN/element/string.json`
+3. **字符串资源** → `zh_CN/element/string.json` (或其他 locale)
 4. **尺寸资源** → `base/element/float.json`
 
-**示例**:
-```bash
-# 调用资源转换
-python3 scripts/sweep_resources.py \
-  --project-root . \
-  --ios-root ../ios-project \
-  --res-index spec/baseline/res-index/
-```
+**执行方式**:
+- 读取已验证的 res-index (values/drawables/usage/handoff)
+- 按照 locale、font_family、theme 事实指针确定输出格式
+- 保留 target_input_sha256 绑定
+- 不重新推导资源值
+
+**硬门**:
+- 所有批准范围内的必需资源必须完成转换
+- 转换后的资源必须通过保真检查
+- 未解决的普通资源（image/color/localization）阻断进入 Stage 1
+- 系统符号映射义务记录但不阻断（后续映射）
 
 ### Step 6: SVG/资源保真检查
 

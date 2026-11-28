@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import argparse
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from itertools import combinations
 import json
 import math
@@ -51,6 +51,8 @@ class Node:
     context: tuple[tuple[str, str], ...]
     presentation: tuple[int, ...] = ()
     original_box: tuple[float, float, float, float] | None = None
+    tree_path: tuple[int, ...] = ()
+    drawing_identifier: str = ''
 
     @property
     def key(self):
@@ -147,7 +149,8 @@ def collect_ios(data, *, navigation_identifier=None):
                 box = rect(tuple(float(match[index]) for index in range(3, 7)))
                 if box and not any(parent_role == 'button' and normalize(parent_label) == normalize(label)
                                    for _, parent_role, parent_label, _ in ancestors):
-                    nodes.append(Node(role, label, box, semantic_context((r, text) for _, r, text, _ in ancestors)))
+                    nodes.append(Node(role, label, box, semantic_context((r, text) for _, r, text, _ in ancestors),
+                                      (), None, (index,), ''))
             ancestors.append((indent, role, label, bool(excluded)))
         return viewport, nodes
 
@@ -159,7 +162,7 @@ def collect_ios(data, *, navigation_identifier=None):
         label = item.get('label') or ''
         box = rect(_frame(item.get('frame')))
         if role in ANCHORS and normalize(label) and box:
-            nodes.append(Node(role, label, box, context))
+            nodes.append(Node(role, label, box, context, (), None, (), ''))
         next_context = (*context, (role, normalize(label))) if role else context
         for child in item.get('children', []):
             visit(child, next_context)
@@ -169,7 +172,8 @@ def collect_ios(data, *, navigation_identifier=None):
     return viewport, nodes
 
 
-def collect_harmony(data, *, native_control_roles=False, surface_type=None, tab_bar_id=None):
+def collect_harmony(data, *, native_control_roles=False, surface_type=None, tab_bar_id=None,
+                    native_symbol_candidates=None):
     viewport = hdc_rect(data.get('attributes', {}).get('bounds'))
 
     def visit(item, context=(), path=(), presentation=()):
@@ -187,6 +191,13 @@ def collect_harmony(data, *, native_control_roles=False, surface_type=None, tab_
         if native_control_roles:
             label = attrs.get('accessibilityText') or attrs.get('accessibilityDescription') or label
         box = hdc_rect(attrs.get('bounds'))
+        visible_surface = attrs.get('visible') in ('true', True) and attrs.get('clickable') in ('false', False)
+        identifier = attrs.get('id')
+        if (native_symbol_candidates is not None and raw_role == 'SymbolGlyph' and visible_surface
+                and isinstance(identifier, str) and identifier and not item.get('children')
+                and box and hdc_rect(attrs.get('origBounds')) == box):
+            native_symbol_candidates.append(Node('image', attrs.get('description') or '', box, context,
+                                                 presentation, box, path, drawing_identifier=identifier))
         next_context = (*context, (role, normalize(label))) if role else context
         descendants = [node for index, child in enumerate(item.get('children', []))
                        for node in visit(child, next_context, (*path, index), presentation)]
@@ -198,7 +209,7 @@ def collect_harmony(data, *, native_control_roles=False, surface_type=None, tab_
             if role in {'button', 'toggle', 'input'}:
                 descendants = [node for node in descendants if node.role != 'text' or node.key[1] != normalize(label)]
             original = hdc_rect(attrs.get('origBounds'))
-            return [Node(role, label, box, context, presentation, original), *descendants]
+            return [Node(role, label, box, context, presentation, original, path, ''), *descendants]
         return descendants
 
     if surface_type is None:
@@ -232,7 +243,8 @@ def project_nodes(nodes, viewport, width, height):
     return [
         Node(node.role, node.label, project_box(node.box, viewport, width, height),
              node.context, node.presentation,
-             project_box(node.original_box, viewport, width, height) if node.original_box else None)
+             project_box(node.original_box, viewport, width, height) if node.original_box else None,
+             node.tree_path, node.drawing_identifier)
         for node in nodes
     ]
 
@@ -388,26 +400,219 @@ def presentation_bounds(node):
             yield from presentation_bounds(child)
 
 
-def match(source, target):
+def match(source, target, *, native_tab_context=False):
     source_groups, target_groups = defaultdict(list), defaultdict(list)
     for node in source:
         source_groups[node.key].append(node)
     for node in target:
         target_groups[node.key].append(node)
-    pairs, unresolved = [], []
+    pairs, unresolved, unmatched_source = [], [], []
     for key, group in source_groups.items():
         candidates = target_groups[key]
+        tab_partition = native_tab_context and key[0] == 'button' and any(
+            any(role == 'tabs' for role, _ in item.context) for item in [*group, *candidates])
         if len(group) == len(candidates) == 1:
             pairs.append((group[0], candidates[0]))
             continue
         for node in group:
+            if tab_partition:
+                in_tabs = any(role == 'tabs' for role, _ in node.context)
+                origin_group = [item for item in group if any(role == 'tabs' for role, _ in item.context) == in_tabs]
+                target_group = [item for item in candidates if any(role == 'tabs' for role, _ in item.context) == in_tabs]
+                if len(origin_group) == len(target_group) == 1:
+                    pairs.append((node, target_group[0]))
+                else:
+                    unresolved.append({'role': node.role, 'label': node.label, 'context': node.context,
+                                       'candidate_count': len(target_group)})
+                    unmatched_source.append(node)
+                continue
             equivalent = [candidate for candidate in candidates if candidate.context == node.context]
             if len(equivalent) == 1 and sum(other.context == node.context for other in group) == 1:
                 pairs.append((node, equivalent[0]))
             else:
                 unresolved.append({'role': node.role, 'label': node.label, 'context': node.context,
                                    'candidate_count': len(candidates)})
-    return pairs, unresolved
+                unmatched_source.append(node)
+    return pairs, unresolved, unmatched_source
+
+
+
+
+
+
+def _approved_source_navigation(source, target, predicate):
+    """Bind the independent last XCUI navigation container to an approved active modal."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'i2h-plan/scripts'))
+    from native_scenario_evidence import observe_state, active_layer_tree, _selector_matches
+    description = source.get('debug_description')
+    if not isinstance(description, str) or not isinstance(predicate, dict):
+        raise ValueError('source navigation requires an approved predicate and XCUI description')
+    observation = observe_state(target, predicate)
+    layer = observation.get('active_layer')
+    active_tree = active_layer_tree(target, predicate)
+    roots = active_tree.get('children', [])
+    attributes = roots[0].get('attributes', {}) if len(roots) == 1 else {}
+    if (not layer or attributes.get('type') != layer.get('type')
+            or not any(isinstance(attributes.get(k), str) and attributes[k].strip()
+                       for k in ('id', 'key', 'accessibilityId'))):
+        raise ValueError('source navigation requires an identifiable active native modal')
+    records, stack, ends, windows = [], [], {}, []
+    active = False
+    lines = description.splitlines()
+    end = len(lines)
+    for index, line in enumerate(lines):
+        if line.strip() == 'Element subtree:':
+            active = True
+            continue
+        if active and line.strip() in {'Path to element:', 'Query chain:'}:
+            end = index
+            break
+        match = XCUI_NODE.match(line) if active else None
+        if match is None:
+            continue
+        depth, raw_role = len(match['indent']), match['role']
+        while stack and stack[-1]['depth'] >= depth:
+            ends[stack.pop()['index']] = index
+        window = stack[-1]['window'] if stack else None
+        if raw_role.startswith('Window'):
+            window = index if raw_role == 'Window (Main)' else None
+            if raw_role == 'Window (Main)':
+                windows.append(index)
+        identifier, label = XCUI_IDENTIFIER.search(match['rest']), XCUI_LABEL.search(match['rest'])
+        row = {'index': index, 'depth': depth, 'window': window, 'raw_role': raw_role,
+               'identifier': identifier[1] if identifier else '',
+               'label': label[1].replace("\\'", "'") if label else ''}
+        records.append(row)
+        stack.append(row)
+    while stack:
+        ends[stack.pop()['index']] = end
+    if len(windows) != 1:
+        raise ValueError('source navigation requires one main source window')
+    navigations = [r for r in records if r['window'] == windows[0] and r['raw_role'] == 'NavigationBar']
+    if len(navigations) < 2:
+        raise ValueError('source navigation requires independent earlier and later navigation')
+    prior, current = navigations[-2:]
+    identifier = current['identifier']
+    if not identifier or not prior['identifier']:
+        raise ValueError('source navigation requires explicit navigation identifiers')
+    try:
+        selected = ios_navigation_subtree(description, identifier)
+        earlier = ios_navigation_subtree(description, prior['identifier'])
+    except ValueError as exc:
+        raise ValueError('source navigation is ambiguous: '+str(exc)) from exc
+    if earlier.stop > current['index'] or selected.start <= earlier.start:
+        raise ValueError('source navigation must be a later independent container')
+    _, source_nodes = collect_ios(source, navigation_identifier=identifier)
+    titles = [n for n in source_nodes if normalize(n.label) == normalize(identifier)
+              and any(role == 'navigation' for role, _ in n.context)]
+    if len(titles) != 1:
+        raise ValueError('source navigation title must be unique in the selected container')
+    selectors = predicate.get('present', [])
+    if any(selector.get('text') == identifier for selector in selectors):
+        binding, shared = 'present_text', []
+    else:
+        target_attributes = []
+        def visit(item):
+            attrs = item.get('attributes', {})
+            target_attributes.append(attrs)
+            for child in item.get('children', []):
+                visit(child)
+        visit(active_tree)
+        shared = []
+        for selector in selectors:
+            control = selector.get('id')
+            if not control:
+                continue
+            origins = [r for r in records if r['window'] == windows[0] and r['identifier'] == control]
+            targets = [a for a in target_attributes if _selector_matches(a, selector)]
+            if len(origins) != 1 or len(targets) != 1 or origins[0]['index'] not in selected:
+                continue
+            origin, actual = origins[0], targets[0]
+            label = actual.get('accessibilityText') or actual.get('accessibilityDescription') or actual.get('description') or actual.get('text') or ''
+            source_role, target_role = ROLE.get(origin['raw_role']), ROLE.get(actual.get('type'))
+            if actual.get('clickable') in (True, 'true') and (not target_role or target_role == 'text'):
+                target_role = 'button'
+            if (source_role in ANCHORS and source_role == target_role and normalize(label)
+                    and normalize(label) == normalize(origin['label'])):
+                shared.append(control)
+        if not shared:
+            raise ValueError('source navigation needs an approved title or a unique shared control identifier')
+        binding = 'control_id'
+    return identifier, binding
+
+
+
+def _native_symbol_matches(description, unmatched, candidates, pairs, region):
+    """Match explicit source identifiers within already-paired buttons or standalone.
+
+    Tab-bar context is tracked as an extra key dimension so icons inside a real or
+    declared tab bar only pair with targets that are also inside a tab bar.
+    """
+    if not isinstance(description, str):
+        return [], set()
+    lines = description.splitlines()
+    buttons = [(source, target) for source, target in pairs if source.role == 'button' and source.tree_path]
+    sources, targets, identifiers_by_label = defaultdict(list), defaultdict(list), defaultdict(set)
+
+    for index, node in unmatched:
+        if node.role != 'image' or not node.tree_path or not contained(node, region):
+            continue
+        row = XCUI_NODE.match(lines[node.tree_path[0]]) if node.tree_path[0] < len(lines) else None
+        identifier = XCUI_IDENTIFIER.search(row['rest']) if row else None
+        if not identifier:
+            continue
+        names = [label for role, label in node.context if role == 'button']
+        parents = [source.tree_path for source, _ in buttons if source.tree_path and names
+                   and source.key[1] == names[-1] and contains_box(source.box, node.box)]
+        if names and len(parents) != 1:
+            continue
+        parent = parents[0] if parents else ()
+        in_tabs = any(role == 'tabs' for role, _ in node.context)
+        sources[(identifier[1], parent, in_tabs)].append((index, node, identifier[1]))
+        identifiers_by_label[(node.key[1], parent, in_tabs)].add(identifier[1])
+
+    for node in candidates:
+        if not contained(node, region):
+            continue
+        parents = [source.tree_path for source, target in buttons if source.tree_path
+                   and node.tree_path[:len(target.tree_path)] == target.tree_path
+                   and contains_box(target.box, node.box)]
+        if any(role == 'button' for role, _ in node.context) and len(parents) != 1:
+            continue
+        parent = parents[0] if parents else ()
+        in_tabs = any(role == 'tabs' for role, _ in node.context)
+        identifier = node.drawing_identifier
+        if (identifier, parent, in_tabs) not in sources:
+            aliases = identifiers_by_label[(node.key[1], parent, in_tabs)]
+            if len(aliases) != 1:
+                continue
+            identifier, = aliases
+        elif node.key[1] and identifier not in identifiers_by_label[(node.key[1], parent, in_tabs)]:
+            continue
+        targets[(identifier, parent, in_tabs)].append(node)
+
+    matched, resolved = [], set()
+    for key, source_items in sources.items():
+        target_items = targets.get(key, ())
+        if len(source_items) != len(target_items):
+            continue
+        if len(source_items) == 1:
+            correspondences = target_items
+        else:
+            nearby = [[target for target in target_items if all(abs(a - b) <= 16
+                       for a, b in zip(center(item[1].box), center(target.box)))] for item in source_items]
+            if any(len(matches) != 1 for matches in nearby):
+                continue
+            correspondences = [matches[0] for matches in nearby]
+            if len(set(correspondences)) != len(source_items):
+                continue
+        if any(normalize(target.label) and normalize(target.label) != normalize(source.label)
+               for (_, source, _), target in zip(source_items, correspondences)):
+            continue
+        for (index, source, src_id), target in zip(source_items, correspondences):
+            matched.append((source, replace(target, label=source.label), src_id))
+            resolved.add(index)
+    return matched, resolved
 
 
 def overlap(first, second, axis):
@@ -469,7 +674,8 @@ def geometry(pairs, width, tolerance, *, cross_presentation_overlaps=None):
 def compare_relationships(root, pair, frame, target_path, target_sha256=None, *, audit_viewport=False,
                           native_control_roles=False, diagnostic_surface=None, tab_bar_id=None,
                           respect_presentation=False, audit_presentation_overlap=False,
-                          audit_status_bar=False, navigation_control_ids=(), audit_control_clipping=None):
+                          audit_status_bar=False, navigation_control_ids=(), audit_control_clipping=None,
+                          native_symbol_anchors=False, approved_source_navigation=False):
     if audit_control_clipping is None:
         audit_control_clipping = audit_viewport
     if audit_control_clipping and not audit_viewport:
@@ -489,6 +695,11 @@ def compare_relationships(root, pair, frame, target_path, target_sha256=None, *,
         raise ValueError('status bar audit requires an unscoped foreground tree')
     if navigation_control_ids and not audit_status_bar:
         raise ValueError('navigation control IDs require a status bar audit')
+    if native_symbol_anchors and (pair.get('target_observation') is None or diagnostic_surface is not None
+                                   or not native_control_roles):
+        raise ValueError('native symbol anchors require approved target observation, formal scope and native control roles')
+    if approved_source_navigation and (pair.get('target_observation') is None or diagnostic_surface is not None):
+        raise ValueError('source navigation binding requires approved target observation and formal scope')
     baseline = pair['baseline']
     source = checked_artifact(_project_file(root, baseline['ui_json_path']), baseline['ui_json_sha256'])
     target = checked_artifact(target_path, target_sha256) if target_sha256 else target_path.read_bytes()
@@ -500,10 +711,19 @@ def compare_relationships(root, pair, frame, target_path, target_sha256=None, *,
         sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'i2h-plan/scripts'))
         from native_scenario_evidence import active_layer_tree
         target_data = active_layer_tree(target_data, pair['target_observation'])
+    nav_identifier = None
+    nav_binding = None
+    if approved_source_navigation:
+        nav_identifier, nav_binding = _approved_source_navigation(
+            source_data, raw_target_data, pair['target_observation'])
     ios_nav, harmony_surface = diagnostic_surface or (None, None)
+    if approved_source_navigation:
+        ios_nav = nav_identifier
     source_view, source_nodes = collect_ios(source_data, navigation_identifier=ios_nav)
+    symbol_candidates = [] if native_symbol_anchors else None
     target_view, target_nodes = collect_harmony(target_data, native_control_roles=native_control_roles,
-                                               surface_type=harmony_surface)
+                                               surface_type=harmony_surface, tab_bar_id=tab_bar_id if native_symbol_anchors else None,
+                                               native_symbol_candidates=symbol_candidates)
     if source_view is None or target_view is None:
         raise ValueError('both native dumps must provide a valid viewport')
     width, height = source_view[2]-source_view[0], source_view[3]-source_view[1]
@@ -520,7 +740,18 @@ def compare_relationships(root, pair, frame, target_path, target_sha256=None, *,
     projected_nodes = [project_nodes(source_nodes, source_view, width, height),
                        project_nodes(target_nodes, target_view, width, height)]
     source_nodes, target_nodes = ([node for node in nodes if in_region(node, region)] for nodes in projected_nodes)
-    pairs, unresolved = match(source_nodes, target_nodes)
+    pairs, unresolved, unmatched_source = match(source_nodes, target_nodes, native_tab_context=native_symbol_anchors)
+    unmatched = [(i, node) for i, node in enumerate(unmatched_source)] if native_symbol_anchors else None
+    symbol_matches = []
+    symbol_identifiers = []
+    if native_symbol_anchors:
+        symbol_matches, resolved_symbols = _native_symbol_matches(
+            source_data.get('debug_description'), unmatched,
+            project_nodes(symbol_candidates, target_view, width, height), pairs, region)
+        pairs.extend([(s, t) for s, t, _ in symbol_matches])
+        symbol_identifiers = [sid for _, _, sid in symbol_matches]
+        target_nodes.extend(node for _, node, _ in symbol_matches)
+        unresolved = [item for i, item in enumerate(unresolved) if i not in resolved_symbols]
     cross_presentation_overlaps = [] if audit_presentation_overlap else None
     findings = geometry(pairs, width, GEOMETRY_TOLERANCE,
                         cross_presentation_overlaps=cross_presentation_overlaps)
@@ -543,6 +774,17 @@ def compare_relationships(root, pair, frame, target_path, target_sha256=None, *,
     if diagnostic_surface is not None:
         report['diagnostic_surface'] = {'ios_navigation_identifier': ios_nav,
                                         'harmony_surface_type': harmony_surface}
+    if native_symbol_anchors:
+        report['native_symbol_anchors'] = {
+            'contract': 'native-symbol-anchors-v1',
+            'matched': [{'identifier': sid} for sid in symbol_identifiers]
+        }
+    if approved_source_navigation:
+        report['approved_source_navigation'] = {
+            'contract': 'approved-ios-navigation-v1',
+            'identifier': nav_identifier,
+            'binding': nav_binding,
+        }
     if audit_viewport:
         report['audit_viewport'] = True
         if audit_control_clipping:
@@ -590,6 +832,10 @@ def main(argv=None):
     parser.add_argument('--audit-status-bar', action='store_true', help='Check foreground title controls against the status bar')
     parser.add_argument('--navigation-control-id', action='append', default=[],
                         help='Also audit this declared custom title or navigation control ID')
+    parser.add_argument('--native-symbol-anchors', action='store_true',
+                        help='Match explicit XCUI symbol identifiers to HarmonyOS SymbolGlyph nodes')
+    parser.add_argument('--approved-source-navigation', action='store_true',
+                        help='Scope source to the approved later independent navigation container')
     parser.add_argument('--diagnostic-surface', nargs=2, metavar=('IOS_NAV_IDENTIFIER', 'HARMONY_SURFACE_TYPE'),
                         help='Inspect a known foreground layer. Output is diagnostic and cannot satisfy acceptance.')
     args = parser.parse_args(argv)
@@ -609,7 +855,9 @@ def main(argv=None):
                                        respect_presentation=args.respect_presentation,
                                        audit_presentation_overlap=args.audit_presentation_overlap,
                                        audit_status_bar=args.audit_status_bar,
-                                       navigation_control_ids=args.navigation_control_id)
+                                       navigation_control_ids=args.navigation_control_id,
+                                       native_symbol_anchors=args.native_symbol_anchors,
+                                       approved_source_navigation=args.approved_source_navigation)
         raw = json_bytes(result)
         if args.out:
             output = _project_file(root, args.out)

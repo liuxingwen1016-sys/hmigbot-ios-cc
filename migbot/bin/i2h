@@ -147,7 +147,32 @@ def run_tool(args: list[str]) -> int:
 
 
 def usage() -> None:
-    print("Usage: i2h <count-lines|count-loc|mark-stage STAGE|validate|build|--help>")
+    print(
+        "Usage: i2h <count-lines|count-loc|mark-stage STAGE"
+        "|execute-source|execute-inputs [--plan-format legacy] [--resource-policy legacy]"
+        "|retrospect-metrics|validate|build|--help>"
+    )
+
+
+def _load_flow_handoff():
+    """Import flow_handoff from the scripts/pipeline directory next to this file."""
+    import importlib.util
+    import sys
+
+    # Prevent bytecode generation in user projects
+    sys.dont_write_bytecode = True
+
+    here = Path(__file__).resolve().parent
+    module_path = here / "scripts" / "pipeline" / "flow_handoff.py"
+    if not module_path.is_file():
+        # Installed project: bin/ sits under .migbot/bin/
+        module_path = here.parent / "runtime" / "scripts" / "pipeline" / "flow_handoff.py"
+    if not module_path.is_file():
+        return None
+    spec = importlib.util.spec_from_file_location("flow_handoff", module_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 def main(argv: list[str]) -> int:
@@ -164,6 +189,19 @@ def main(argv: list[str]) -> int:
         return cmd_mark_stage(argv[1])
     if command in {"validate", "build"}:
         return run_tool(argv)
+    if command in {"execute-source", "execute-inputs", "retrospect-metrics"}:
+        mod = _load_flow_handoff()
+        if mod is None:
+            print(
+                f"ERROR: flow_handoff module not found next to {__file__}",
+                file=sys.stderr,
+            )
+            return 127
+        if command == "execute-source":
+            return mod.cmd_execute_source(ROOT)
+        if command == "execute-inputs":
+            return mod.cmd_execute_inputs(ROOT, argv[1:])
+        return mod.cmd_retrospect_metrics(ROOT)
     print(f"Unknown command: {command}", file=sys.stderr)
     usage()
     return 64

@@ -99,6 +99,9 @@ jobs:
           python -m pytest -q migbot/skills/i2h-spec/scripts/tests
           python -m pytest -q migbot/skills/i2h-plan/scripts/tests
 
+      - name: Run flow handoff entry point contracts
+        run: python -m pytest tests/test_cc_flow_handoff.py -v
+
       - name: Run native Verify contract tests
         run: python -m pytest -q migbot/skills/i2h-verify/scripts/tests
 

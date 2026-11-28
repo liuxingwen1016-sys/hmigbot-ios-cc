@@ -4,9 +4,31 @@
 
 ## 当前状态
 
-仓库已经包含 i2h 五阶段 Skill、iOS 参考 Skill、模板与脚本。本次原生模态视觉工具契约和已安装验收入口通过了下文列出的 R3 回归；任意应用的签名、设备能力、视觉保真和完整行为仍须逐项目真实验证，不能据工具测试直接宣称“任意项目生产就绪”。历史问题与证据保留在 [`docs/IMPLEMENTATION_AUDIT.md`](docs/IMPLEMENTATION_AUDIT.md)。
+仓库已经包含 i2h 五阶段 Skill、iOS 参考 Skill、模板与脚本。流程交接命令、原生符号关系和已安装验收入口通过了下文列出的 macOS 工具合同回归；应用的签名、设备能力、视觉保真和完整行为仍须逐项目真实验证。历史问题与证据保留在 [`docs/IMPLEMENTATION_AUDIT.md`](docs/IMPLEMENTATION_AUDIT.md)。
 
 历史文档中的“90.8% 自动转换率”是 Cuike 原型阶段的统计估算，不代表编译通过率、行为等价率，也不是通用验收标准。
+
+## 2026-11-28 更新：流程交接与原生符号验收
+
+本次以 `c919b99` 为源码基线，整合四项流程交接修复及经过复审的原生符号关系验收。
+
+| 范围 | 更新后的行为 |
+| --- | --- |
+| Init → Execute | 统一读取 `.migbot/config.json.ios`，按项目根解析相对路径；空路径、失效目录或源绑定不一致在执行前诊断。 |
+| Plan → Execute | 统一消费 indexed UI、feature、base 三计划和 slices；旧单计划仅通过显式 legacy 选项启用。 |
+| Spec → 资源执行 | 按生产者真实的 `target_input_sha256`、`inventory` 和资源索引核对当前批准范围；缺失资产与仍需目标映射的系统符号分别处理。 |
+| Retrospect | 从两侧实际文件和本轮回执统计；缺输入或读取失败保留 `UNKNOWN/null`，有效空输入才记为零。 |
+| 原生符号关系 | 显式启用 XCUI Image identifier 与可见、未裁剪的 SymbolGlyph 叶节点匹配；父按钮、页签上下文及重复组必须可消歧，说明冲突阻断；最终几何阈值保持 **4 pt**。 |
+| 活动源导航 | 只有批准谓词、可标识的目标模态、唯一源主窗口和标题/控件绑定均成立时，才限定到独立呈现的源导航容器。 |
+| 正式验收与升级 | 正式入口按批准 pair 和已绑定原树重放新模式，篡改报告不能通过；保留截图/安装身份、独立外观证据和旧 G0/G1 回执兼容。 |
+
+安装后的 `ui_relationships.py` 需显式传入 `--native-control-roles --native-symbol-anchors`。自定义页签配合 `--audit-viewport --tab-bar-id <id>`，批准的独立源导航使用 `--approved-source-navigation`。未选择新选项的旧项目保持原匹配行为。详见[关系验收合同](migbot/skills/i2h-execute/references/ui-delivery-contract.md)。
+
+**验证结果：**macOS 本机 848 项合同回归通过，0 失败/跳过（原有 777 + 流程交接 48 + 原生关系 23）；最终安装版另有 63 项相关回归、14 项独立 CLI 检查通过。干净安装、保留配置的升级、旧模式关系回执重放和旧 G0/G1 升级检查通过。Windows/Linux 保留为可选检查，本轮未实跑。
+
+本次提交包含可复用工具、修改说明及通用合成回归；不包含应用实例工程、设备采集、安装包或本机维护日志。应用完成度和视觉保真仍由各项目验收。
+
+逐文件原因与复跑命令：[流程交接](docs/patches/20261126-flow-handoff.md)、[原生符号验收](docs/patches/20261128-check3-native-symbols.md)。已有项目在阶段断点使用正常安装器升级。
 
 ## 2026-11-24 更新：原生模态视觉验收与门禁一致性（R3）
 
@@ -97,6 +119,31 @@ cd /path/to/hmigbot-ios
 ```
 
 需要 Python 3.8+、静态检查所需的 ripgrep（rg）、Claude Code、带 `.xcodeproj` 或 `Package.swift` 的 iOS 项目，以及可供 DevEco Studio 使用的 HarmonyOS 工程。设备验证还需要 Xcode 工具、`hdc` 和实际设备或模拟器。
+
+安装后，`/i2h-init` 和 `/i2h-run` 是预期的工作流入口。`/i2h-build` 使用已安装的 `i2h-tool` 辅助工具；设备和 DevEco 检查仍为显式运行时前置条件。
+
+首次功能验证使用 `/i2h-verify behavior`，修复后目标重测使用 `/i2h-verify recheck`。两者保留初始场景范围和所有当前验收标准。运行标准 Verify 阶段使用 `/i2h-verify full`。详见[原生 UITest 回执合同](migbot/skills/i2h-verify/references/check5-behavior-verify.md)。
+
+## 流程交接入口（2026-11-26）
+
+三个只读 CLI 入口为 Execute 和 Retrospect 阶段提供已校验输入：
+
+| 命令 | 用途 | 合同 |
+|------|------|------|
+| `.migbot/bin/i2h execute-source` | 从 `.migbot/config.json` → `ios` 字段返回解析后的绝对 iOS 源码根路径。校验项目结构（`.xcodeproj` 或 `Package.swift`）及与 `resources-inventory.json` 和 `ui-delivery-approved.json` 的绑定一致性。任何校验错误以 exit 2 和诊断消息返回（无 traceback）。 | Execute Stage 0.1 使用 |
+| `.migbot/bin/i2h execute-inputs` | 返回计划输入（默认 indexed-v1 三文件或显式 legacy）和静态资源事实（默认 static-v1）的 JSON 摘要。校验计划文件、`target-input.json` schema/hash、资源索引、批准范围绑定，并对选中范围内的未解决资源阻断。系统符号记录为目标映射义务。严格 argparse 拒绝未知选项和缩写。 | Execute Stage 0.4 使用 |
+| `.migbot/bin/i2h retrospect-metrics` | 返回带双向行数统计的 JSON。iOS：源码根下的 Swift/ObjC（排除 Tests/Pods）。HarmonyOS：`entry/src/main/ets/` 下的 ArkTS/TS。状态：MEASURED（带计数）或 UNKNOWN（带原因，`total_lines: null`）。使用 `os.walk` 显式错误处理，不跟随符号链接。逐文件精确计数，保留无末尾换行的文件。从不输出硬编码的项目特定数字。 | Retrospect Stage 2 使用 |
+
+**实现细节**:
+- `execute-inputs`: 真实 `usage.json` schema 为 `{"resources": {"name": {"references": [...], "resolved": bool, "disposition": str}}}`（字典，非数组）。系统符号（kind=system_symbol）与缺失资产分离；仅选中范围内的常规缺失 image/color/localization 阻断执行。
+- `retrospect-metrics`: 正确处理权限错误、符号链接、空目录与缺失目录。返回 `files` 计数及 `total_lines`。
+- Execute 输入命令遇无效 JSON/UTF-8 返回 exit 2；Retrospect 将不可用的一侧或回执保留为 `UNKNOWN/null`，仍返回独立可用的数据。
+
+**边界说明**：这些命令只读，不写入完成标记、批准范围或修改项目文件。校验结构与绑定，但不执行资源落地、Stage 1 执行或应用 Verify。实际设备验证、Windows/Linux 远端 CI 和冻结 `latest` 包更新不在本次范围内。
+
+**验收状态**：macOS 本机 **825 项通过（新增 48 + 原有 777），0 失败/跳过**；另有 **32 项独立安装入口探针通过**。见[逐文件原因及发布边界](docs/patches/20261126-flow-handoff.md)。回归覆盖见 `tests/test_cc_flow_handoff.py`。文档已更新：Execute SKILL.md 加载 stage-0-resources.md，Retrospect SKILL.md 数据驱动无硬编码数字，迁移报告模板使用三计划格式，CI 包含流程交接回归步骤。
+
+## 仓库布局
 
 安装后使用 `/i2h-init` 和 `/i2h-run` 作为主要入口。`/i2h-build` 使用已安装的 `i2h-tool` 辅助程序；设备和 DevEco 检查仍需要真实运行环境。
 

@@ -255,6 +255,8 @@ def _comparison(root, scope_pair, scope_frame, observed):
         audit_presentation_overlap='cross_presentation_overlaps' in relationship,
         audit_status_bar='navigation_status_bar' in relationship,
         navigation_control_ids=relationship.get('navigation_control_ids', ()),
+        native_symbol_anchors='native_symbol_anchors' in relationship,
+        approved_source_navigation='approved_source_navigation' in relationship,
     )
     if json_bytes(calculated) != json_bytes(relationship):
         raise ValueError('relationship report does not match native tree replay')

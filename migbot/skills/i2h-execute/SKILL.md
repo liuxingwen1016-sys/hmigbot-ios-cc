@@ -46,8 +46,13 @@ i2h-spec → i2h-plan → i2h-execute（本 skill）
 | 文件 | 说明 | 缺失处理 |
 |------|------|---------|
 | `spec/baseline/spec-index.md` | i2h-spec 生成的规格索引 | 提示先运行 `/i2h-spec` |
-| `spec/baseline/plans/execution-plan.md` | i2h-plan 生成的执行计划 | 提示先运行 `/i2h-plan` |
+| `spec/baseline/plans/ui-plan.md` | i2h-plan 生成的 UI 转换计划 | 提示先运行 `/i2h-plan` |
+| `spec/baseline/plans/feature-plan.md` | i2h-plan 生成的功能调度索引 | 提示先运行 `/i2h-plan` |
+| `spec/baseline/plans/base-plan.md` | i2h-plan 生成的 Base 层计划 | 提示先运行 `/i2h-plan` |
+| `spec/baseline/plans/slices/` | 逐 slice 调度表目录 | 提示先运行 `/i2h-plan` |
 | `spec/baseline/features/` | Feature 详细规格目录 | 提示先运行 `/i2h-spec` |
+
+> **旧格式兼容**：单一 `execution-plan.md` 仅在通过 `.migbot/bin/i2h execute-inputs --plan-format legacy` 显式选择后消费；不得凭残留文件存在自动切换。
 
 ### 环境检查
 
@@ -70,8 +75,11 @@ ls -la ~/.claude/migbot/skills/arkts-knowledge-verifier/ || echo "缺少知识�
 ### Step 0.1: 验证工作环境
 
 ```bash
-# 读取配置
-IOS_PATH=$(grep "ios_project_path" spec/.i2h/config.json | cut -d'"' -f4)
+# 读取配置（从 .migbot/config.json 的 ios 字段）
+IOS_PATH=$(.migbot/bin/i2h execute-source) || {
+  echo "❌ execute-source 失败：iOS 源路径无效，请检查 .migbot/config.json 中的 ios 字段"
+  exit 1
+}
 HOS_PATH=$(pwd)
 DEVECO_PATH="/Applications/DevEco-Studio.app/Contents"
 
@@ -103,19 +111,42 @@ EOF
 
 项目已有固定环境预热脚本时，复用同一构建配置在后台运行一次，保留日志；无需为固定命令派发模型。没有现成脚本时可省略预热，正常编译门照常执行。预热结果不能作为正式编译或功能证据，也不能与正式构建争用同一输出目录。
 
-### Step 0.4: 读取执行计划
+### Step 0.4: 读取执行计划和资源规则
 
 ```bash
-# 读取 execution-plan.md
-PLAN_FILE="spec/baseline/plans/execution-plan.md"
+# 加载 Stage 0 资源校验规则
+echo "📖 加载 Stage 0 资源校验规则..."
+cat .claude/skills/i2h-execute/references/stage-0-resources.md
+
+# 读取当前三计划索引格式（indexed-v1）
+INPUTS=$(.migbot/bin/i2h execute-inputs) || {
+  echo "❌ execute-inputs 失败：计划文件或资源事实缺失"
+  exit 1
+}
 
 # 提取关键信息
-TOTAL_FEATURES=$(grep -c "^### F-" "$PLAN_FILE")
-TOTAL_PAGES=$(grep "Total pages:" "$PLAN_FILE" | cut -d':' -f2 | tr -d ' ')
+UI_PLAN=$(echo "$INPUTS" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['plans']['ui_plan'])")
+FEAT_PLAN=$(echo "$INPUTS" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['plans']['feature_plan'])")
+BASE_PLAN=$(echo "$INPUTS" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['plans']['base_plan'])")
+SLICES_DIR=$(echo "$INPUTS" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['plans']['slices_dir'])")
 
-echo "📊 执行计划统计:"
-echo "  - 功能数: $TOTAL_FEATURES"
-echo "  - 页面数: $TOTAL_PAGES"
+# 资源事实
+RESOURCE_POLICY=$(echo "$INPUTS" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('resource_policy', 'static-v1'))")
+TARGET_HASH=$(echo "$INPUTS" | python3 -c "import json,sys; d=json.load(sys.stdin); r=d.get('resources',{}); print(r.get('target_input_sha256', 'UNKNOWN'))")
+
+echo "📊 执行计划:"
+echo "  - UI 计划: $UI_PLAN"
+echo "  - 功能计划: $FEAT_PLAN"
+echo "  - Base 计划: $BASE_PLAN"
+echo "  - 切片目录: $SLICES_DIR"
+echo "  - 资源策略: $RESOURCE_POLICY"
+echo "  - 目标哈希: $TARGET_HASH"
+
+# 检查系统符号映射义务（如果存在）
+SYSTEM_SYMBOLS=$(echo "$INPUTS" | python3 -c "import json,sys; d=json.load(sys.stdin); r=d.get('resources',{}); s=r.get('system_symbol_target_mapping_obligations',[]); print(len(s))")
+if [ "$SYSTEM_SYMBOLS" != "0" ]; then
+  echo "⚠️  系统符号映射义务: $SYSTEM_SYMBOLS 项需要后续映射"
+fi
 ```
 
 ### Step 0.5: 冻结 iOS 固定几何 scale（有目标 presentation 时）
@@ -1101,7 +1132,9 @@ ${componentFiles.map(f => `- ${f}`).join('\n')}
 
 ## 📚 相关文档
 
-- 执行计划: spec/baseline/plans/execution-plan.md
+- UI 转换计划: spec/baseline/plans/ui-plan.md
+- 功能调度索引: spec/baseline/plans/feature-plan.md
+- Base 层计划: spec/baseline/plans/base-plan.md
 - Stage Briefs: spec/execution/briefs/
 - 修复日志: spec/execution/autofix-log/
 - HarmonyOS 知识库: spec/execution/harmonyos-knowledge.json

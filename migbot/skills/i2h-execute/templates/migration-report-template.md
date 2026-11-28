@@ -254,11 +254,16 @@ ${RECOMMENDATIONS}
 
 ## 📚 相关文档
 
-- 执行计划: spec/baseline/plans/execution-plan.md
+- UI 计划: spec/baseline/plans/ui-plan.md
+- 功能计划: spec/baseline/plans/feature-plan.md
+- Base 计划: spec/baseline/plans/base-plan.md
+- 切片目录: spec/baseline/plans/slices/
 - Stage Briefs: spec/execution/briefs/
 - 修复日志: spec/execution/build-logs/
 - Writeback Manifests: spec/execution/writeback/
 - 占位符注册表: spec/execution/placeholder-registry.json
+
+**Legacy 兼容**: 如果使用 `--plan-format legacy`，参考 spec/baseline/plans/execution-plan.md
 
 ---
 
